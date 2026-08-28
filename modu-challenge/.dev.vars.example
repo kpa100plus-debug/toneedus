@@ -1,0 +1,5 @@
+# 실제 값은 저장소에 커밋하지 않는다.
+# 각 값은 영문·숫자·기호를 섞어 32자 이상 권장.
+ADMIN_BOOTSTRAP_TOKEN=replace-with-a-long-random-secret
+PAYMENT_WEBHOOK_SECRET=replace-with-a-long-random-secret
+PAYOUT_WEBHOOK_SECRET=replace-with-a-long-random-secret

@@ -1,0 +1,45 @@
+name: Bootstrap MODU Challenge Source
+
+on:
+  push:
+    branches:
+      - modu-challenge-production
+    paths:
+      - modu-challenge-source.b64
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout production branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: modu-challenge-production
+          fetch-depth: 0
+
+      - name: Rebuild source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf modu-challenge
+          mkdir -p modu-challenge
+          base64 -d modu-challenge-source.b64 | tar -xzf - -C modu-challenge
+          rm -f modu-challenge-source.b64
+
+      - name: Commit reconstructed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "juyoungkim"
+          git config user.email "kpa100plus@gmail.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "Build MODU Challenge production source [skip ci]"
+          git push origin HEAD:modu-challenge-production

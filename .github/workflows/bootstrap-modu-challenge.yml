@@ -5,7 +5,7 @@ on:
     branches:
       - modu-challenge-production
     paths:
-      - modu-challenge-source.b64
+      - modu-challenge-source.ready
   workflow_dispatch:
 
 permissions:
@@ -27,8 +27,8 @@ jobs:
           set -euo pipefail
           rm -rf modu-challenge
           mkdir -p modu-challenge
-          base64 -d modu-challenge-source.b64 | tar -xzf - -C modu-challenge
-          rm -f modu-challenge-source.b64
+          cat modu-challenge-source.part* | base64 -d | xz -d | tar -xf - -C modu-challenge
+          rm -f modu-challenge-source.part* modu-challenge-source.ready
 
       - name: Commit reconstructed source
         shell: bash

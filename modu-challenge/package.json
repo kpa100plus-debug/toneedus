@@ -9,6 +9,12 @@
   },
   "scripts": {
     "prepare:source": "node scripts/prepare.mjs",
+    "bundle:pack": "node scripts/pack.mjs",
+    "demo:build": "node scripts/build-demo-catalog.mjs",
+    "demo:seed:remote": "npm run demo:build && wrangler d1 execute DB --remote --file=scripts/demo-catalog.sql",
+    "demo:clear:remote": "wrangler d1 execute DB --remote --file=scripts/demo-clear.sql",
+    "test:live:e2e": "node scripts/live-e2e.mjs",
+    "test:live:clear": "wrangler d1 execute DB --remote --file=scripts/live-e2e-clear.sql",
     "deploy": "npm run prepare:source && wrangler d1 migrations apply DB --remote && wrangler deploy",
     "dev": "npm run prepare:source && wrangler dev --local --persist-to=.wrangler/state"
   },

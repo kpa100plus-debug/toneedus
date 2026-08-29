@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 
-const EXPECTED_SHA256 = "ed149a83456163ce3414eec79462292add11b841ebefa8af8a8f0a55b99d50fb";
+const EXPECTED_SHA256 = "a7ec2dd3dbe15e4e4b18916406297eeaaee75b0c945d5f9248e81b0dc52f6988";
 const EXPECTED_FILE_COUNT = 14;
 const root = new URL("../", import.meta.url);
 const dir = new URL("../bundle/", import.meta.url);

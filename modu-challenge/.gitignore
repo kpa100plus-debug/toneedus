@@ -1,6 +1,0 @@
-node_modules/
-.wrangler/
-.dev.vars
-.env*
-.local-e2e/
-.DS_Store

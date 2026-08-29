@@ -1,6 +1,6 @@
 {
   "name": "modu-challenge",
-  "version": "0.5.2",
+  "version": "0.5.4",
   "private": true,
   "type": "module",
   "description": "모두의 챌린지 - 범용 성과형 챌린지 마켓플레이스 WEB 운영형 베타",

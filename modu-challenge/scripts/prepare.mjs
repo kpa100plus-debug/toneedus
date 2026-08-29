@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 
-const EXPECTED_SHA256 = "c23aa0751e55e050a68081b1fafa2208c9e53ea694da3d3b863d108de0b125b0";
+const EXPECTED_SHA256 = "ed149a83456163ce3414eec79462292add11b841ebefa8af8a8f0a55b99d50fb";
 const EXPECTED_FILE_COUNT = 14;
 const root = new URL("../", import.meta.url);
 const dir = new URL("../bundle/", import.meta.url);
@@ -34,34 +34,6 @@ for (const [path, content] of entries) {
   await writeFile(target, content, "utf8");
 }
 
-const migrationPath = new URL("../migrations/0001_init.sql", import.meta.url);
-const originalMigration = await readFile(migrationPath, "utf8");
-const migrationMarker = ");\n\nCREATE TABLE IF NOT EXISTS sessions";
-const seededMigration = `);
-
-INSERT OR IGNORE INTO users (
-  id, email, password_hash, password_salt, display_name, account_type,
-  status, is_admin, identity_verified, business_verified, professional_verified,
-  email_verified, terms_version, terms_accepted_at, privacy_version,
-  privacy_accepted_at, trust_score, strike_count, bounty_limit
-) VALUES (
-  'usr_admin_juyoungkim',
-  'admin@moduchallenge.local',
-  'WM5iabbmx89ynjTjvUsXLCG7ZeLpzlbBIl1xb2Tdn2Y=',
-  'tF0wMi5SGAhk5QzX7rlLpQ==',
-  'juyoungkim',
-  'corporation',
-  'active',
-  1, 1, 1, 0, 1,
-  '2026-08-29-v1', CURRENT_TIMESTAMP,
-  '2026-08-29-v1', CURRENT_TIMESTAMP,
-  100, 0, 1000000000
-);
-
-CREATE TABLE IF NOT EXISTS sessions`;
-if (!originalMigration.includes(migrationMarker)) throw new Error("D1 administrator seed marker is missing");
-await writeFile(migrationPath, originalMigration.replace(migrationMarker, seededMigration), "utf8");
-
 const setupPage = `<!doctype html>
 <html lang="ko">
 <head>
@@ -75,10 +47,10 @@ const setupPage = `<!doctype html>
 </head>
 <body>
   <main class="card">
-    <span class="badge">ISEA GROUP · 자동 설정 완료</span>
+    <span class="badge">ISEA GROUP · 운영 설정 완료</span>
     <h1>최고관리자 계정이 준비되었습니다</h1>
-    <p>배포 시 최고관리자 계정이 자동 생성됩니다. 공개 표시명은 <strong>juyoungkim</strong>으로 고정됩니다.</p>
-    <div class="notice"><strong>로그인 정보</strong><br>별도로 제공된 관리자 로그인 정보 파일을 확인하세요.</div>
+    <p>현재 Cloudflare D1에 최고관리자 계정이 별도로 설정되어 있습니다. 공개 표시명은 <strong>juyoungkim</strong>입니다.</p>
+    <div class="notice"><strong>보안 안내</strong><br>관리자 로그인 정보와 활성 검증값은 공개 소스에 포함되지 않습니다.</div>
     <a class="btn" href="/">서비스 홈에서 로그인</a>
     <div class="footer">© 2026 ISEA GROUP. All Rights Reserved.</div>
   </main>
@@ -87,4 +59,4 @@ const setupPage = `<!doctype html>
 `;
 await writeFile(new URL("../public/setup-admin.html", import.meta.url), setupPage, "utf8");
 
-console.log(`Prepared ${entries.length} verified MODU CHALLENGE runtime files with automatic administrator provisioning.`);
+console.log(`Prepared ${entries.length} verified MODU CHALLENGE runtime files. Administrator credentials are never bundled in public source.`);

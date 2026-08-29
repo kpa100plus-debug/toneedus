@@ -1,6 +1,7 @@
 # MODU CHALLENGE 배포 상태
 
-기준일: 2026-08-29
+기준일: 2026-08-29  
+버전: V0.5.2
 
 ## 완료
 
@@ -13,7 +14,8 @@
 - 보상금 10% 플랫폼 수수료 / 90% 성공 참가자 지급 계산
 - OWNER/SOLVER TRUST·양방향 리뷰
 - 3-Strike·신고·분쟁·Audit Log
-- 관리자 Overview·최초 관리자 생성화면
+- 관리자 Overview
+- 최고관리자 `juyoungkim` 자동 생성
 - PC·모바일 PWA·스테이징 검색색인 차단
 - 원클릭 Cloudflare 배포 템플릿
 
@@ -21,27 +23,29 @@
 
 - 자동 테스트 15/15 통과
 - JavaScript·Worker 문법검사 통과
-- D1/SQLite 스키마 검사 통과
+- D1/SQLite 스키마 및 관리자 Seed 검사 통과
 - API E2E 통과
 - 검증 흐름: POST → TEASER → FINALIST → FUND → PROOF → SUCCESS → PAYOUT → REVIEW → TRUST
 - 보상금 1,000,000원 검증: 플랫폼 100,000원 / 성공 참가자 900,000원
 - 스테이징 실제 돈 게이트: `MONEY_FLOW_DISABLED`
 
-## 사용자 최종 승인 필요
+## 사용자 최종 승인 1회
 
-Cloudflare 계정에 D1과 Worker를 만들고 실제 `workers.dev` 주소를 발급하는 단계는 계정 소유자의 Cloudflare 승인 화면에서 진행해야 합니다.
+Cloudflare 계정에 D1과 Worker를 만들고 실제 `workers.dev` 주소를 발급하는 행위는 계정 소유자의 Cloudflare 승인 화면에서만 완료할 수 있습니다.
 
 원클릭 배포:
 
 https://deploy.workers.cloudflare.com/?url=https://github.com/kpa100plus-debug/toneedus/tree/modu-challenge-app/modu-challenge
 
-배포 직후 최고관리자 생성:
+배포 화면에서 `modu-challenge`를 유지하고 Deploy를 승인하면 됩니다. Secret 입력과 관리자 초기화는 제거했습니다.
 
-```text
-https://<배포주소>/setup-admin.html
-```
+## 배포 후 로그인
 
-공개 표시명은 `juyoungkim`으로 고정됩니다.
+별도로 제공된 `MODU_CHALLENGE_ADMIN_LOGIN.txt`의 이메일·비밀번호를 사용합니다.
+
+- 공개 표시명: `juyoungkim`
+- 관리자페이지: `https://<배포주소>/#/admin`
+- API 상태: `https://<배포주소>/api/health`
 
 ## 실제 결제 상태
 

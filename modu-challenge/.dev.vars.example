@@ -1,5 +1,2 @@
-# 실제 값은 저장소에 커밋하지 않는다.
-# 각 값은 영문·숫자·기호를 섞어 32자 이상 권장.
-ADMIN_BOOTSTRAP_TOKEN=replace-with-a-long-random-secret
-PAYMENT_WEBHOOK_SECRET=replace-with-a-long-random-secret
-PAYOUT_WEBHOOK_SECRET=replace-with-a-long-random-secret
+# 실제 PG·지급대행 활성화 시 Cloudflare Secret으로 별도 설정합니다.
+# 현재 공개 스테이징은 PUBLIC_MONEY_ENABLED=false이므로 결제·지급 비밀값이 필요하지 않습니다.

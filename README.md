@@ -2,7 +2,7 @@
 
 범용 성과형 챌린지 마켓플레이스 운영형 스테이징입니다.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/kpa100plus-debug/toneedus/tree/modu-challenge-app/modu-challenge)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/kpa100plus-debug/toneedus/tree/modu-challenge-cloudflare)
 
 ## 확정 기준
 
@@ -15,7 +15,7 @@
 
 ## 최종 원클릭 배포
 
-위 **Deploy to Cloudflare** 버튼을 누르면 Cloudflare가 이 하위 디렉터리를 독립 프로젝트 루트로 복제하고 다음 작업을 진행합니다.
+위 **Deploy to Cloudflare** 버튼을 누르면 Cloudflare가 이 브랜치를 독립 프로젝트로 복제하고 다음 작업을 진행합니다.
 
 1. 새 GitHub 저장소 생성
 2. Cloudflare Worker와 정적 자산 구성
@@ -25,7 +25,7 @@
 6. Worker 배포
 7. 이후 Git Push 기반 자동배포 연결
 
-배포 화면에서는 저장소명과 Worker 이름을 `modu-challenge`로 유지하고 **Deploy 승인만 진행**하면 됩니다. 별도의 Secret 입력이나 최고관리자 초기화 작업은 없습니다.
+배포 화면에서는 Cloudflare 계정으로 `MODU CHALLENGE`를 선택하고 저장소명과 Worker 이름을 `modu-challenge`로 유지한 뒤 **Deploy 승인만 진행**하면 됩니다. 별도의 빌드 명령·Secret·관리자 초기화 입력은 필요하지 않습니다.
 
 ## 최고관리자
 

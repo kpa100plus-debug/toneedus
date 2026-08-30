@@ -14,6 +14,7 @@ const checks = [
   ['알림 읽음 API', files.worker.includes('/notifications\\/([^/]+)\\/read') && files.client.includes('markNotificationRead')],
   ['비밀번호 변경 보안', files.worker.includes('/api/auth/change-password') && files.worker.includes('otherSessionsSignedOut') && files.client.includes('changePassword') && files.app.includes('change-password-form') && files.app.includes('submitPasswordChange')],
   ['간편 챌린지 자동작성', files.app.includes('renderEasyCreateWizard') && files.app.includes('generateChallengeDraft') && files.app.includes('wizardPurpose') && files.css.includes('.create-mode-switch')],
+  ['성공·증빙 체크형 작성', files.app.includes('renderCriteriaCheckBuilder') && files.app.includes('updateCriteriaFromChecks') && files.app.includes('successCheck') && files.app.includes('evidenceCheck') && files.css.includes('.criteria-option-grid')],
   ['보상금 용어 한글화', files.app.includes('보상금 준비 시점') && !files.app.includes('<label>Funding Trigger')],
   ['메인 LIVE 시각효과', files.app.includes('live-pill"><i>') && files.css.includes('@keyframes liveDotBlink') && files.css.includes('prefers-reduced-motion')],
   ['관리자 운영 목록', files.worker.includes('pendingSettlements') && files.app.includes('admin-ops-grid')],

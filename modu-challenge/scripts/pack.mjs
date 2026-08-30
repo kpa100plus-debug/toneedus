@@ -10,6 +10,7 @@ const runtimePaths = [
   'public/assets/data.js',
   'public/assets/live-app.js',
   'public/assets/logo.svg',
+  'public/assets/modu-young-challengers.webp',
   'public/assets/styles.css',
   'public/index.html',
   'public/manifest.webmanifest',
@@ -24,7 +25,11 @@ const bundleDir = new URL('../bundle/', import.meta.url);
 const prepareUrl = new URL('./prepare.mjs', import.meta.url);
 const bundle = {};
 
-for (const path of runtimePaths) bundle[path] = await readFile(new URL(path, root), 'utf8');
+const binaryPaths = new Set(['public/assets/modu-young-challengers.webp']);
+for (const path of runtimePaths) {
+  const content = await readFile(new URL(path, root));
+  bundle[path] = binaryPaths.has(path) ? content.toString('base64') : content.toString('utf8');
+}
 
 const encoded = gzipSync(Buffer.from(JSON.stringify(bundle), 'utf8'), { level: 9 }).toString('base64');
 const sha256 = createHash('sha256').update(encoded, 'utf8').digest('hex');

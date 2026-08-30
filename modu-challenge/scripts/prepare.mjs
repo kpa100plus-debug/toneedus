@@ -2,8 +2,9 @@ import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 
-const EXPECTED_SHA256 = "a7ec2dd3dbe15e4e4b18916406297eeaaee75b0c945d5f9248e81b0dc52f6988";
-const EXPECTED_FILE_COUNT = 14;
+const EXPECTED_SHA256 = "0f5073a5bc8a0fd538ee39dbc8ff2647c56c1b7288fa6ea97f2550f122e36ec0";
+const EXPECTED_FILE_COUNT = 15;
+const BINARY_PATHS = new Set(["public/assets/modu-young-challengers.webp"]);
 const root = new URL("../", import.meta.url);
 const dir = new URL("../bundle/", import.meta.url);
 const names = (await readdir(dir)).filter((name) => /^part-\d+\.txt$/.test(name)).sort();
@@ -31,7 +32,8 @@ for (const [path, content] of entries) {
   const target = new URL(path, root);
   if (!target.href.startsWith(root.href)) throw new Error(`Bundled path escaped project root: ${path}`);
   await mkdir(new URL("./", target), { recursive: true });
-  await writeFile(target, content, "utf8");
+  if (BINARY_PATHS.has(path)) await writeFile(target, Buffer.from(content, "base64"));
+  else await writeFile(target, content, "utf8");
 }
 
 const setupPage = `<!doctype html>

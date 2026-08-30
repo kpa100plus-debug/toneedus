@@ -12,6 +12,7 @@ const checks = [
   ['공개 프로필 동작', files.app.includes("view-public-profile") && files.app.includes('openPublicProfile')],
   ['TRUST 상세 동작', files.app.includes("view-trust-history") && files.app.includes('openTrustHistory')],
   ['알림 읽음 API', files.worker.includes('/notifications\\/([^/]+)\\/read') && files.client.includes('markNotificationRead')],
+  ['비밀번호 변경 보안', files.worker.includes('/api/auth/change-password') && files.worker.includes('otherSessionsSignedOut') && files.client.includes('changePassword') && files.app.includes('change-password-form') && files.app.includes('submitPasswordChange')],
   ['관리자 운영 목록', files.worker.includes('pendingSettlements') && files.app.includes('admin-ops-grid')],
   ['한글 폰트 우선순위', files.css.includes('"Malgun Gothic", "맑은 고딕"')],
   ['과도한 폰트 굵기 제거', !/font-weight:\s*(800|900)/.test(files.css)],

@@ -2,9 +2,9 @@ import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 
-const EXPECTED_SHA256 = "3329df799c93bea9f97b011ef85692dc22c623a7d4bb4bbc6f1a47d294eb5c61";
-const EXPECTED_FILE_COUNT = 15;
-const BINARY_PATHS = new Set(["public/assets/modu-young-challengers.webp"]);
+const EXPECTED_SHA256 = "09d21db6258edb1ea07a19bdb565f56a007b7752cdaac3d93389b92d76bd53f8";
+const EXPECTED_FILE_COUNT = 16;
+const BINARY_PATHS = new Set(["public/assets/modu-share-preview.jpg", "public/assets/modu-young-challengers.webp"]);
 const root = new URL("../", import.meta.url);
 const dir = new URL("../bundle/", import.meta.url);
 const names = (await readdir(dir)).filter((name) => /^part-\d+\.txt$/.test(name)).sort();

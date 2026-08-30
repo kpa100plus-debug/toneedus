@@ -10,6 +10,7 @@ const runtimePaths = [
   'public/assets/data.js',
   'public/assets/live-app.js',
   'public/assets/logo.svg',
+  'public/assets/modu-share-preview.jpg',
   'public/assets/modu-young-challengers.webp',
   'public/assets/styles.css',
   'public/index.html',
@@ -25,7 +26,7 @@ const bundleDir = new URL('../bundle/', import.meta.url);
 const prepareUrl = new URL('./prepare.mjs', import.meta.url);
 const bundle = {};
 
-const binaryPaths = new Set(['public/assets/modu-young-challengers.webp']);
+const binaryPaths = new Set(['public/assets/modu-share-preview.jpg', 'public/assets/modu-young-challengers.webp']);
 for (const path of runtimePaths) {
   const content = await readFile(new URL(path, root));
   bundle[path] = binaryPaths.has(path) ? content.toString('base64') : content.toString('utf8');

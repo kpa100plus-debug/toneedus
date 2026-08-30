@@ -23,6 +23,7 @@ const checks = [
   ['한글 폰트 우선순위', files.css.includes('"Malgun Gothic", "맑은 고딕"')],
   ['과도한 폰트 굵기 제거', !/font-weight:\s*(800|900)/.test(files.css)],
   ['대표자 표시', files.html.includes('모두의 챌린지 대표이사: 최인란')],
+  ['공유 대표이미지', files.html.includes('property="og:image"') && files.html.includes('modu-share-preview.jpg') && files.html.includes('summary_large_image')],
   ['CSS 괄호', (files.css.match(/{/g) || []).length === (files.css.match(/}/g) || []).length],
 ];
 

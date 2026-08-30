@@ -24,6 +24,8 @@ const checks = [
   ['과도한 폰트 굵기 제거', !/font-weight:\s*(800|900)/.test(files.css)],
   ['대표자 표시', files.html.includes('모두의 챌린지 대표이사: 최인란')],
   ['공유 대표이미지', files.html.includes('property="og:image"') && files.html.includes('modu-share-preview.jpg') && files.html.includes('summary_large_image')],
+  ['모바일 화면 잘림 방지', files.css.includes('overflow-x: clip') && files.css.includes('100dvh') && files.css.includes('body.modal-open')],
+  ['모바일 입력 이탈 방지', files.app.includes('modalScrollY') && files.app.includes('field-counter') && files.app.includes('작성 기준')],
   ['CSS 괄호', (files.css.match(/{/g) || []).length === (files.css.match(/}/g) || []).length],
 ];
 

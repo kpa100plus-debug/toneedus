@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 
-const EXPECTED_SHA256 = "e3f17f9b46ffcea8c9f8579a1a4940dc05199d5c93433324c9cc068e04f3b7b5";
+const EXPECTED_SHA256 = "12678e2733e1d0352cae5867dd9469500699cf8860ac86673a63e981a8434ab4";
 const EXPECTED_FILE_COUNT = 15;
 const BINARY_PATHS = new Set(["public/assets/modu-young-challengers.webp"]);
 const root = new URL("../", import.meta.url);

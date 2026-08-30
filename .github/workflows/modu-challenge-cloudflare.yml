@@ -1,5 +1,7 @@
 name: Deploy MODU Challenge to Cloudflare
 
+# Push-triggered production deployment for the existing modu-challenge Worker.
+
 on:
   push:
     branches:

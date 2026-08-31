@@ -26,6 +26,9 @@ const checks = [
   ['공유 대표이미지', files.html.includes('property="og:image"') && files.html.includes('modu-share-preview.jpg') && files.html.includes('summary_large_image')],
   ['모바일 화면 잘림 방지', files.css.includes('overflow-x: clip') && files.css.includes('100dvh') && files.css.includes('body.modal-open')],
   ['모바일 입력 이탈 방지', files.app.includes('modalScrollY') && files.app.includes('field-counter') && files.app.includes('작성 기준')],
+  ['모바일 모달 안전영역', files.css.includes('.modal-header, .modal-head') && files.css.includes('flex: 1 1 auto') && files.css.includes('env(safe-area-inset-bottom)')],
+  ['초소형 화면 단일열', files.css.includes('.challenge-meta { grid-template-columns: minmax(0, 1fr); }') && files.css.includes('.profile-stat-grid, .trust-factor-grid { grid-template-columns: minmax(0, 1fr); }')],
+  ['캐시 버전 일치', files.html.includes('styles.css?v=15') && files.html.includes('live-app.js?v=15') && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v15")],
   ['CSS 괄호', (files.css.match(/{/g) || []).length === (files.css.match(/}/g) || []).length],
 ];
 

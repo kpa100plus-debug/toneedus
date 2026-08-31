@@ -14,6 +14,7 @@
     "demo:seed:remote": "npm run demo:build && wrangler d1 execute DB --remote --file=scripts/demo-catalog.sql",
     "demo:clear:remote": "wrangler d1 execute DB --remote --file=scripts/demo-clear.sql",
     "test": "node scripts/verify.mjs",
+    "test:admin-roles": "node scripts/admin-role-e2e.mjs",
     "test:live:e2e": "node scripts/live-e2e.mjs",
     "test:live:clear": "wrangler d1 execute DB --remote --file=scripts/live-e2e-clear.sql",
     "deploy": "npm run prepare:source && wrangler d1 migrations apply DB --remote && wrangler deploy",

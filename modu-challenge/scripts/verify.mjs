@@ -6,6 +6,8 @@ const files = {
   css: await readFile(new URL('../public/assets/styles.css', import.meta.url), 'utf8'),
   worker: await readFile(new URL('../worker/index.mjs', import.meta.url), 'utf8'),
   html: await readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
+  migration: await readFile(new URL('../migrations/0002_admin_roles.sql', import.meta.url), 'utf8'),
+  wrangler: await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8'),
 };
 
 const checks = [
@@ -20,6 +22,7 @@ const checks = [
   ['LIVE 보상금순 자동교체', files.app.includes('hydrateLiveChallengeRotation') && files.app.includes("sortChallenges(state.challenges.filter") && files.app.includes("'reward'") && files.app.includes('data-live-challenge') && files.app.includes('modu-live-rank-index') && !files.app.includes("board.matches(':hover')")],
   ['LIVE 카드 이동·입력 정렬', files.css.includes('heroBoardFloat 20s') && files.css.includes('calc(-100vw + 720px)') && files.css.includes('background: transparent') && files.css.includes('.hero-board:hover') && files.app.includes('reward-schedule-grid') && files.css.includes('.reward-schedule-grid')],
   ['관리자 운영 목록', files.worker.includes('pendingSettlements') && files.app.includes('admin-ops-grid')],
+  ['최고·부관리자 권한 분리', files.worker.includes('PRIMARY_ADMIN_EMAIL') && files.worker.includes('requirePrimaryAdmin') && files.worker.includes('appointDeputy') && files.client.includes('appointDeputy') && files.app.includes('renderDeputyAdmin') && files.migration.includes("admin_role") && files.wrangler.includes('kpa100plus@gmail.com')],
   ['이용방법·신뢰안전 경로', files.app.includes("state.route === 'how'") && files.app.includes("state.route === 'trust'") && files.app.includes('function renderHow()') && files.app.includes('function renderTrustSafety()')],
   ['한글 폰트 우선순위', files.css.includes('"Malgun Gothic", "맑은 고딕"')],
   ['과도한 폰트 굵기 제거', !/font-weight:\s*(800|900)/.test(files.css)],
@@ -29,7 +32,7 @@ const checks = [
   ['모바일 입력 이탈 방지', files.app.includes('modalScrollY') && files.app.includes('field-counter') && files.app.includes('작성 기준')],
   ['모바일 모달 안전영역', files.css.includes('.modal-header, .modal-head') && files.css.includes('flex: 1 1 auto') && files.css.includes('env(safe-area-inset-bottom)')],
   ['초소형 화면 단일열', files.css.includes('.challenge-meta { grid-template-columns: minmax(0, 1fr); }') && files.css.includes('.profile-stat-grid, .trust-factor-grid { grid-template-columns: minmax(0, 1fr); }')],
-  ['캐시 버전 일치', files.html.includes('styles.css?v=15') && files.html.includes('live-app.js?v=15') && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v15")],
+  ['캐시 버전 일치', files.html.includes('styles.css?v=16') && files.html.includes('live-app.js?v=16') && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v16")],
   ['CSS 괄호', (files.css.match(/{/g) || []).length === (files.css.match(/}/g) || []).length],
 ];
 

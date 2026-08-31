@@ -106,6 +106,8 @@ pass('member-signup-role');
 
 expect(await request('/api/admin/overview'), 401, 'guest overview blocked', 'AUTH_REQUIRED');
 expect(await request('/api/admin/overview', { cookie: memberCookie }), 403, 'member overview blocked', 'ADMIN_REQUIRED');
+expect(await request(`/api/admin/members/${encodeURIComponent(memberId)}`), 401, 'guest member detail blocked', 'AUTH_REQUIRED');
+expect(await request(`/api/admin/members/${encodeURIComponent(memberId)}`, { cookie: memberCookie }), 403, 'member detail blocked', 'ADMIN_REQUIRED');
 expect(await request('/api/admin/deputies', { method: 'POST', cookie: memberCookie, body: { userId: memberId } }), 403, 'member appoint blocked', 'ADMIN_REQUIRED');
 expect(await request('/api/admin/strikes', { method: 'POST', cookie: memberCookie, body: {} }), 403, 'member strike blocked', 'ADMIN_REQUIRED');
 pass('guest-and-member-admin-blocked');
@@ -120,6 +122,18 @@ if (primaryOverview.payload.overview?.role !== 'primary' || !Array.isArray(prima
   throw new Error('primary overview lacks primary-only controls');
 }
 pass('primary-overview');
+
+const primaryMemberDetail = expect(await request(`/api/admin/members/${encodeURIComponent(memberId)}`, { cookie: primaryCookie }), 200, 'primary member detail');
+if (
+  primaryMemberDetail.payload.member?.email !== memberEmail
+  || primaryMemberDetail.payload.member?.displayName !== '권한검수 회원'
+  || !primaryMemberDetail.payload.member?.consent?.termsAcceptedAt
+  || primaryMemberDetail.payload.member?.passwordHash !== undefined
+  || primaryMemberDetail.payload.member?.passwordSalt !== undefined
+) {
+  throw new Error(`primary member detail response invalid: ${JSON.stringify(primaryMemberDetail.payload)}`);
+}
+pass('primary-member-detail');
 
 expect(await request('/api/admin/deputies', {
   method: 'POST', cookie: primaryCookie, body: { userId: bootstrap.payload.admin.id },
@@ -163,6 +177,9 @@ expect(await request(`/api/admin/deputies/${encodeURIComponent(memberId)}/revoke
 expect(await request('/api/admin/strikes', {
   method: 'POST', cookie: memberCookie, body: {},
 }), 403, 'deputy strike blocked', 'PRIMARY_ADMIN_REQUIRED');
+expect(await request(`/api/admin/members/${encodeURIComponent(memberId)}`, {
+  cookie: memberCookie,
+}), 403, 'deputy member detail blocked', 'PRIMARY_ADMIN_REQUIRED');
 pass('deputy-privileged-api-blocked');
 
 expect(await request(`/api/admin/deputies/${encodeURIComponent(memberId)}/revoke`, {
@@ -175,7 +192,7 @@ pass('deputy-revoked');
 
 const auditOverview = expect(await request('/api/admin/overview', { cookie: primaryCookie }), 200, 'primary audit overview');
 const actions = (auditOverview.payload.overview?.recentAudit || []).map((item) => item.action);
-for (const action of ['ADMIN_BOOTSTRAP', 'DEPUTY_ADMIN_APPOINT', 'DEPUTY_ADMIN_REVOKE']) {
+for (const action of ['ADMIN_BOOTSTRAP', 'ADMIN_MEMBER_DETAIL_VIEW', 'DEPUTY_ADMIN_APPOINT', 'DEPUTY_ADMIN_REVOKE']) {
   if (!actions.includes(action)) throw new Error(`missing audit action: ${action}`);
 }
 pass('role-audit-records');

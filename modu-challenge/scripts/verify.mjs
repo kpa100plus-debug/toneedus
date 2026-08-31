@@ -34,7 +34,7 @@ const checks = [
   ['모바일 입력 이탈 방지', files.app.includes('modalScrollY') && files.app.includes('field-counter') && files.app.includes('작성 기준')],
   ['모바일 모달 안전영역', files.css.includes('.modal-header, .modal-head') && files.css.includes('flex: 1 1 auto') && files.css.includes('env(safe-area-inset-bottom)')],
   ['초소형 화면 단일열', files.css.includes('.challenge-meta { grid-template-columns: minmax(0, 1fr); }') && files.css.includes('.profile-stat-grid, .trust-factor-grid { grid-template-columns: minmax(0, 1fr); }')],
-  ['캐시 버전 일치', files.html.includes('styles.css?v=17') && files.html.includes('live-app.js?v=17') && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v17")],
+  ['캐시 버전 일치', files.html.includes('styles.css?v=18') && files.html.includes('live-app.js?v=18') && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v18")],
   ['CSS 괄호', (files.css.match(/{/g) || []).length === (files.css.match(/}/g) || []).length],
 ];
 

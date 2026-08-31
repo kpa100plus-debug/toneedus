@@ -20,6 +20,7 @@ const checks = [
   ['LIVE 보상금순 자동교체', files.app.includes('hydrateLiveChallengeRotation') && files.app.includes("sortChallenges(state.challenges.filter") && files.app.includes("'reward'") && files.app.includes('data-live-challenge') && files.app.includes('modu-live-rank-index') && !files.app.includes("board.matches(':hover')")],
   ['LIVE 카드 이동·입력 정렬', files.css.includes('heroBoardFloat 20s') && files.css.includes('calc(-100vw + 720px)') && files.css.includes('background: transparent') && files.css.includes('.hero-board:hover') && files.app.includes('reward-schedule-grid') && files.css.includes('.reward-schedule-grid')],
   ['관리자 운영 목록', files.worker.includes('pendingSettlements') && files.app.includes('admin-ops-grid')],
+  ['이용방법·신뢰안전 경로', files.app.includes("state.route === 'how'") && files.app.includes("state.route === 'trust'") && files.app.includes('function renderHow()') && files.app.includes('function renderTrustSafety()')],
   ['한글 폰트 우선순위', files.css.includes('"Malgun Gothic", "맑은 고딕"')],
   ['과도한 폰트 굵기 제거', !/font-weight:\s*(800|900)/.test(files.css)],
   ['대표자 표시', files.html.includes('모두의 챌린지 대표이사: 최인란')],

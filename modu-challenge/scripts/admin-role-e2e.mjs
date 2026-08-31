@@ -96,6 +96,7 @@ const memberSignup = expect(await request('/api/auth/signup', {
   method: 'POST',
   body: {
     displayName: '권한검수 회원', email: memberEmail, accountType: 'individual',
+    phone: '01012345678', region: '서울', challengeIntent: 'both',
     ...memberMaterial, termsAccepted: true, privacyAccepted: true,
   },
 }), 201, 'member signup');

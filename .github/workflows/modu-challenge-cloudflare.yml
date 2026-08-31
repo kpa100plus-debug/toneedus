@@ -52,3 +52,27 @@ jobs:
 
       - name: Deploy existing Worker
         run: npx wrangler deploy
+
+      - name: Apply member authentication provider secrets
+        shell: bash
+        run: |
+          apply_secret() {
+            local worker_name="$1"
+            local secret_value="$2"
+            if [ -n "$secret_value" ]; then
+              printf '%s' "$secret_value" | npx wrangler secret put "$worker_name"
+            fi
+          }
+          apply_secret BREVO_API_KEY "$MODU_BREVO_API_KEY"
+          apply_secret BREVO_SENDER_EMAIL "$MODU_BREVO_SENDER_EMAIL"
+          apply_secret GOOGLE_OAUTH_CLIENT_ID "$MODU_GOOGLE_OAUTH_CLIENT_ID"
+          apply_secret GOOGLE_OAUTH_CLIENT_SECRET "$MODU_GOOGLE_OAUTH_CLIENT_SECRET"
+          apply_secret NAVER_OAUTH_CLIENT_ID "$MODU_NAVER_OAUTH_CLIENT_ID"
+          apply_secret NAVER_OAUTH_CLIENT_SECRET "$MODU_NAVER_OAUTH_CLIENT_SECRET"
+        env:
+          MODU_BREVO_API_KEY: ${{ secrets.MODU_BREVO_API_KEY }}
+          MODU_BREVO_SENDER_EMAIL: ${{ secrets.MODU_BREVO_SENDER_EMAIL }}
+          MODU_GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.MODU_GOOGLE_OAUTH_CLIENT_ID }}
+          MODU_GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.MODU_GOOGLE_OAUTH_CLIENT_SECRET }}
+          MODU_NAVER_OAUTH_CLIENT_ID: ${{ secrets.MODU_NAVER_OAUTH_CLIENT_ID }}
+          MODU_NAVER_OAUTH_CLIENT_SECRET: ${{ secrets.MODU_NAVER_OAUTH_CLIENT_SECRET }}

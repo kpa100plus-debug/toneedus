@@ -24,6 +24,7 @@ const checks = [
   ['관리자 운영 목록', files.worker.includes('pendingSettlements') && files.app.includes('admin-ops-grid')],
   ['최고관리자 회원 상세 조회', files.worker.includes('api\\/admin\\/members') && files.worker.includes('getAdminMemberDetail') && files.worker.includes('ADMIN_MEMBER_DETAIL_VIEW') && files.worker.includes('requirePrimaryAdmin(request, env)') && files.client.includes('adminMemberDetail') && files.app.includes('view-admin-member') && files.app.includes('openAdminMemberDetail')],
   ['확장 가입·인증·소셜 로그인', files.worker.includes('emailVerificationEnabled') && files.worker.includes('issueEmailVerification') && files.worker.includes('fetchOAuthProfile') && files.worker.includes('GOOGLE_OAUTH_CLIENT_ID') && files.worker.includes('NAVER_OAUTH_CLIENT_ID') && files.client.includes('verifyEmail') && files.app.includes('challengeIntent') && files.app.includes('oauth-login')],
+  ['필수 가입정보 검증', files.app.includes('confirmPassword') && files.app.includes('data-birth-year-digit') && files.app.includes('<option>전국</option>') && files.app.includes('value="female"') && files.app.includes('value="male"') && !files.app.includes('value="prefer_not"') && files.worker.includes("new Set(['female', 'male'])") && files.worker.includes('INVALID_BIRTH_YEAR') && files.worker.includes('INVALID_GENDER')],
   ['최고·부관리자 권한 분리', files.worker.includes('PRIMARY_ADMIN_EMAIL') && files.worker.includes('admin_roles') && files.worker.includes('requirePrimaryAdmin') && files.worker.includes('appointDeputy') && files.worker.includes("CREATE INDEX IF NOT EXISTS idx_admin_roles_role") && !files.worker.includes('await env.DB.exec(`') && files.client.includes('appointDeputy') && files.app.includes('renderDeputyAdmin') && files.migration.includes("admin_roles") && files.wrangler.includes('kpa100plus@gmail.com')],
   ['이용방법·신뢰안전 경로', files.app.includes("state.route === 'how'") && files.app.includes("state.route === 'trust'") && files.app.includes('function renderHow()') && files.app.includes('function renderTrustSafety()')],
   ['한글 폰트 우선순위', files.css.includes('"Malgun Gothic", "맑은 고딕"')],
@@ -34,7 +35,7 @@ const checks = [
   ['모바일 입력 이탈 방지', files.app.includes('modalScrollY') && files.app.includes('field-counter') && files.app.includes('작성 기준')],
   ['모바일 모달 안전영역', files.css.includes('.modal-header, .modal-head') && files.css.includes('flex: 1 1 auto') && files.css.includes('env(safe-area-inset-bottom)')],
   ['초소형 화면 단일열', files.css.includes('.challenge-meta { grid-template-columns: minmax(0, 1fr); }') && files.css.includes('.profile-stat-grid, .trust-factor-grid { grid-template-columns: minmax(0, 1fr); }')],
-  ['캐시 버전 일치', files.html.includes('styles.css?v=19') && files.html.includes('live-app.js?v=19') && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v19")],
+  ['캐시 버전 일치', files.html.includes('styles.css?v=20') && files.html.includes('live-app.js?v=20') && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v20")],
   ['CSS 괄호', (files.css.match(/{/g) || []).length === (files.css.match(/}/g) || []).length],
 ];
 

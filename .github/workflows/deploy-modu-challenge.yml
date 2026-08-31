@@ -40,3 +40,15 @@ jobs:
         run: npm run deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      - name: Apply administrator recovery secret
+        shell: bash
+        run: |
+          if [ -n "$MODU_PRIMARY_RECOVERY_TOKEN" ]; then
+            printf '%s' "$MODU_PRIMARY_RECOVERY_TOKEN" | npx wrangler secret put PRIMARY_ADMIN_RECOVERY_TOKEN
+          else
+            echo 'Administrator recovery secret is not configured yet.'
+          fi
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          MODU_PRIMARY_RECOVERY_TOKEN: ${{ secrets.MODU_PRIMARY_RECOVERY_TOKEN }}

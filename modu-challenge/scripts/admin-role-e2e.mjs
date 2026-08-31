@@ -3,6 +3,7 @@ import { randomUUID, webcrypto } from 'node:crypto';
 const origin = process.env.MODU_ORIGIN || 'http://127.0.0.1:8790';
 const primaryEmail = 'kpa100plus@gmail.com';
 const bootstrapToken = process.env.ADMIN_BOOTSTRAP_TOKEN || 'local-admin-role-e2e-token';
+const recoveryToken = process.env.PRIMARY_ADMIN_RECOVERY_TOKEN || 'local-primary-recovery-token';
 const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
 const primaryPassword = `Primary${suffix}9`;
 const memberPassword = `Member${suffix}9`;
@@ -65,10 +66,22 @@ const bootstrap = expect(await request('/api/internal/bootstrap-admin', {
 }), 201, 'primary bootstrap');
 pass('primary-bootstrap');
 
+const recoveredPassword = `Recovered${suffix}9`;
+const recoveredMaterial = await passwordMaterial(recoveredPassword);
+expect(await request('/api/auth/recover-primary', {
+  method: 'POST',
+  body: { email: primaryEmail, recoveryToken: 'incorrect-token', ...recoveredMaterial },
+}), 403, 'primary recovery rejects invalid token', 'RECOVERY_DENIED');
+expect(await request('/api/auth/recover-primary', {
+  method: 'POST',
+  body: { email: primaryEmail, recoveryToken, ...recoveredMaterial },
+}), 200, 'primary recovery');
+pass('primary-recovery');
+
 const loginOptions = expect(await request('/api/auth/login-options', {
   method: 'POST', body: { email: primaryEmail },
 }), 200, 'primary login options');
-const primaryLoginMaterial = await passwordMaterial(primaryPassword, loginOptions.payload.salt);
+const primaryLoginMaterial = await passwordMaterial(recoveredPassword, loginOptions.payload.salt);
 const primaryLogin = expect(await request('/api/auth/login', {
   method: 'POST', body: { email: primaryEmail, passwordVerifier: primaryLoginMaterial.passwordVerifier },
 }), 200, 'primary login');

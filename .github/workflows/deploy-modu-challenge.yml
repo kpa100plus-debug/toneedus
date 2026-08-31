@@ -1,0 +1,42 @@
+name: Deploy Modu Challenge
+
+on:
+  push:
+    branches:
+      - modu-challenge-app
+    paths:
+      - 'modu-challenge/**'
+      - '.github/workflows/deploy-modu-challenge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modu-challenge-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: modu-challenge
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: modu-challenge/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify, migrate, and deploy
+        run: npm run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

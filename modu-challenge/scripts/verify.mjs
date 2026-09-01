@@ -34,8 +34,11 @@ const checks = [
   ['모바일 화면 잘림 방지', files.css.includes('overflow-x: clip') && files.css.includes('100dvh') && files.css.includes('body.modal-open')],
   ['모바일 입력 이탈 방지', files.app.includes('modalScrollY') && files.app.includes('field-counter') && files.app.includes('작성 기준')],
   ['모바일 모달 안전영역', files.css.includes('.modal-header, .modal-head') && files.css.includes('flex: 1 1 auto') && files.css.includes('env(safe-area-inset-bottom)')],
+  ['초기화 API 단일화', files.worker.includes("path === '/api/bootstrap'") && files.worker.includes('publicBootstrap') && files.client.includes("bootstrap: () => api('/api/bootstrap')") && files.app.includes('loadBootstrapData')],
+  ['취소 챌린지 공개 제외', files.worker.includes("else where.push(\"c.status <> 'CANCELLED'\")")],
+  ['공개 응답 캐시 최적화', files.worker.includes('stale-while-revalidate=30') && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('stale-while-revalidate=604800')],
   ['초소형 화면 단일열', files.css.includes('.challenge-meta { grid-template-columns: minmax(0, 1fr); }') && files.css.includes('.profile-stat-grid, .trust-factor-grid { grid-template-columns: minmax(0, 1fr); }')],
-  ['캐시 버전 일치', files.html.includes('styles.css?v=21') && files.html.includes('live-app.js?v=21') && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v21")],
+  ['캐시 버전 일치', files.html.includes('styles.css?v=22') && files.html.includes('live-app.js?v=22') && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v22")],
   ['웹앱 설치 안내', files.html.includes('app-install-banner') && files.app.includes('beforeinstallprompt') && files.app.includes('isIOSSafari')],
   ['CSS 괄호', (files.css.match(/{/g) || []).length === (files.css.match(/}/g) || []).length],
 ];

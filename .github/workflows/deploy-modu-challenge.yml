@@ -1,19 +1,13 @@
-name: Deploy Modu Challenge
+name: Manual recovery deploy for MODU Challenge
 
 on:
-  push:
-    branches:
-      - modu-challenge-app
-    paths:
-      - 'modu-challenge/**'
-      - '.github/workflows/deploy-modu-challenge.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: modu-challenge-production-deploy
+  group: modu-challenge-production
   cancel-in-progress: false
 
 jobs:

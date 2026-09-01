@@ -1,13 +1,17 @@
 # MODU CHALLENGE 배포 상태
 
-기준일: 2026-08-29  
-버전: V0.5.4
+기준일: 2026-09-01
+버전: V0.5.5
+참조코드: `REF-MODU-PERFORMANCE-OPTIMIZE-DEPLOY-20260901-01`
 
 ## Cloudflare 운영 자원
 
 - 서비스: https://modu-challenge.yeit.workers.dev
 - 관리자 페이지: https://modu-challenge.yeit.workers.dev/#/admin
 - 상태 점검: https://modu-challenge.yeit.workers.dev/api/health
+- 공개 초기화 API: https://modu-challenge.yeit.workers.dev/api/bootstrap
+- 원본 저장소: https://github.com/kpa100plus-debug/toneedus/tree/modu-challenge-app/modu-challenge
+- 자동배포 상태: https://github.com/kpa100plus-debug/toneedus/actions/workflows/modu-challenge-cloudflare.yml
 - Worker: `modu-challenge`
 - Worker 버전: `186e9b36-7a44-4f4b-9499-da69afd383f5`
 - D1: `modu-challenge-db`
@@ -27,6 +31,11 @@
 - 관리자 Overview 및 원격 D1 최고관리자 별도 프로비저닝
 - 공개 소스에서 활성 관리자 해시·Salt·로그인 정보 제거
 - PC·모바일 PWA 및 스테이징 검색색인 차단
+- 초기 설정·상태·챌린지 API 단일화와 회원 확인 병렬 처리
+- 취소된 E2E 자동검수 챌린지 기본 공개 목록 제외
+- PWA 화면·정적 자산 캐시 우선 및 백그라운드 갱신
+- 공개 챌린지 정렬용 D1 부분 인덱스 추가
+- 중복 자동배포 제거 및 기본 배포 워크플로 단일화
 
 ## 검수 결과
 

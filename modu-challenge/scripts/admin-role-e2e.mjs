@@ -62,7 +62,7 @@ const primaryMaterial = await passwordMaterial(primaryPassword);
 const bootstrap = expect(await request('/api/internal/bootstrap-admin', {
   method: 'POST',
   headers: { 'X-Bootstrap-Token': bootstrapToken },
-  body: { email: primaryEmail, displayName: 'juyoungkim', ...primaryMaterial },
+  body: { email: primaryEmail, displayName: 'SUPER ADMIN', ...primaryMaterial },
 }), 201, 'primary bootstrap');
 pass('primary-bootstrap');
 
@@ -86,7 +86,7 @@ const primaryLogin = expect(await request('/api/auth/login', {
   method: 'POST', body: { email: primaryEmail, passwordVerifier: primaryLoginMaterial.passwordVerifier },
 }), 200, 'primary login');
 const primaryCookie = primaryLogin.cookie;
-if (primaryLogin.payload.user?.adminRole !== 'primary' || primaryLogin.payload.user?.displayName !== 'juyoungkim') {
+if (primaryLogin.payload.user?.adminRole !== 'primary' || primaryLogin.payload.user?.displayName !== 'SUPER ADMIN') {
   throw new Error(`primary login role mismatch: ${JSON.stringify(primaryLogin.payload)}`);
 }
 pass('primary-login-role');

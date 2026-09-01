@@ -2,7 +2,7 @@ import { readFile, writeFile, mkdir, readdir } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 
-const EXPECTED_SHA256 = "99ee2f46ab0a13cb2b63cd217a4b905713091b2fa1316380dd2d90298ae28235";
+const EXPECTED_SHA256 = "9f9ce78c2cfc849005bb3b5b24b33ffe1d3490b12351425ed23bc20ff6efd575";
 const EXPECTED_FILE_COUNT = 17;
 const BINARY_PATHS = new Set(["public/assets/modu-share-preview.jpg", "public/assets/modu-young-challengers.webp"]);
 const root = new URL("../", import.meta.url);
@@ -51,7 +51,7 @@ const setupPage = `<!doctype html>
   <main class="card">
     <span class="badge">ISEA GROUP · 운영 설정 완료</span>
     <h1>최고관리자 계정이 준비되었습니다</h1>
-    <p>현재 Cloudflare D1에 최고관리자 계정이 별도로 설정되어 있습니다. 공개 표시명은 <strong>juyoungkim</strong>입니다.</p>
+    <p>현재 Cloudflare D1에 최고관리자 계정이 별도로 설정되어 있습니다. 공개 표시명은 <strong>SUPER ADMIN</strong>입니다.</p>
     <div class="notice"><strong>보안 안내</strong><br>관리자 로그인 정보와 활성 검증값은 공개 소스에 포함되지 않습니다.</div>
     <a class="btn" href="/">서비스 홈에서 로그인</a>
     <div class="footer">© 2026 ISEA GROUP. All Rights Reserved.</div>

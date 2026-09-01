@@ -38,7 +38,7 @@ const checks = [
   ['취소 챌린지 공개 제외', files.worker.includes("else where.push(\"c.status <> 'CANCELLED'\")")],
   ['공개 응답 캐시 최적화', files.worker.includes('stale-while-revalidate=30') && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('stale-while-revalidate=604800')],
   ['초소형 화면 단일열', files.css.includes('.challenge-meta { grid-template-columns: minmax(0, 1fr); }') && files.css.includes('.profile-stat-grid, .trust-factor-grid { grid-template-columns: minmax(0, 1fr); }')],
-  ['캐시 버전 일치', files.html.includes('styles.css?v=22') && files.html.includes('live-app.js?v=22') && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v22")],
+  ['캐시 버전 일치', files.html.includes('styles.css?v=23') && files.html.includes('live-app.js?v=23') && files.app.includes("api-client.js?v=23") && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v23") && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('/sw.js\n  Cache-Control: no-cache')],
   ['웹앱 설치 안내', files.html.includes('app-install-banner') && files.app.includes('beforeinstallprompt') && files.app.includes('isIOSSafari')],
   ['CSS 괄호', (files.css.match(/{/g) || []).length === (files.css.match(/}/g) || []).length],
 ];

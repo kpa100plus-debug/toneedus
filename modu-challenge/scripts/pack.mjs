@@ -5,6 +5,7 @@ import { readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 const runtimePaths = [
   'migrations/0001_init.sql',
   'migrations/0002_admin_roles.sql',
+  'migrations/0008_challenge_moderation.sql',
   'public/_headers',
   'public/assets/api-client.js',
   'public/assets/business-rules.js',

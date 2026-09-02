@@ -8,6 +8,7 @@ const files = {
   html: await readFile(new URL('../public/index.html', import.meta.url), 'utf8'),
   migration: await readFile(new URL('../migrations/0002_admin_roles.sql', import.meta.url), 'utf8'),
   recoveryMigration: await readFile(new URL('../migrations/0007_member_account_recovery.sql', import.meta.url), 'utf8'),
+  moderationMigration: await readFile(new URL('../migrations/0008_challenge_moderation.sql', import.meta.url), 'utf8'),
   wrangler: await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8'),
 };
 
@@ -26,6 +27,7 @@ const checks = [
   ['LIVE 보상금순 자동교체', files.app.includes('hydrateLiveChallengeRotation') && files.app.includes("sortChallenges(state.challenges.filter") && files.app.includes("'reward'") && files.app.includes('data-live-challenge') && files.app.includes('modu-live-rank-index') && !files.app.includes("board.matches(':hover')")],
   ['LIVE 카드 이동·입력 정렬', files.css.includes('heroBoardFloat 20s') && files.css.includes('calc(-100vw + 720px)') && files.css.includes('background: transparent') && files.css.includes('.hero-board:hover') && files.app.includes('reward-schedule-grid') && files.css.includes('.reward-schedule-grid')],
   ['관리자 운영 목록', files.worker.includes('pendingSettlements') && files.app.includes('admin-ops-grid')],
+  ['챌린지 사전검토·승인', files.worker.includes('analyzeChallengeForModeration') && files.worker.includes('CHALLENGE_MODERATION_PENDING') && files.worker.includes('approveModerationChallenge') && files.worker.includes('requirePrimaryAdmin(request, env)') && files.client.includes('approveModerationChallenge') && files.app.includes('관리자 검토 대기') && files.moderationMigration.includes('moderation_reasons_json')],
   ['최고관리자 회원 상세 조회', files.worker.includes('api\\/admin\\/members') && files.worker.includes('getAdminMemberDetail') && files.worker.includes('ADMIN_MEMBER_DETAIL_VIEW') && files.worker.includes('requirePrimaryAdmin(request, env)') && files.client.includes('adminMemberDetail') && files.app.includes('view-admin-member') && files.app.includes('openAdminMemberDetail')],
   ['확장 가입·인증·소셜 로그인', files.worker.includes('emailVerificationEnabled') && files.worker.includes('issueEmailVerification') && files.worker.includes('fetchOAuthProfile') && files.worker.includes('GOOGLE_OAUTH_CLIENT_ID') && files.worker.includes('NAVER_OAUTH_CLIENT_ID') && files.worker.includes('소셜 계정 이메일로 먼저 회원가입과 이메일 인증을 완료해주세요.') && files.client.includes('verifyEmail') && files.app.includes('challengeIntent') && files.app.includes('oauth-login')],
   ['필수 가입정보 검증', files.app.includes('confirmPassword') && files.app.includes('data-birth-year-digit') && files.app.includes('signup-demographic-grid') && files.app.includes('<option>전국</option>') && files.app.includes('value="female"') && files.app.includes('value="male"') && !files.app.includes('value="prefer_not"') && files.worker.includes("new Set(['female', 'male'])") && files.worker.includes('INVALID_BIRTH_YEAR') && files.worker.includes('INVALID_GENDER')],
@@ -45,7 +47,7 @@ const checks = [
   ['취소 챌린지 공개 제외', files.worker.includes("else where.push(\"c.status <> 'CANCELLED'\")")],
   ['공개 응답 캐시 최적화', files.worker.includes('stale-while-revalidate=30') && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('stale-while-revalidate=604800')],
   ['초소형 화면 단일열', files.css.includes('.challenge-meta { grid-template-columns: minmax(0, 1fr); }') && files.css.includes('.profile-stat-grid, .trust-factor-grid { grid-template-columns: minmax(0, 1fr); }')],
-  ['캐시 버전 일치', files.html.includes('styles.css?v=26') && files.html.includes('live-app.js?v=26') && files.app.includes("api-client.js?v=26") && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v26") && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('/sw.js\n  Cache-Control: no-cache')],
+  ['캐시 버전 일치', files.html.includes('styles.css?v=27') && files.html.includes('live-app.js?v=27') && files.app.includes("api-client.js?v=27") && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v27") && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('/sw.js\n  Cache-Control: no-cache')],
   ['웹앱 설치 안내', files.html.includes('app-install-banner') && files.app.includes('beforeinstallprompt') && files.app.includes('isIOSSafari')],
   ['CSS 괄호', (files.css.match(/{/g) || []).length === (files.css.match(/}/g) || []).length],
 ];

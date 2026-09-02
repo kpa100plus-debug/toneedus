@@ -86,3 +86,7 @@ jobs:
           FROM challenges WHERE id = 'chl_sample_intro_20260902';
           SQL
           npx wrangler d1 execute DB --remote --file /tmp/modu-private-sample-draft.sql
+
+      - name: Verify private draft state
+        run: |
+          npx wrangler d1 execute DB --remote --command "SELECT id, title, status, visibility, funding_status, reward_amount, deadline FROM challenges WHERE id = 'chl_sample_intro_20260902' LIMIT 1;"

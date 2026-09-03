@@ -21,6 +21,7 @@ const checks = [
   ['소셜 로그인 모바일 복귀', files.worker.includes('oauthCompletionPage') && files.worker.includes('Safari can reject a redirect response') && files.app.includes("oauth-login")],
   ['취소 완료 화면 유지', files.app.includes('navigate(\'dashboard\')') && files.app.includes('renderModalRequestError') && files.app.includes('retry-challenge-detail')],
   ['간편 챌린지 자동작성', files.app.includes('renderEasyCreateWizard') && files.app.includes('generateChallengeDraft') && files.app.includes('wizardPurpose') && files.css.includes('.create-mode-switch')],
+  ['TEASER 자동 양식 작성', files.app.includes('fill-teaser-template') && files.app.includes('자동 양식 채우기') && files.app.includes('실제 경험·수행 방법에 맞게 내용을 수정하세요.')],
   ['성공·증빙 체크형 작성', files.app.includes('renderCriteriaCheckBuilder') && files.app.includes('updateCriteriaFromChecks') && files.app.includes('successCheck') && files.app.includes('evidenceCheck') && files.css.includes('.criteria-option-grid')],
   ['보상금 용어 한글화', files.app.includes('보상금 준비 시점') && !files.app.includes('<label>Funding Trigger')],
   ['메인 LIVE 시각효과', files.app.includes('live-pill"><i>') && files.css.includes('@keyframes liveDotBlink') && files.css.includes('prefers-reduced-motion')],
@@ -47,7 +48,7 @@ const checks = [
   ['취소 챌린지 공개 제외', files.worker.includes("else where.push(\"c.status <> 'CANCELLED'\")")],
   ['공개 응답 캐시 최적화', files.worker.includes('stale-while-revalidate=30') && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('stale-while-revalidate=604800')],
   ['초소형 화면 단일열', files.css.includes('.challenge-meta { grid-template-columns: minmax(0, 1fr); }') && files.css.includes('.profile-stat-grid, .trust-factor-grid { grid-template-columns: minmax(0, 1fr); }')],
-  ['캐시 버전 일치', files.html.includes('styles.css?v=27') && files.html.includes('live-app.js?v=27') && files.app.includes("api-client.js?v=27") && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v27") && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('/sw.js\n  Cache-Control: no-cache')],
+  ['캐시 버전 일치', files.html.includes('styles.css?v=28') && files.html.includes('live-app.js?v=28') && files.app.includes("api-client.js?v=28") && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v28") && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('/sw.js\n  Cache-Control: no-cache')],
   ['웹앱 설치 안내', files.html.includes('app-install-banner') && files.app.includes('beforeinstallprompt') && files.app.includes('isIOSSafari')],
   ['CSS 괄호', (files.css.match(/{/g) || []).length === (files.css.match(/}/g) || []).length],
 ];

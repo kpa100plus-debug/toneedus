@@ -10,6 +10,7 @@ const files = {
   migration: await readFile(new URL('../migrations/0002_admin_roles.sql', import.meta.url), 'utf8'),
   recoveryMigration: await readFile(new URL('../migrations/0007_member_account_recovery.sql', import.meta.url), 'utf8'),
   moderationMigration: await readFile(new URL('../migrations/0008_challenge_moderation.sql', import.meta.url), 'utf8'),
+  pushMigration: await readFile(new URL('../migrations/0009_push_and_deputy_review.sql', import.meta.url), 'utf8'),
   wrangler: await readFile(new URL('../wrangler.jsonc', import.meta.url), 'utf8'),
 };
 
@@ -17,6 +18,8 @@ const checks = [
   ['공개 프로필 동작', files.app.includes("view-public-profile") && files.app.includes('openPublicProfile')],
   ['TRUST 상세 동작', files.app.includes("view-trust-history") && files.app.includes('openTrustHistory')],
   ['알림 읽음 API', files.worker.includes('/notifications\\/([^/]+)\\/read') && files.client.includes('markNotificationRead')],
+  ['선택형 PWA 푸시 설정', files.worker.includes('savePushSubscription') && files.worker.includes('PUSH_NOT_CONFIGURED') && files.client.includes('pushSettings') && files.app.includes('enablePushNotifications') && files.sw.includes("addEventListener('push'") && files.pushMigration.includes('push_subscriptions')],
+  ['부관리자 검토 요청 분리', files.worker.includes('addModerationNote') && files.worker.includes('requireAdmin(request, env)') && files.worker.includes('requirePrimaryAdmin(request, env)') && files.client.includes('addModerationNote') && files.app.includes('부관리자 검토 의견') && files.pushMigration.includes('moderation_review_notes')],
   ['비밀번호 변경 보안', files.worker.includes('/api/auth/change-password') && files.worker.includes('otherSessionsSignedOut') && files.client.includes('changePassword') && files.app.includes('change-password-form') && files.app.includes('submitPasswordChange')],
   ['회원 아이디·비밀번호 복구', files.worker.includes('/api/auth/find-email') && files.worker.includes('/api/auth/request-password-reset') && files.worker.includes('/api/auth/reset-password') && files.worker.includes('issuePasswordReset') && files.client.includes('findEmail') && files.client.includes('resetPassword') && files.app.includes('openEmailFinder') && files.app.includes('renderPasswordReset') && files.recoveryMigration.includes('password_resets')],
   ['소셜 로그인 모바일 복귀', files.worker.includes('oauthCompletionPage') && files.worker.includes('Safari can reject a redirect response') && files.app.includes("oauth-login")],
@@ -49,7 +52,7 @@ const checks = [
   ['취소 챌린지 공개 제외', files.worker.includes("else where.push(\"c.status <> 'CANCELLED'\")")],
   ['공개 응답 캐시 최적화', files.worker.includes('stale-while-revalidate=30') && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('stale-while-revalidate=604800')],
   ['초소형 화면 단일열', files.css.includes('.challenge-meta { grid-template-columns: minmax(0, 1fr); }') && files.css.includes('.profile-stat-grid, .trust-factor-grid { grid-template-columns: minmax(0, 1fr); }')],
-  ['캐시 버전 일치', files.html.includes('styles.css?v=29') && files.html.includes('live-app.js?v=29') && files.app.includes("api-client.js?v=29") && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v29") && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('/sw.js\n  Cache-Control: no-cache')],
+  ['캐시 버전 일치', files.html.includes('styles.css?v=30') && files.html.includes('live-app.js?v=30') && files.app.includes("api-client.js?v=30") && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v30") && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('/sw.js\n  Cache-Control: no-cache')],
   ['iPhone OAuth·계정찾기·취소 안정화', files.sw.includes("url.pathname.startsWith('/api/')") && files.app.includes('startSocialLogin') && files.app.includes('이메일 찾기') && files.app.includes('비밀번호 찾기') && files.app.includes("navigate('dashboard')")],
   ['웹앱 설치 안내', files.html.includes('app-install-banner') && files.app.includes('beforeinstallprompt') && files.app.includes('isIOSSafari')],
   ['CSS 괄호', (files.css.match(/{/g) || []).length === (files.css.match(/}/g) || []).length],

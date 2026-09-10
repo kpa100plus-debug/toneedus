@@ -1,3 +1,4 @@
+# Initial verification run after CLOUDFLARE_API_TOKEN configuration.
 name: Deploy Modu Challenge
 
 on:

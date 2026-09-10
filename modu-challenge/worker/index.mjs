@@ -834,6 +834,14 @@ async function ensurePushStorage(env) {
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id, updated_at DESC)').run();
 }
 
+async function ensurePushDeliveryStorage(env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS push_delivery_logs (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL, status TEXT NOT NULL, reason_code TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  )`).run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_push_delivery_logs_created ON push_delivery_logs(created_at DESC)').run();
+}
+
 async function ensurePushAnnouncementStorage(env) {
   await env.DB.prepare(`CREATE TABLE IF NOT EXISTS push_announcement_logs (
     id TEXT PRIMARY KEY,
@@ -909,6 +917,7 @@ async function sendAdminPushAnnouncement(request, env) {
 async function sendPushNotification(env, userId, { title, body, route = 'notifications', challengeId = null }) {
   if (!userId || !pushConfigured(env)) return false;
   await ensurePushStorage(env);
+  await ensurePushDeliveryStorage(env);
   const subscriptions = await env.DB.prepare(
     'SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ? ORDER BY updated_at DESC LIMIT 5',
   ).bind(userId).all();
@@ -928,11 +937,16 @@ async function sendPushNotification(env, userId, { title, body, route = 'notific
       const response = await deliverWebPush(subscription, payload, env);
       if (response.ok || response.status === 201 || response.status === 202) {
         delivered = true;
+        await env.DB.prepare('INSERT INTO push_delivery_logs (id, user_id, status) VALUES (?, ?, ?)').bind(makeId('pdl'), userId, 'accepted').run();
       } else if (response.status === 404 || response.status === 410) {
         await env.DB.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(subscription.endpoint).run();
+        await env.DB.prepare('INSERT INTO push_delivery_logs (id, user_id, status, reason_code) VALUES (?, ?, ?, ?)').bind(makeId('pdl'), userId, 'expired', `HTTP_${response.status}`).run();
+      } else {
+        await env.DB.prepare('INSERT INTO push_delivery_logs (id, user_id, status, reason_code) VALUES (?, ?, ?, ?)').bind(makeId('pdl'), userId, 'failed', `HTTP_${response.status}`).run();
       }
     } catch (error) {
       console.warn('Push delivery failed', String(error).slice(0, 160));
+      await env.DB.prepare('INSERT INTO push_delivery_logs (id, user_id, status, reason_code) VALUES (?, ?, ?, ?)').bind(makeId('pdl'), userId, 'failed', 'NETWORK_ERROR').run();
     }
   }
   return delivered;
@@ -1967,7 +1981,9 @@ async function adminOverview(request, env) {
   const role = adminRole(admin);
 
   await ensureModerationNoteStorage(env);
-  const [users, challenges, money, disputes, recent, recentUsers, openDisputes, pendingSettlements, staffCandidates, staffMembers, draftChallenges, moderationChallenges] = await env.DB.batch([
+  await ensurePushStorage(env);
+  await ensurePushDeliveryStorage(env);
+  const [users, challenges, money, disputes, recent, recentUsers, openDisputes, pendingSettlements, staffCandidates, staffMembers, draftChallenges, moderationChallenges, pushSummary, pushDelivery] = await env.DB.batch([
     env.DB.prepare(`SELECT COUNT(*) total, SUM(status = 'suspended') suspended, SUM(strike_count > 0) with_strikes FROM users`),
     env.DB.prepare(`SELECT COUNT(*) total, SUM(status = 'DRAFT') draft, SUM(status = 'OPEN') open, SUM(status = 'SUCCESS') success, SUM(status = 'DISPUTED') disputed FROM challenges`),
     env.DB.prepare(`SELECT COALESCE(SUM(platform_fee), 0) platform_revenue, COALESCE(SUM(solver_payout), 0) solver_payouts FROM settlements WHERE status = 'PAID'`),
@@ -1994,6 +2010,11 @@ async function adminOverview(request, env) {
       (SELECT requested_approval_at FROM moderation_review_notes n WHERE n.challenge_id = challenges.id AND n.requested_approval_at IS NOT NULL ORDER BY n.created_at DESC LIMIT 1) AS requested_approval_at
       FROM challenges WHERE status = 'REVIEW'
       ORDER BY created_at ASC LIMIT 30`),
+    env.DB.prepare(`SELECT (SELECT COUNT(*) FROM push_subscriptions) subscribed,
+      (SELECT COUNT(*) FROM push_delivery_logs WHERE status = 'accepted' AND created_at >= datetime('now', '-7 days')) accepted,
+      (SELECT COUNT(*) FROM push_delivery_logs WHERE status IN ('failed','expired') AND created_at >= datetime('now', '-7 days')) failed`),
+    env.DB.prepare(`SELECT substr(user_id, 1, 8) user_ref, status, COALESCE(reason_code, '') reason_code, created_at
+      FROM push_delivery_logs ORDER BY created_at DESC LIMIT 12`),
   ]);
 
   const isPrimary = role === 'primary';
@@ -2015,6 +2036,7 @@ async function adminOverview(request, env) {
       })),
       staffCandidates: isPrimary ? (staffCandidates.results || []) : [],
       staffMembers: isPrimary ? (staffMembers.results || []) : [],
+      pushAudit: isPrimary ? { summary: pushSummary.results?.[0] || {}, recent: pushDelivery.results || [] } : null,
     },
   });
 }

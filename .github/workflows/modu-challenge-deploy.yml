@@ -1,4 +1,3 @@
-# Initial verification run after CLOUDFLARE_API_TOKEN configuration.
 name: Deploy Modu Challenge
 
 on:
@@ -14,7 +13,6 @@ permissions:
 
 jobs:
   deploy:
-    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
     runs-on: ubuntu-latest
     defaults:
       run:

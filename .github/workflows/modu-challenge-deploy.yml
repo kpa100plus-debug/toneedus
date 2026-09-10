@@ -30,4 +30,18 @@ jobs:
       - run: npm ci
       - run: npm run prepare:source
       - run: npm run test
+      - name: Configure PWA push keys once
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing="$(npx wrangler secret list --json)"
+          if printf '%s' "$existing" | grep -q 'VAPID_PUBLIC_KEY' && printf '%s' "$existing" | grep -q 'VAPID_PRIVATE_KEY'; then
+            echo "PWA push keys are already configured."
+            exit 0
+          fi
+          node scripts/generate-vapid.mjs .vapid.json
+          trap 'rm -f .vapid.json' EXIT
+          node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('.vapid.json', 'utf8')).publicKey)" | npx wrangler secret put VAPID_PUBLIC_KEY
+          node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('.vapid.json', 'utf8')).privateKey)" | npx wrangler secret put VAPID_PRIVATE_KEY
+          echo "PWA push keys configured."
       - run: npm run deploy

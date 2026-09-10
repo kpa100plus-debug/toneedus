@@ -28,5 +28,6 @@ jobs:
           cache: npm
           cache-dependency-path: modu-challenge/package-lock.json
       - run: npm ci
+      - run: npm run prepare:source
       - run: npm run test
       - run: npm run deploy

@@ -34,7 +34,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          existing="$(npx wrangler secret list --json)"
+          existing="$(npx wrangler secret list)"
           if printf '%s' "$existing" | grep -q 'VAPID_PUBLIC_KEY' && printf '%s' "$existing" | grep -q 'VAPID_PRIVATE_KEY'; then
             echo "PWA push keys are already configured."
             exit 0

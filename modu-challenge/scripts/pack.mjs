@@ -8,6 +8,7 @@ const runtimePaths = [
   'migrations/0008_challenge_moderation.sql',
   'migrations/0009_push_and_deputy_review.sql',
   'migrations/0010_challenge_idempotency.sql',
+  'migrations/0011_hide_confirmed_duplicate_challenges.sql',
   'public/_headers',
   'public/assets/api-client.js',
   'public/assets/business-rules.js',

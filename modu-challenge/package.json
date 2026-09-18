@@ -1,6 +1,6 @@
 {
   "name": "modu-challenge",
-  "version": "0.5.8",
+  "version": "0.5.9",
   "private": true,
   "type": "module",
   "description": "모두의 챌린지 - 범용 성과형 챌린지 마켓플레이스 WEB 운영형 베타",
@@ -13,14 +13,15 @@
     "demo:build": "node scripts/build-demo-catalog.mjs",
     "demo:seed:remote": "npm run demo:build && wrangler d1 execute DB --remote --file=scripts/demo-catalog.sql",
     "demo:clear:remote": "wrangler d1 execute DB --remote --file=scripts/demo-clear.sql",
-    "test": "node scripts/verify.mjs",
+    "test": "node scripts/verify.mjs && node scripts/test-regressions.mjs",
     "test:admin-roles": "node scripts/admin-role-e2e.mjs",
     "test:live:e2e": "node scripts/live-e2e.mjs",
     "test:live:clear": "wrangler d1 execute DB --remote --file=scripts/live-e2e-clear.sql",
-    "deploy": "npm run prepare:source && wrangler d1 migrations apply DB --remote && wrangler deploy",
+    "deploy": "npm run prepare:source && node scripts/stamp-build.mjs && wrangler d1 migrations apply DB --remote && wrangler deploy",
     "dev": "npm run prepare:source && wrangler dev --local --persist-to=.wrangler/state"
   },
   "devDependencies": {
+    "jsdom": "^26.1.0",
     "wrangler": "4.126.0"
   }
 }

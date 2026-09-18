@@ -47,6 +47,11 @@ jobs:
       - name: Restore and verify bundled source
         run: npm run prepare:source
 
+      - name: Verify behavior and stamp source version
+        run: |
+          npm test
+          node scripts/stamp-build.mjs
+
       - name: Apply pending D1 migrations
         run: npx wrangler d1 migrations apply DB --remote
 

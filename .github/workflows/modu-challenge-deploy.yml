@@ -1,12 +1,11 @@
 name: Deploy Modu Challenge
 
 on:
-  push:
-    branches: [modu-challenge-app]
-    paths:
-      - "modu-challenge/**"
-      - ".github/workflows/modu-challenge-deploy.yml"
   workflow_dispatch:
+
+concurrency:
+  group: modu-challenge-production
+  cancel-in-progress: false
 
 permissions:
   contents: read

@@ -1,3 +1,4 @@
+import { testSimulations } from './simulation-regressions.mjs';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -218,6 +219,8 @@ for(let i=0;i<2;i++)assert.equal((await req('/api/internal/payout/confirm',payou
 assert.equal(sql.prepare("SELECT count(*) n FROM notifications WHERE resource_id=? AND type='PAYOUT_PAID'").get(life).n,1);
 pass('verified simulated payout is idempotent and cannot precede review');
 
+const approvedSimulation=await testSimulations({req,sql,ownerCookie:b.cookie,otherCookie:os.cookie,sourceId:cid,pass});
+
 // DOM regression: run real delegated handlers against real DOM (no browser globals/auth).
 const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const dom=new JSDOM(html,{url:'https://test.invalid/',runScripts:'outside-only',pretendToBeVisual:true});const win=dom.window;win.scrollTo=()=>{};win.HTMLElement.prototype.scrollIntoView=()=>{};win.matchMedia=()=>({matches:false});
@@ -292,7 +295,7 @@ assert.equal(win.document.querySelector('#main .candidate-confirmed').textConten
 assert.ok(win.document.querySelector('#main [data-action=view-my-teaser]').textContent.includes('후보선정 완료'));
 assert.ok(win.document.querySelector('#main .application-links').textContent.includes('진행상황'));pass('activity cards separate metadata, selected badge, full-width headline and actions');
 vm.runInContext("main.innerHTML=renderProgressNotice(readFixture.challenge,{isOwner:true})+renderCandidateCard('read-test',{...teaserFixture.teaser,status:'SHORTLISTED'});",context);
-assert.match(win.document.querySelector('#main .workflow-notice').textContent,/결제·지급 연동 준비 중/);
+assert.match(win.document.querySelector('#main .workflow-notice').textContent,/결제·지급 연동.*준비 중/);
 assert.equal(win.document.querySelector('#main [data-action=select-finalist]').disabled,true);
 assert.equal(win.document.querySelector('#main [data-action=shortlist]').disabled,true);pass('blocked finalist explains why; shortlist completion is prominent');
 for(const [status,role,action] of [['SHORTLISTED','isOwner','review-candidates'],['FUNDING_REQUIRED','isOwner','fund-challenge'],['EXECUTING','isSelectedSolver','submit-proof'],['PROOF_SUBMITTED','isOwner','confirm-success'],['SUCCESS','isOwner','view-settlement']]) {
@@ -310,5 +313,24 @@ vm.runInContext("main.innerHTML=renderFlow({...readFixture.challenge,status:'SUC
 assert.equal(win.document.querySelectorAll('#main .flow-step.done').length,7);
 vm.runInContext("main.innerHTML=renderFlow({...readFixture.challenge,status:'CANCELLED'})",context);
 assert.equal(win.document.querySelectorAll('#main .flow-step.done,.flow-step.active').length,0);pass('timeline distinguishes completed payout, payout pending and stopped missions');
+
+// Virtual checkout is usable without enabling any real payment flow.
+win.approvedSimulation=approvedSimulation;
+vm.runInContext("state.user={id:'sandbox-owner'};state.loading=false;state.route='simulation';state.routeError=null;state.simulations=[approvedSimulation];state.simulation={...approvedSimulation,stage:'FUNDING_REQUIRED',paymentStatus:'NONE'};state.simulationRole='owner';main.innerHTML=renderSimulation();",context);
+assert.match(win.document.querySelector('#main').textContent,/실제 청구 및 송금 0원/);
+assert.match(win.document.querySelector('#main .simulation-checkout').textContent,/90,000원/);
+assert.ok(win.document.querySelector('#main [data-step=PAY_APPROVE]'));assert.ok(win.document.querySelector('#main [data-step=PAY_FAIL]'));assert.ok(win.document.querySelector('#main [data-step=PAY_CANCEL]'));
+win.document.querySelector('#main [data-role=solver]').click();await Promise.resolve();
+assert.equal(win.document.querySelector('#main [data-step=PAY_APPROVE]'),null);
+assert.match(win.document.querySelector('#main .workflow-notice').textContent,/의뢰자 역할로 전환/);
+pass('virtual checkout displays 10% fee, zero real charge and role-specific controls');
+vm.runInContext("state.simulation={...approvedSimulation,stage:'EXECUTING'};state.simulationRole='solver';main.innerHTML=renderSimulation()",context);
+assert.ok(win.document.querySelector('#main #simulation-proof-form'));
+assert.equal(win.document.querySelector('#main [data-step=REFUND]'),null);
+vm.runInContext("state.simulationRole='owner';main.innerHTML=renderSimulation()",context);
+assert.ok(win.document.querySelector('#main [data-step=REFUND]'));assert.equal(win.document.querySelector('#main #simulation-proof-form'),null);
+vm.runInContext("state.simulation={...approvedSimulation,stage:'SUCCESS',payoutStatus:'PAID',title:'<img src=x onerror=alert(1)>'};main.innerHTML=renderSimulation()",context);
+assert.equal(win.document.querySelector('#main img'),null);assert.equal(win.document.querySelector('#main [data-step=PAYOUT_SUCCESS]'),null);
+pass('virtual proof, refund and paid screens enforce roles and escape user content');
 
 win.close();console.log(`Passed ${n} behavioral regression checks`);

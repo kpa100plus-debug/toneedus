@@ -28,6 +28,8 @@ const runtimePaths = [
   'public/setup-admin.html',
   'public/sw.js',
   'worker/index.mjs',
+  'worker/simulation.mjs',
+  'migrations/0014_payment_simulations.sql',
 ];
 
 const root = new URL('../', import.meta.url);

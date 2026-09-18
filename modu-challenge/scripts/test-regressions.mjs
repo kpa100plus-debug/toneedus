@@ -43,6 +43,28 @@ const paid=await req('/api/challenges/'+cid+'/shortlist',{teaserId:tid,mode:'sel
 const cancel=await req('/api/challenges/'+cid+'/cancel',{reason:'운영 일정 변경으로 챌린지를 취소합니다.'},b.cookie);assert.equal(cancel.status,200,JSON.stringify(cancel.body));assert.equal(sql.prepare('SELECT status FROM challenges WHERE id=?').get(cid).status,'CANCELLED');pass('challenge cancellation saved without deletion');
 const cancelledList=await req('/api/challenges?status=CANCELLED');assert.equal(cancelledList.body.challenges.length,0);pass('explicit status filter cannot expose cancelled challenge');
 const ordinaryLogin=await req('/api/auth/login',{email:'b@test.invalid',passwordVerifier:material.passwordVerifier});assert.equal(ordinaryLogin.status,200);pass('ordinary password login');
+
+// Integration verification uses a stub mail/provider transport; no real messages are sent.
+const transport=globalThis.fetch;let sentMail=null;
+const mailEnv={...env,BREVO_API_KEY:'test-only-placeholder',BREVO_SENDER_EMAIL:'sender@test.invalid',GOOGLE_OAUTH_CLIENT_ID:'test-id',GOOGLE_OAUTH_CLIENT_SECRET:'test-only-placeholder'};
+try {
+ globalThis.fetch=async(url,options)=>{if(String(url)==='https://api.brevo.com/v3/smtp/email'){sentMail=JSON.parse(options.body);return Response.json({messageId:'test'})}throw Error('Unexpected external transport')};
+ const registered=await req('/api/auth/signup',{...common,displayName:'인증테스트회원',phone:'01000001991',email:'verify@test.invalid'},'', 'POST',mailEnv);assert.equal(registered.body.pendingVerification,true);assert.equal(registered.cookie,'');
+ const pendingLogin=await req('/api/auth/login',{email:'verify@test.invalid',passwordVerifier:material.passwordVerifier},'', 'POST',mailEnv);assert.equal(pendingLogin.status,403);
+ const verifyToken=sentMail.htmlContent.match(/token=([A-Za-z0-9_-]+)/)[1];assert.equal((await req('/api/auth/verify-email',{token:verifyToken},'', 'POST',mailEnv)).status,200);
+ const verifiedLogin=await req('/api/auth/login',{email:'verify@test.invalid',passwordVerifier:material.passwordVerifier},'', 'POST',mailEnv);assert.equal(verifiedLogin.status,200);pass('signup → email verification → login with mocked mail delivery');
+ assert.equal((await req('/api/auth/verify-email',{token:verifyToken},'', 'POST',mailEnv)).status,400);pass('verification link cannot be reused');
+ await req('/api/auth/request-password-reset',{email:'verify@test.invalid'},'','POST',mailEnv);
+ const resetToken=sentMail.htmlContent.match(/token=([A-Za-z0-9_-]+)/)[1];const newMaterial={passwordSalt:Buffer.alloc(16,3).toString('base64'),passwordVerifier:Buffer.alloc(32,4).toString('base64')};
+ assert.equal((await req('/api/auth/reset-password',{token:resetToken,...newMaterial},'','POST',mailEnv)).status,200);
+ assert.equal((await req('/api/auth/login',{email:'verify@test.invalid',passwordVerifier:material.passwordVerifier},'','POST',mailEnv)).status,401);pass('password reset invalidates old password');
+ const userCount=sql.prepare('SELECT count(*) n FROM users').get().n;
+ globalThis.fetch=async(url)=> String(url).includes('/token')?Response.json({access_token:'stub-access'}):Response.json({sub:'verified-google-link',email:'verify@test.invalid',email_verified:true,name:'인증테스트회원'});
+ const start=await worker.fetch(new Request('https://test.invalid/api/auth/oauth/google?returnTo=%23%2Fdashboard'),mailEnv,{});assert.equal(start.status,302);const stateToken=new URL(start.headers.get('location')).searchParams.get('state');
+ const callback=await worker.fetch(new Request('https://test.invalid/api/auth/oauth/google/callback?state='+stateToken+'&code=stub',{headers:{Cookie:start.headers.get('set-cookie').split(';')[0]}}),mailEnv,{});
+ assert.equal(callback.status,200);assert.match(await callback.text(),/#\/dashboard\?oauth=success/);assert.match(callback.headers.get('set-cookie'),/mc_session=/);assert.equal(sql.prepare('SELECT count(*) n FROM users').get().n,userCount);pass('Google callback links existing verified account without duplicate and restores route');
+} finally {globalThis.fetch=transport}
+
 // DOM regression: run real delegated handlers against real DOM (no browser globals/auth).
 const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const dom=new JSDOM(html,{url:'https://test.invalid/',runScripts:'outside-only',pretendToBeVisual:true});const win=dom.window;win.scrollTo=()=>{};win.HTMLElement.prototype.scrollIntoView=()=>{};win.matchMedia=()=>({matches:false});

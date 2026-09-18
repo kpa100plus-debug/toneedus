@@ -80,7 +80,7 @@ const ordinaryLogin=await req('/api/auth/login',{email:'b@test.invalid',password
 
 // Integration verification uses a stub mail/provider transport; no real messages are sent.
 const transport=globalThis.fetch;let sentMail=null;
-const mailEnv={...env,BREVO_API_KEY:'test-only-placeholder',BREVO_SENDER_EMAIL:'sender@test.invalid',GOOGLE_OAUTH_CLIENT_ID:'test-id',GOOGLE_OAUTH_CLIENT_SECRET:'test-only-placeholder'};
+const mailEnv={...env,BREVO_API_KEY:'test-only-placeholder',BREVO_SENDER_EMAIL:'sender@test.invalid',GOOGLE_OAUTH_CLIENT_ID:'test-id',GOOGLE_OAUTH_CLIENT_SECRET:'test-only-placeholder',NAVER_OAUTH_CLIENT_ID:'naver-test-id',NAVER_OAUTH_CLIENT_SECRET:'test-only-placeholder'};
 try {
  globalThis.fetch=async(url,options)=>{if(String(url)==='https://api.brevo.com/v3/smtp/email'){sentMail=JSON.parse(options.body);return Response.json({messageId:'test'})}throw Error('Unexpected external transport')};
  const registered=await req('/api/auth/signup',{...common,displayName:'인증테스트회원',phone:'01000001991',email:'verify@test.invalid'},'', 'POST',mailEnv);assert.equal(registered.body.pendingVerification,true);assert.equal(registered.cookie,'');
@@ -97,6 +97,53 @@ try {
  const start=await worker.fetch(new Request('https://test.invalid/api/auth/oauth/google?returnTo=%23%2Fdashboard'),mailEnv,{});assert.equal(start.status,302);const stateToken=new URL(start.headers.get('location')).searchParams.get('state');
  const callback=await worker.fetch(new Request('https://test.invalid/api/auth/oauth/google/callback?state='+stateToken+'&code=stub',{headers:{Cookie:start.headers.get('set-cookie').split(';')[0]}}),mailEnv,{});
  assert.equal(callback.status,200);assert.match(await callback.text(),/#\/dashboard\?oauth=success/);assert.match(callback.headers.get('set-cookie'),/mc_session=/);assert.equal(sql.prepare('SELECT count(*) n FROM users').get().n,userCount);pass('Google callback links existing verified account without duplicate and restores route');
+
+ // Exercise both providers through their real start/callback/signup/session handlers.
+ async function oauthRoundTrip(provider, {cookieOverride, error, returnTo='#/dashboard'}={}) {
+   const start = await worker.fetch(new Request('https://test.invalid/api/auth/oauth/'+provider+'?returnTo='+encodeURIComponent(returnTo)),mailEnv,{});
+   const target = new URL(start.headers.get('location'));
+   assert.equal(target.searchParams.get('redirect_uri'),'https://test.invalid/api/auth/oauth/'+provider+'/callback');
+   const callbackUrl = 'https://test.invalid/api/auth/oauth/'+provider+'/callback?state='+target.searchParams.get('state')+(error?'&error='+error:'&code=stub');
+   const cookie = cookieOverride ?? start.headers.get('set-cookie').split(';')[0];
+   const response = await worker.fetch(new Request(callbackUrl,{headers:{Cookie:cookie}}),mailEnv,{});
+   return {response, body:await response.text(), cookie:response.headers.get('set-cookie')?.split(';')[0]||'', callbackUrl, stateCookie:cookie};
+ }
+ let profileProvider='google';
+ globalThis.fetch=async(url,options)=> {
+   if(String(url)==='https://api.brevo.com/v3/smtp/email'){sentMail=JSON.parse(options.body);return Response.json({messageId:'test'})}
+   if(['https://oauth2.googleapis.com/token','https://nid.naver.com/oauth2.0/token'].includes(String(url)))return Response.json({access_token:'stub-access'});
+   if(profileProvider==='google'&&String(url)==='https://openidconnect.googleapis.com/v1/userinfo')return Response.json({sub:'new-google-subject',email:'new-google@test.invalid',email_verified:true,name:'구글신규'});
+   if(profileProvider==='naver'&&String(url)==='https://openapi.naver.com/v1/nid/me')return Response.json({resultcode:'00',response:{id:'new-naver-subject',email:'new-naver@test.invalid',name:'네이버신규'}});
+   throw Error('Unexpected provider transport');
+ };
+ for(const provider of ['google','naver']) {
+   profileProvider=provider;
+   const fresh=await oauthRoundTrip(provider,{returnTo:'#/verify-email?token=discard'});
+   assert.match(fresh.body,/#\/social-signup/);assert.match(fresh.cookie,/^mc_oauth_signup=/);
+   const pending=await req('/api/auth/oauth-signup',undefined,fresh.cookie,'GET',mailEnv);assert.equal(pending.body.provider,provider);
+   const signup=await req('/api/auth/oauth-signup',{...common,displayName:provider+'신규회원',phone:provider==='google'?'01000001992':'01000001993'},fresh.cookie,'POST',mailEnv);
+   if(provider==='naver') {
+     assert.equal(signup.body.pendingVerification,true);assert.equal(signup.body.loginProvider,'naver');assert.equal(signup.cookie,'');
+     const blocked=await oauthRoundTrip(provider);assert.match(decodeURIComponent(blocked.body),/가입 이메일 인증/);assert.ok(!blocked.cookie.startsWith('mc_session='));
+     const token=sentMail.htmlContent.match(/token=([A-Za-z0-9_-]+)/)[1];
+     const verification=await req('/api/auth/verify-email',{token},'','POST',mailEnv);assert.equal(verification.body.loginProvider,'naver');
+     pass('NAVER new registration requires email verification and reports its login method');
+   } else {
+     assert.equal(signup.status,201);assert.equal((await req('/api/me',undefined,signup.cookie,'GET',mailEnv)).body.user.email,'new-google@test.invalid');
+     pass('Google first callback → password-free signup → authenticated session');
+   }
+   const count=sql.prepare('SELECT count(*) n FROM users').get().n;
+   const loggedIn=await oauthRoundTrip(provider,{returnTo:'#/verify-email?token=discard'});
+   assert.match(loggedIn.body,/#\/home\?oauth=success/);assert.match(loggedIn.cookie,/^mc_session=/);
+   assert.equal((await req('/api/me',undefined,loggedIn.cookie,'GET',mailEnv)).body.user.email,'new-'+provider+'@test.invalid');
+   assert.equal(sql.prepare('SELECT count(*) n FROM users').get().n,count);
+   pass(provider+' returning login retains account, session and safe destination');
+   const replay=await worker.fetch(new Request(loggedIn.callbackUrl,{headers:{Cookie:loggedIn.stateCookie}}),mailEnv,{});assert.ok(!replay.headers.get('set-cookie')?.startsWith('mc_session='));
+   const csrf=await oauthRoundTrip(provider,{cookieOverride:'mc_oauth_state=wrong'});assert.ok(!csrf.cookie.startsWith('mc_session='));
+   pass(provider+' rejects replay and mismatched OAuth state');
+   const denied=await oauthRoundTrip(provider,{error:'access_denied'});assert.match(decodeURIComponent(denied.body),/승인되지 않았습니다/);assert.ok(!denied.cookie.startsWith('mc_session='));
+   pass(provider+' declined consent has an actionable error and no session');
+ }
 } finally {globalThis.fetch=transport}
 
 // DOM regression: run real delegated handlers against real DOM (no browser globals/auth).
@@ -104,6 +151,24 @@ const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const dom=new JSDOM(html,{url:'https://test.invalid/',runScripts:'outside-only',pretendToBeVisual:true});const win=dom.window;win.scrollTo=()=>{};win.HTMLElement.prototype.scrollIntoView=()=>{};win.matchMedia=()=>({matches:false});
 const context=dom.getInternalVMContext();let app=readFileSync(new URL('../public/assets/live-app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('init().catch((error) => fatal(error));','');
 vm.runInContext("class ApiError extends Error {constructor(message, opts={}){super(message); Object.assign(this,opts)}}; const apiClient={};",context);vm.runInContext(app,context);
+// Reproduce the screenshot: a successful login from the verification page must leave it.
+win.CATEGORY_META=CATEGORY_META;win.STATUS_META=STATUS_META;win.FUNDING_META=FUNDING_META;
+win.createPasswordMaterial=async()=>material;
+vm.runInContext("const savedLoadRouteData=loadRouteData;loadRouteData=async()=>{};state.loading=false;apiClient.loginOptions=async()=>({});apiClient.login=async()=>({user:{id:'test',displayName:'로그인테스터',accountType:'individual',trustScore:50}});",context);
+for(const route of ['verify-email','login','signup','social-signup']) {
+ vm.runInContext(`state.user=null;state.route='${route}';history.replaceState(null,'','#/${route}?token=used-test-token');openAuthModal('login');`,context);
+ await vm.runInContext("submitLogin(document.querySelector('#login-form'))",context);
+ assert.equal(win.location.hash,'#/home');assert.equal(vm.runInContext('state.route',context),'home');
+ assert.equal(win.document.querySelector('#modal-root').innerHTML,'');assert.ok(!win.document.querySelector('#main').textContent.includes('이메일 인증 완료'));
+ assert.ok(win.document.body.textContent.includes('로그인테스터'));pass('login from '+route+' renders home and signed-in header');
+}
+vm.runInContext("state.route='dashboard';history.replaceState(null,'','#/dashboard');",context);
+await vm.runInContext("completeAuthentication(state.user)",context);assert.equal(win.location.hash,'#/dashboard');pass('login preserves a normal requested activity route');
+vm.runInContext("state.user=null;state.route='verify-email';history.replaceState(null,'','#/verify-email?token=test-token');apiClient.verifyEmail=async()=>({ok:true,loginProvider:'naver'});",context);
+await vm.runInContext("verifyEmailFromLink();",context);vm.runInContext("main.innerHTML=renderEmailVerification()",context);
+assert.equal(win.document.querySelector('#main [data-provider=naver]').textContent,'NAVER로 계속하기');assert.equal(win.document.querySelector('#main [data-action=login]'),null);pass('NAVER email completion directs to NAVER without a password');
+vm.runInContext("history.replaceState(null,'','#/home?oauth=success');renderSystemNotice();",context);assert.equal(win.document.querySelector('#system-notice').hidden,false);assert.match(win.document.querySelector('#system-notice-title').textContent,/확인 필요/);pass('missing OAuth session shows recovery guidance instead of silent success');
+vm.runInContext("loadRouteData=savedLoadRouteData;state.route='home';state.loading=true;history.replaceState(null,'','#/home');",context);
 vm.runInContext("let detailOpens=0; openChallenge=async()=>{detailOpens++}; bindGlobalEvents();",context);
 for(const id of ['challenge-edit-form','cancel-form','teaser-form','teaser-edit-form','teaser-withdraw-form']){vm.runInContext(`openModal('<form id="${id}" data-challenge-id="test"><input name="title"><textarea name="reason"></textarea><button type="submit">저장</button></form>')`,context);const form=win.document.getElementById(id);for(const field of form.querySelectorAll('input,textarea')){field.dispatchEvent(new win.MouseEvent('click',{bubbles:true,cancelable:true}));field.value='입력 유지 검증';assert.equal(field.isConnected,true)}assert.equal(vm.runInContext('detailOpens',context),0);pass(id+' input does not open detail')}
 try { vm.runInContext("openAuthModal('signup'); submitSignup=async()=>{await Promise.resolve();throw new ApiError('이미 사용 중인 활동명입니다.',{code:'DISPLAY_NAME_EXISTS'})};",context);

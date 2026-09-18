@@ -61,7 +61,7 @@ const checks = [
   ['공개 응답 캐시 최적화', files.worker.includes('stale-while-revalidate=30') && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('stale-while-revalidate=604800')],
   ['초소형 화면 단일열', files.css.includes('.challenge-meta { grid-template-columns: minmax(0, 1fr); }') && files.css.includes('.profile-stat-grid, .trust-factor-grid { grid-template-columns: minmax(0, 1fr); }')],
   ['Galaxy 브라우저 위로가기 겹침 방지', files.css.includes('.mobile-nav .mobile-create > span') && files.css.includes('margin-top: 0')],
-  ['캐시 버전 일치', files.html.includes('styles.css?v=37') && files.html.includes('live-app.js?v=37') && files.app.includes("api-client.js?v=37") && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v37") && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('/sw.js\n  Cache-Control: no-cache')],
+  ['캐시 버전 일치', files.html.includes('styles.css?v=38') && files.html.includes('live-app.js?v=38') && files.app.includes("api-client.js?v=38") && (await readFile(new URL('../public/sw.js', import.meta.url), 'utf8')).includes("modu-challenge-v38") && (await readFile(new URL('../public/_headers', import.meta.url), 'utf8')).includes('/sw.js\n  Cache-Control: no-cache')],
   ['iPhone OAuth·계정찾기·취소 안정화', files.sw.includes("url.pathname.startsWith('/api/')") && files.app.includes('startSocialLogin') && files.app.includes('이메일 찾기') && files.app.includes('비밀번호 찾기') && files.app.includes("navigate('dashboard')")],
   ['웹앱 설치 안내', files.html.includes('app-install-banner') && files.app.includes('beforeinstallprompt') && files.app.includes('isIOSSafari')],
   ['CSS 괄호', (files.css.match(/{/g) || []).length === (files.css.match(/}/g) || []).length],

@@ -10,6 +10,7 @@ const runtimePaths = [
   'migrations/0010_challenge_idempotency.sql',
   'migrations/0011_hide_confirmed_duplicate_challenges.sql',
   'migrations/0012_member_identity.sql',
+  'migrations/0013_reward_limits.sql',
   'public/_headers',
   'public/assets/api-client.js',
   'public/assets/business-rules.js',

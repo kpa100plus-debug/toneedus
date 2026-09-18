@@ -183,6 +183,41 @@ assert.equal(activityWithLegacy.body.notifications.find(x=>x.id==='legacy-brand-
 assert.equal(sql.prepare("SELECT title FROM notifications WHERE id='legacy-brand-test'").get().title,storedNotice);pass('stored legacy notifications stay intact while authenticated API returns new display copy');
 assert.ok(activityWithLegacy.body.ownedChallenges.some(x=>x.id===cid));pass('existing mission ownership and activity listing survive rebrand');
 
+// Full lifecycle in isolated SQLite only: no production records, provider calls or money.
+const lifecycleEnv={...env,APP_ENV:'test',PAYOUT_WEBHOOK_SECRET:'local-fixture-only'};
+const life=(await req('/api/challenges',challengeInput,b.cookie,'POST',env,{'Idempotency-Key':'lifecycle-v41-fixture-001'})).body.challenge.id;
+const solver2=(await req('/api/auth/login',{email:'a@test.invalid',passwordVerifier:material.passwordVerifier})).cookie;
+const lifeOne=(await req('/api/challenges/'+life+'/teasers',tBody,os.cookie)).body.teaser.id;
+const lifeTwo=(await req('/api/challenges/'+life+'/teasers',tBody,solver2)).body.teaser.id;
+for(const teaserId of [lifeOne,lifeTwo]) assert.equal((await req('/api/challenges/'+life+'/shortlist',{teaserId},b.cookie)).status,200);
+let lc=(await req('/api/challenges/'+life,undefined,b.cookie)).body.challenge;
+assert.equal(lc.participantCount,2);assert.equal(lc.teaserCount,2);assert.equal(lc.shortlistedCount,2);assert.equal(lc.status,'SHORTLISTED');
+for(const cookie of [os.cookie,solver2])assert.equal((await req('/api/challenges/'+life+'/my-teaser',undefined,cookie)).body.teaser.status,'SHORTLISTED');
+pass('two independent solvers retain their own submissions, shortlist badges and exact counts');
+assert.equal((await req('/api/challenges/'+life+'/shortlist',{teaserId:lifeOne,mode:'select'},os.cookie,'POST',lifecycleEnv)).status,403);
+assert.equal((await req('/api/challenges/'+life+'/shortlist',{teaserId:lifeOne,mode:'select'},b.cookie)).body.error.code,'MONEY_FLOW_DISABLED');
+assert.equal((await req('/api/challenges/'+life+'/shortlist',{teaserId:lifeOne,mode:'select'},b.cookie,'POST',lifecycleEnv)).body.status,'FUNDING_REQUIRED');
+assert.equal(sql.prepare("SELECT count(*) n FROM teasers WHERE challenge_id=? AND status='SELECTED'").get(life).n,1);
+pass('only owner selects one finalist; production money guard is preserved');
+const evidence={description:'요구한 로고 원본과 색상 설명을 모두 완성하여 검수용 결과를 제출합니다.',evidenceUrl:'https://example.invalid/proof'};
+assert.equal((await req('/api/challenges/'+life+'/proof',evidence,os.cookie,'POST',lifecycleEnv)).status,409);
+assert.equal((await req('/api/challenges/'+life+'/funding/confirm',{},solver2,'POST',lifecycleEnv)).status,403);
+assert.equal((await req('/api/challenges/'+life+'/funding/confirm',{},b.cookie,'POST',lifecycleEnv)).body.status,'EXECUTING');
+assert.equal((await req('/api/challenges/'+life+'/proof',evidence,solver2,'POST',lifecycleEnv)).status,403);
+pass('funding must precede execution; only selected solver can submit proof');
+const payoutBody={challengeId:life,provider:'test-only',payoutReference:'fixture-payment-v41',status:'PAID'};
+assert.equal((await req('/api/internal/payout/confirm',payoutBody,'','POST',lifecycleEnv,{'X-Payout-Webhook-Secret':'local-fixture-only'})).status,409);
+assert.equal((await req('/api/challenges/'+life+'/proof',evidence,os.cookie,'POST',lifecycleEnv)).status,201);
+assert.equal((await req('/api/challenges/'+life+'/success',{},os.cookie,'POST',lifecycleEnv)).status,403);
+const completed=await req('/api/challenges/'+life+'/success',{},b.cookie,'POST',lifecycleEnv);
+assert.equal(completed.body.status,'SUCCESS');assert.equal(completed.body.settlement.status,'PROCESSING');
+assert.equal((await req('/api/challenges/'+life+'/success',{},b.cookie,'POST',lifecycleEnv)).status,409);
+pass('owner review completes mission once; completion is distinct from payout');
+assert.equal((await req('/api/internal/payout/confirm',payoutBody,'','POST',lifecycleEnv)).status,403);
+for(let i=0;i<2;i++)assert.equal((await req('/api/internal/payout/confirm',payoutBody,'','POST',lifecycleEnv,{'X-Payout-Webhook-Secret':'local-fixture-only'})).body.status,'PAID');
+assert.equal(sql.prepare("SELECT count(*) n FROM notifications WHERE resource_id=? AND type='PAYOUT_PAID'").get(life).n,1);
+pass('verified simulated payout is idempotent and cannot precede review');
+
 // DOM regression: run real delegated handlers against real DOM (no browser globals/auth).
 const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const dom=new JSDOM(html,{url:'https://test.invalid/',runScripts:'outside-only',pretendToBeVisual:true});const win=dom.window;win.scrollTo=()=>{};win.HTMLElement.prototype.scrollIntoView=()=>{};win.matchMedia=()=>({matches:false});
@@ -250,4 +285,30 @@ win.Notification.permission='granted';await vm.runInContext('enablePushNotificat
 await vm.runInContext('disablePushNotifications()',context);assert.equal(removals,1);assert.equal(currentSubscription,null);
 await vm.runInContext('disablePushNotifications()',context);assert.equal(removals,1);pass('device unsubscribe never deletes other devices when current subscription is absent');
 win.Notification.permission='default';await vm.runInContext('enablePushNotifications()',context);assert.equal(prompts,1);assert.equal(registrations,2);pass('default permission prompts once then registers');
+// Presentation and role-specific next actions for each workflow stage.
+vm.runInContext("state.user={id:'owner'};state.config={environment:'production',moneyEnabled:false};readFixture.challenge.status='SHORTLISTED';main.innerHTML=renderActivityChallenge(readFixture.challenge)+renderApplicationItem({challenge:readFixture.challenge,teaserStatus:'SHORTLISTED',teaserHeadline:'긴 제안 내용 '.repeat(20),teaserCreatedAt:'2026-09-18'});",context);
+assert.equal(win.document.querySelector('#main .activity-badges').children.length,3);
+assert.equal(win.document.querySelector('#main .candidate-confirmed').textContent,'✓ 후보선정 완료');
+assert.ok(win.document.querySelector('#main [data-action=view-my-teaser]').textContent.includes('후보선정 완료'));
+assert.ok(win.document.querySelector('#main .application-links').textContent.includes('진행상황'));pass('activity cards separate metadata, selected badge, full-width headline and actions');
+vm.runInContext("main.innerHTML=renderProgressNotice(readFixture.challenge,{isOwner:true})+renderCandidateCard('read-test',{...teaserFixture.teaser,status:'SHORTLISTED'});",context);
+assert.match(win.document.querySelector('#main .workflow-notice').textContent,/결제·지급 연동 준비 중/);
+assert.equal(win.document.querySelector('#main [data-action=select-finalist]').disabled,true);
+assert.equal(win.document.querySelector('#main [data-action=shortlist]').disabled,true);pass('blocked finalist explains why; shortlist completion is prominent');
+for(const [status,role,action] of [['SHORTLISTED','isOwner','review-candidates'],['FUNDING_REQUIRED','isOwner','fund-challenge'],['EXECUTING','isSelectedSolver','submit-proof'],['PROOF_SUBMITTED','isOwner','confirm-success'],['SUCCESS','isOwner','view-settlement']]) {
+ win.stage=status;win.role=role;
+ vm.runInContext("state.config={environment:'test',moneyEnabled:false};main.innerHTML=renderProgressNotice({...readFixture.challenge,status:stage},{[role]:true});",context);
+ assert.ok(win.document.querySelector('#main [data-action='+action+']'),status);
+ vm.runInContext("main.innerHTML=renderProgressNotice({...readFixture.challenge,status:stage},{viewerTeaser:{status:'SUBMITTED'}})",context);
+ assert.equal(win.document.querySelector('#main [data-action]'),null,status);
+}
+pass('next actions follow owner, selected solver and ordinary viewer permissions');
+vm.runInContext("main.innerHTML=renderFlow({...readFixture.challenge,status:'SUCCESS',fundingStatus:'FUNDED'})+renderProgressNotice({...readFixture.challenge,status:'SUCCESS',fundingStatus:'FUNDED'},{isOwner:true});",context);
+assert.equal(win.document.querySelectorAll('#main .flow-step').length,7);assert.equal(win.document.querySelector('#main [aria-current=step] strong').textContent,'보상 지급 · 현재');
+assert.match(win.document.querySelector('#main .workflow-notice').textContent,/보상 지급 대기/);
+vm.runInContext("main.innerHTML=renderFlow({...readFixture.challenge,status:'SUCCESS',fundingStatus:'PAID'})",context);
+assert.equal(win.document.querySelectorAll('#main .flow-step.done').length,7);
+vm.runInContext("main.innerHTML=renderFlow({...readFixture.challenge,status:'CANCELLED'})",context);
+assert.equal(win.document.querySelectorAll('#main .flow-step.done,.flow-step.active').length,0);pass('timeline distinguishes completed payout, payout pending and stopped missions');
+
 win.close();console.log(`Passed ${n} behavioral regression checks`);

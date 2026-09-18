@@ -12,6 +12,8 @@ const runtimePaths = [
   'migrations/0012_member_identity.sql',
   'migrations/0013_reward_limits.sql',
   'public/_headers',
+  'public/assets/brand.js',
+  'public/sitemap.xml',
   'public/assets/api-client.js',
   'public/assets/business-rules.js',
   'public/assets/data.js',

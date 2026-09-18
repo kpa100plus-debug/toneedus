@@ -107,7 +107,7 @@ function sql(value) {
 }
 
 const lines = [
-  '-- MODU CHALLENGE preview-only catalog. Every record uses a demo_ ID and reserved .invalid email.',
+  '-- 모두의클리어 preview-only catalog. Every record uses a demo_ ID and reserved .invalid email.',
   '-- Safe removal: npm run demo:clear:remote',
   'PRAGMA foreign_keys = ON;',
   "DELETE FROM challenges WHERE id LIKE 'demo_ch_%';",
@@ -167,8 +167,8 @@ catalog.forEach((group, categoryIndex) => {
     const teasers = Math.max(3, Math.round(participants * 0.55));
     const shortlisted = status === 'SHORTLISTED' || status === 'SUCCESS' ? 3 : 0;
     const views = 320 + categoryIndex * 137 + itemIndex * 211;
-    const description = `[미리보기용 예시 데이터] ${summary} 실제 운영 시에는 개설자가 조건·기한·증빙을 확정하고, 참가자는 민감정보를 가린 TEASER로 해결 가능성을 제시합니다.`;
-    const paymentTrigger = '개설자가 TEASER와 TRUST를 검토해 최종 수행자를 선택하고, 사전 운영 정책에 따른 Funding 준비를 확인한 시점';
+    const description = `[미리보기용 예시 데이터] ${summary} 실제 운영 시에는 의뢰자가 조건·기한·증빙을 확정하고, 참가자는 민감정보를 가린 TEASER로 해결 가능성을 제시합니다.`;
+    const paymentTrigger = '의뢰자가 TEASER와 TRUST를 검토해 최종 수행자를 선택하고, 사전 운영 정책에 따른 Funding 준비를 확인한 시점';
     const createdDay = String(9 + categoryIndex * 2 + itemIndex).padStart(2, '0');
     lines.push(`INSERT INTO challenges (
   id, owner_id, title, summary, description, category, region,

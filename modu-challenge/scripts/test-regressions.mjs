@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
-import { webcrypto } from 'node:crypto';
+import { webcrypto, hkdfSync, createDecipheriv } from 'node:crypto';
+import { legacyNotificationText } from '../public/assets/brand.js';
 import worker from '../worker/index.mjs';
 import { JSDOM } from 'jsdom';
 import vm from 'node:vm';
@@ -9,7 +10,7 @@ import { CATEGORY_META, STATUS_META, FUNDING_META } from '../public/assets/data.
 import { calculateSettlement } from '../public/assets/business-rules.js';
 const sql = new DatabaseSync(':memory:');
 for (const file of readdirSync(new URL('../migrations/', import.meta.url)).sort()) if(file.endsWith('.sql')) sql.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
-const DB={prepare(query){return {args:[],bind(...args){this.args=args;return this},async first(){return sql.prepare(query).get(...this.args)||null},async all(){return {results:sql.prepare(query).all(...this.args)}},async run(){const r=sql.prepare(query).run(...this.args);return {meta:{changes:Number(r.changes)},success:true}}}},async batch(stmts){sql.exec('BEGIN');try{const out=[];for(const stmt of stmts)out.push(await stmt.run());sql.exec('COMMIT');return out}catch(e){sql.exec('ROLLBACK');throw e}}};
+const DB={prepare(query){return {args:[],bind(...args){this.args=args;return this},async first(){return sql.prepare(query).get(...this.args)||null},async all(){return {results:sql.prepare(query).all(...this.args)}},async run(){if(/^\s*SELECT/i.test(query))return {results:sql.prepare(query).all(...this.args),success:true};const r=sql.prepare(query).run(...this.args);return {meta:{changes:Number(r.changes)},success:true}}}},async batch(stmts){sql.exec('BEGIN');try{const out=[];for(const stmt of stmts)out.push(await stmt.run());sql.exec('COMMIT');return out}catch(e){sql.exec('ROLLBACK');throw e}}};
 const env={DB,APP_ENV:'production',PUBLIC_MONEY_ENABLED:'false'};
 async function req(path,body,cookie='',method=body?'POST':'GET',e=env, extraHeaders={}){const r=await worker.fetch(new Request('https://test.invalid'+path,{method,headers:{'Content-Type':'application/json',Cookie:cookie,...extraHeaders},body:body?JSON.stringify(body):undefined}),e,{waitUntil(){}});return {status:r.status,body:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]||''}}
 const material={passwordSalt:Buffer.alloc(16,1).toString('base64'),passwordVerifier:Buffer.alloc(32,2).toString('base64')};
@@ -85,10 +86,12 @@ try {
  globalThis.fetch=async(url,options)=>{if(String(url)==='https://api.brevo.com/v3/smtp/email'){sentMail=JSON.parse(options.body);return Response.json({messageId:'test'})}throw Error('Unexpected external transport')};
  const registered=await req('/api/auth/signup',{...common,displayName:'인증테스트회원',phone:'01000001991',email:'verify@test.invalid'},'', 'POST',mailEnv);assert.equal(registered.body.pendingVerification,true);assert.equal(registered.cookie,'');
  const pendingLogin=await req('/api/auth/login',{email:'verify@test.invalid',passwordVerifier:material.passwordVerifier},'', 'POST',mailEnv);assert.equal(pendingLogin.status,403);
+ assert.equal(sentMail.sender.name,'모두의클리어');assert.ok(sentMail.subject.startsWith('[모두의클리어]'));
  const verifyToken=sentMail.htmlContent.match(/token=([A-Za-z0-9_-]+)/)[1];assert.equal((await req('/api/auth/verify-email',{token:verifyToken},'', 'POST',mailEnv)).status,200);
  const verifiedLogin=await req('/api/auth/login',{email:'verify@test.invalid',passwordVerifier:material.passwordVerifier},'', 'POST',mailEnv);assert.equal(verifiedLogin.status,200);pass('signup → email verification → login with mocked mail delivery');
  assert.equal((await req('/api/auth/verify-email',{token:verifyToken},'', 'POST',mailEnv)).status,400);pass('verification link cannot be reused');
  await req('/api/auth/request-password-reset',{email:'verify@test.invalid'},'','POST',mailEnv);
+ assert.ok(sentMail.subject.startsWith('[모두의클리어]'));
  const resetToken=sentMail.htmlContent.match(/token=([A-Za-z0-9_-]+)/)[1];const newMaterial={passwordSalt:Buffer.alloc(16,3).toString('base64'),passwordVerifier:Buffer.alloc(32,4).toString('base64')};
  assert.equal((await req('/api/auth/reset-password',{token:resetToken,...newMaterial},'','POST',mailEnv)).status,200);
  assert.equal((await req('/api/auth/login',{email:'verify@test.invalid',passwordVerifier:material.passwordVerifier},'','POST',mailEnv)).status,401);pass('password reset invalidates old password');
@@ -146,9 +149,44 @@ try {
  }
 } finally {globalThis.fetch=transport}
 
+// Push round trip with independent RFC 8291 receiver: no real devices/messages.
+const vapid=await webcrypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
+const vapidPrivate=await webcrypto.subtle.exportKey('jwk',vapid.privateKey);
+const receiver=await webcrypto.subtle.generateKey({name:'ECDH',namedCurve:'P-256'},true,['deriveBits']);
+const receiverPublic=Buffer.from(await webcrypto.subtle.exportKey('raw',receiver.publicKey));
+const authSecret=Buffer.alloc(16,7);
+const pushEnv={...env,VAPID_PUBLIC_KEY:Buffer.from(await webcrypto.subtle.exportKey('raw',vapid.publicKey)).toString('base64url'),VAPID_PRIVATE_KEY:vapidPrivate.d};
+const endpoint='https://push.example.invalid/subscription-a';
+let pushPayload=null;
+try {
+ globalThis.fetch=async(url,options)=>{assert.equal(String(url),endpoint);const encoded=Buffer.from(options.body);const salt=encoded.subarray(0,16);assert.equal(encoded.readUInt32BE(16),4096);assert.equal(encoded[20],65);const serverPublic=encoded.subarray(21,86);
+  const secret=await webcrypto.subtle.deriveBits({name:'ECDH',public:await webcrypto.subtle.importKey('raw',serverPublic,{name:'ECDH',namedCurve:'P-256'},false,[])},receiver.privateKey,256);
+  const ikm=hkdfSync('sha256',Buffer.from(secret),authSecret,Buffer.concat([Buffer.from('WebPush: info\0'),receiverPublic,serverPublic]),32);
+  const key=hkdfSync('sha256',ikm,salt,Buffer.from('Content-Encoding: aes128gcm\0'),16);const nonce=hkdfSync('sha256',ikm,salt,Buffer.from('Content-Encoding: nonce\0'),12);
+  const ciphertext=encoded.subarray(86);const decipher=createDecipheriv('aes-128-gcm',key,Buffer.from(nonce));decipher.setAuthTag(ciphertext.subarray(-16));const plain=Buffer.concat([decipher.update(ciphertext.subarray(0,-16)),decipher.final()]);assert.equal(plain[plain.length-1],2);pushPayload=JSON.parse(plain.subarray(0,-1).toString());return new Response(null,{status:201});
+ };
+ const subscription={endpoint,keys:{p256dh:receiverPublic.toString('base64url'),auth:authSecret.toString('base64url')}};
+ assert.equal((await req('/api/me/push-subscriptions',subscription,b.cookie,'POST',pushEnv)).body.delivered,true);
+ assert.match(pushPayload.body,/미션/);pass('push payload decrypts with independent RFC 8291 receiver');
+ await req('/api/me/push-subscriptions/remove',{endpoint},b.cookie,'POST',pushEnv);
+ assert.equal((await req('/api/me/push-settings',undefined,b.cookie,'GET',pushEnv)).body.subscribed,false);
+ assert.equal((await req('/api/me/push-subscriptions',subscription,b.cookie,'POST',pushEnv)).body.subscribed,true);pass('push unsubscribe and re-enable maintain account registration');
+} finally {globalThis.fetch=transport}
+const beforeData=sql.prepare('SELECT count(*) n FROM users').get().n;
+assert.equal((await req('/api/config')).body.serviceName,'모두의클리어');assert.equal((await req('/api/config')).body.internalCode,'MODU_CHALLENGE');assert.equal(sql.prepare('SELECT count(*) n FROM users').get().n,beforeData);pass('new public brand retains internal identifier and accounts');
+assert.equal(legacyNotificationText('모두의 챌린지에서 챌린지를 확인하세요'),'모두의클리어에서 미션을 확인하세요');pass('legacy system notification display migrates without changing stored content');
+
+const storedNotice='모두의 챌린지에서 챌린지를 확인하세요';
+sql.prepare("INSERT INTO notifications (id,user_id,type,title,body,resource_type) VALUES (?,?,?,?,?,?)").run('legacy-brand-test',b.body.user.id,'INFO',storedNotice,storedNotice,'system');
+const activityWithLegacy=await req('/api/me/activity',undefined,b.cookie);
+assert.equal(activityWithLegacy.body.notifications.find(x=>x.id==='legacy-brand-test').title,'모두의클리어에서 미션을 확인하세요');
+assert.equal(sql.prepare("SELECT title FROM notifications WHERE id='legacy-brand-test'").get().title,storedNotice);pass('stored legacy notifications stay intact while authenticated API returns new display copy');
+assert.ok(activityWithLegacy.body.ownedChallenges.some(x=>x.id===cid));pass('existing mission ownership and activity listing survive rebrand');
+
 // DOM regression: run real delegated handlers against real DOM (no browser globals/auth).
 const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const dom=new JSDOM(html,{url:'https://test.invalid/',runScripts:'outside-only',pretendToBeVisual:true});const win=dom.window;win.scrollTo=()=>{};win.HTMLElement.prototype.scrollIntoView=()=>{};win.matchMedia=()=>({matches:false});
+win.legacyNotificationText=legacyNotificationText;
 const context=dom.getInternalVMContext();let app=readFileSync(new URL('../public/assets/live-app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('init().catch((error) => fatal(error));','');
 vm.runInContext("class ApiError extends Error {constructor(message, opts={}){super(message); Object.assign(this,opts)}}; const apiClient={};",context);vm.runInContext(app,context);
 // Reproduce the screenshot: a successful login from the verification page must leave it.
@@ -190,4 +228,26 @@ await vm.runInContext("openMyTeaser('read-test')",context);assert.equal(win.docu
 vm.runInContext("state.trustProfile={ownerStats:{},solverStats:{teasers:1},reviewStats:{}};document.querySelector('#main').innerHTML=renderProfile();let tappedSection='';openActivitySection=(section)=>{tappedSection=section};",context);
 win.document.querySelector('[data-action=view-applied-challenges] strong').click();await Promise.resolve();assert.equal(vm.runInContext('tappedSection',context),'applied');pass('TEASER number delegates to applied list');
 vm.runInContext("readFixture.context.isOwner=true;readFixture.context.canEdit=true;openChallengeEditForm('read-test')",context);const rewardInput=win.document.querySelector('[name=rewardAmount]');assert.equal(rewardInput.max,'100000000');assert.equal(rewardInput.min,'10000');rewardInput.value='3000000';assert.equal(rewardInput.checkValidity(),true);pass('edit form permits 3 million and shows shared min/max');
+// Brand identity, metadata and installed-app identity agree.
+const manifest=JSON.parse(readFileSync(new URL('../public/manifest.webmanifest',import.meta.url),'utf8'));
+assert.equal(manifest.name,'모두의클리어');assert.equal(manifest.short_name,'모두의클리어');assert.equal(manifest.id,'/');assert.equal(manifest.start_url,'/?source=pwa');
+assert.equal(win.document.querySelector('meta[property="og:site_name"]').content,'모두의클리어');assert.ok(win.document.title.startsWith('모두의클리어 |'));
+assert.equal(JSON.parse(win.document.querySelector('script[type="application/ld+json"]').textContent).name,'모두의클리어');pass('PWA, SEO and share brand match while installation identity stays unchanged');
+vm.runInContext("state.user=null;state.route='home';state.config={};state.challenges=[];main.innerHTML=renderHome()",context);
+assert.equal(win.document.querySelector('.hero h1').textContent,'미션을 올리고, 해결하고, 보상받다.');
+for(const label of ['미션 등록','미션 찾기'])assert.ok(win.document.querySelector('.hero-actions').textContent.includes(label));
+assert.ok(!/모두의\s*챌린지|모챌|MODU CHALLENGE|MODU ?CLEAR/i.test(win.document.body.textContent));pass('home exact tagline, mission CTAs and no old or invented English brand');
+vm.runInContext("openAuthModal('signup')",context);assert.ok(win.document.querySelector('#modal-root').textContent.includes('모두의클리어 회원가입'));pass('signup brand is visible');
+// Device permission state must not be inferred from another device's account subscription.
+let registrations=0, removals=0, prompts=0, currentSubscription=null;
+const sub={endpoint:'https://push.example.invalid/browser',toJSON(){return {endpoint:this.endpoint}},async unsubscribe(){currentSubscription=null;return true}};
+Object.defineProperty(win.navigator,'serviceWorker',{configurable:true,value:{ready:Promise.resolve({pushManager:{async getSubscription(){return currentSubscription},async subscribe(){currentSubscription=sub;return sub}}})}});
+win.PushManager=function(){};win.Notification={permission:'denied',async requestPermission(){prompts++;return 'granted'}};
+win.recordRegistration=()=>{registrations++;return {delivered:true}};win.recordRemoval=()=>{removals++;return {ok:true}};
+vm.runInContext("apiClient.pushSettings=async()=>({configured:true,subscribed:true,publicKey:'AQ'});apiClient.savePushSubscription=async()=>recordRegistration();apiClient.removePushSubscription=async()=>recordRemoval();",context);
+await vm.runInContext('enablePushNotifications()',context);assert.equal(registrations,0);assert.equal(prompts,0);pass('denied notification permission never registers or prompts repeatedly');
+win.Notification.permission='granted';await vm.runInContext('enablePushNotifications()',context);assert.equal(registrations,1);pass('reallowed permission registers current device even when another device is subscribed');
+await vm.runInContext('disablePushNotifications()',context);assert.equal(removals,1);assert.equal(currentSubscription,null);
+await vm.runInContext('disablePushNotifications()',context);assert.equal(removals,1);pass('device unsubscribe never deletes other devices when current subscription is absent');
+win.Notification.permission='default';await vm.runInContext('enablePushNotifications()',context);assert.equal(prompts,1);assert.equal(registrations,2);pass('default permission prompts once then registers');
 win.close();console.log(`Passed ${n} behavioral regression checks`);

@@ -1,6 +1,6 @@
-# 모두의클리어 · 모두의클리어 V0.5.5
+# 모두의클리어 V0.6.3
 
-범용 성과형 미션 마켓플레이스의 Cloudflare 운영형 스테이징입니다.
+범용 성과형 미션 마켓플레이스의 Cloudflare 운영본입니다.
 
 ## 현재 Cloudflare 배포
 
@@ -57,7 +57,7 @@ npm run deploy
 
 ## 운영상 주의
 
-- 기본환경은 `APP_ENV=staging`, `PUBLIC_MONEY_ENABLED=false`입니다.
+- 기본환경은 `APP_ENV=production`, `PUBLIC_MONEY_ENABLED=false`입니다.
 - 회원가입·로그인·미션 등록·TEASER·SHORTLIST는 실제 D1 데이터로 사용할 수 있습니다.
 - Funding·실결제·지급·10% 자동정산은 PG 및 지급대행 연결, Webhook 서명검증, 법률·세무 검토 후 별도 활성화해야 합니다.
 - 이용약관·개인정보처리방침·카테고리별 자격 및 금지행위 정책은 정식 공개 전에 최종 검토가 필요합니다.

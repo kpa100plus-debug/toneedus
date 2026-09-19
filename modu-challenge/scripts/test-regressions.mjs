@@ -54,6 +54,14 @@ for (const rewardAmount of [10000,3000000,100000000]) {
 pass('edit accepts minimum, 3 million, maximum; high reward remains private pending review');
 const highCreate=await req('/api/challenges',{...challengeInput,rewardAmount:3000000},b.cookie,'POST',env,{'Idempotency-Key':'reward-high-create-001'});assert.equal(highCreate.status,201);assert.equal(highCreate.body.moderationPending,true);
 assert.equal((await req('/api/challenges/'+highCreate.body.challenge.id,undefined,b.cookie)).body.challenge.rewardAmount,3000000);pass('new high reward saves and reopens for owner');
+sql.prepare('UPDATE users SET is_admin=1 WHERE id=?').run(b.body.user.id);
+sql.prepare("INSERT INTO admin_roles (user_id,role,appointed_by) VALUES (?, 'primary', ?)").run(b.body.user.id,b.body.user.id);
+const adminEnv={...env,PRIMARY_ADMIN_EMAIL:'b@test.invalid'};
+const approvedOnce=await req('/api/admin/challenges/'+highCreate.body.challenge.id+'/moderation/approve',{},b.cookie,'POST',adminEnv);assert.equal(approvedOnce.status,200,JSON.stringify(approvedOnce.body));
+const approvedAgain=await req('/api/admin/challenges/'+highCreate.body.challenge.id+'/moderation/approve',{},b.cookie,'POST',adminEnv);assert.equal(approvedAgain.body.idempotent,true);assert.equal(sql.prepare("SELECT count(*) n FROM challenge_events WHERE challenge_id=? AND event_type='CHALLENGE_MODERATION_APPROVED'").get(highCreate.body.challenge.id).n,1);pass('moderation approval is idempotent and records one event');
+const archiveCreate=await req('/api/challenges',{...challengeInput,title:'중복 검토 로고 요청',rewardAmount:3000000},b.cookie,'POST',env,{'Idempotency-Key':'reward-archive-create-001'});assert.equal(archiveCreate.body.moderationPending,true);
+const archivedOnce=await req('/api/admin/challenges/'+archiveCreate.body.challenge.id+'/moderation/archive',{reason:'중복 등록 항목 비공개 보관'},b.cookie,'POST',adminEnv);assert.equal(archivedOnce.status,200,JSON.stringify(archivedOnce.body));assert.equal(archivedOnce.body.preserved,true);
+const archivedAgain=await req('/api/admin/challenges/'+archiveCreate.body.challenge.id+'/moderation/archive',{reason:'중복 등록 항목 비공개 보관'},b.cookie,'POST',adminEnv);assert.equal(archivedAgain.body.idempotent,true);assert.equal(sql.prepare('SELECT status FROM challenges WHERE id=?').get(archiveCreate.body.challenge.id).status,'DRAFT');assert.equal(sql.prepare("SELECT count(*) n FROM challenge_events WHERE challenge_id=? AND event_type='CHALLENGE_MODERATION_ARCHIVED'").get(archiveCreate.body.challenge.id).n,1);assert.equal((await req('/api/challenges/'+archiveCreate.body.challenge.id)).status,404);assert.equal((await req('/api/challenges/'+archiveCreate.body.challenge.id,undefined,b.cookie)).status,200);pass('moderation archive preserves owner access and is idempotent');
 assert.equal((await req('/api/challenges/'+cid,{...challengeInput,rewardAmount:50000},b.cookie,'PUT')).status,200);
 const tBody={headline:'로고 제작 경험으로 제안합니다',capability:'동네 가게의 브랜드 로고를 여러 번 제작한 경험을 바탕으로 제안합니다.',approach:'먼저 요구사항을 확인하고 스케치를 만든 다음 색상과 형태를 정리합니다.',expectedDays:7};
 const submitted=await req('/api/challenges/'+cid+'/teasers',tBody,os.cookie);assert.equal(submitted.status,201,JSON.stringify(submitted.body));const tid=submitted.body.teaser.id;pass('TEASER submitted');
@@ -274,7 +282,7 @@ assert.equal(JSON.parse(win.document.querySelector('script[type="application/ld+
 vm.runInContext("state.user=null;state.route='home';state.config={};state.challenges=[];main.innerHTML=renderHome()",context);
 assert.equal(win.document.querySelector('.hero h1').textContent,'미션을 올리고, 해결하고, 보상받다.');
 for(const label of ['미션 등록','미션 찾기'])assert.ok(win.document.querySelector('.hero-actions').textContent.includes(label));
-assert.ok(!/모두의\s*챌린지|모챌|MODU CHALLENGE|MODU ?CLEAR/i.test(win.document.body.textContent));pass('home exact tagline, mission CTAs and no old or invented English brand');
+assert.ok(!/모두의\s*챌린지|모챌|MODU CHALLENGE|MODU ?CLEAR/i.test(win.document.querySelector('main').textContent));assert.ok(win.document.querySelector('.footer-company').textContent.includes('모두의 챌린지 대표이사: 최인란'));pass('home exact tagline, mission CTAs and fixed legal footer wording');
 vm.runInContext("openAuthModal('signup')",context);assert.ok(win.document.querySelector('#modal-root').textContent.includes('모두의클리어 회원가입'));pass('signup brand is visible');
 // Device permission state must not be inferred from another device's account subscription.
 let registrations=0, removals=0, prompts=0, currentSubscription=null;

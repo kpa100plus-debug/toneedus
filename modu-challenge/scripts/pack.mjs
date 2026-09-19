@@ -31,6 +31,7 @@ const runtimePaths = [
   'worker/simulation.mjs',
   'migrations/0014_payment_simulations.sql',
   'migrations/0015_preserve_and_hide_operational_test_records.sql',
+  'migrations/0016_enforce_single_active_candidate.sql',
 ];
 
 const root = new URL('../', import.meta.url);

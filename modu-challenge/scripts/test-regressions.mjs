@@ -205,6 +205,14 @@ assert.equal((await req('/api/challenges/'+life+'/my-teaser',undefined,os.cookie
 assert.equal((await req('/api/challenges/'+life+'/my-teaser',undefined,solver2)).body.teaser.status,'SHORTLISTED');
 assert.equal(sql.prepare("SELECT count(*) n FROM teasers WHERE challenge_id=? AND status='SHORTLISTED'").get(life).n,1);
 pass('selecting another candidate preserves both submissions but keeps exactly one current candidate');
+sql.prepare("UPDATE teasers SET status='SHORTLISTED', updated_at=CURRENT_TIMESTAMP WHERE id IN (?,?)").run(lifeOne,lifeTwo);
+sql.prepare('UPDATE challenges SET shortlisted_count=2 WHERE id=?').run(life);
+sql.exec(readFileSync(new URL('../migrations/0016_enforce_single_active_candidate.sql',import.meta.url),'utf8'));
+assert.equal(sql.prepare("SELECT count(*) n FROM teasers WHERE challenge_id=?").get(life).n,2);
+assert.equal(sql.prepare("SELECT count(*) n FROM teasers WHERE challenge_id=? AND status='SHORTLISTED'").get(life).n,1);
+assert.equal(sql.prepare('SELECT shortlisted_count FROM challenges WHERE id=?').get(life).shortlisted_count,1);
+assert.equal(sql.prepare("SELECT count(*) n FROM challenge_events WHERE challenge_id=? AND event_type='SINGLE_CANDIDATE_MIGRATION'").get(life).n,1);
+pass('single-candidate migration preserves both submissions, one candidate and an audit event');
 assert.equal((await req('/api/challenges/'+life+'/shortlist',{teaserId:lifeOne,mode:'select'},os.cookie,'POST',lifecycleEnv)).status,403);
 assert.equal((await req('/api/challenges/'+life+'/shortlist',{teaserId:lifeOne,mode:'select'},b.cookie)).body.error.code,'MONEY_FLOW_DISABLED');
 assert.equal((await req('/api/challenges/'+life+'/shortlist',{teaserId:lifeOne,mode:'select'},b.cookie,'POST',lifecycleEnv)).body.status,'FUNDING_REQUIRED');

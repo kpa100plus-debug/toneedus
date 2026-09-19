@@ -292,7 +292,7 @@ assert.equal(JSON.parse(win.document.querySelector('script[type="application/ld+
 vm.runInContext("state.user=null;state.route='home';state.config={};state.challenges=[];main.innerHTML=renderHome()",context);
 assert.equal(win.document.querySelector('.hero h1').textContent,'미션을 올리고, 해결하고, 보상받다.');
 for(const label of ['미션 등록','미션 찾기'])assert.ok(win.document.querySelector('.hero-actions').textContent.includes(label));
-assert.ok(!/모두의\s*챌린지|모챌|MODU CHALLENGE|MODU ?CLEAR/i.test(win.document.querySelector('main').textContent));assert.ok(win.document.querySelector('.footer-company').textContent.includes('모두의 챌린지 대표이사: 최인란'));pass('home exact tagline, mission CTAs and fixed legal footer wording');
+assert.ok(!/모두의\s*챌린지|모챌|MODU CHALLENGE|MODU ?CLEAR/i.test(win.document.querySelector('main').textContent));assert.ok(win.document.querySelector('.footer-company').textContent.includes('모두의클리어 운영팀'));pass('home exact tagline, mission CTAs and fixed operations footer wording');
 vm.runInContext("openAuthModal('signup')",context);assert.ok(win.document.querySelector('#modal-root').textContent.includes('모두의클리어 회원가입'));pass('signup brand is visible');
 // Device permission state must not be inferred from another device's account subscription.
 let registrations=0, removals=0, prompts=0, currentSubscription=null;

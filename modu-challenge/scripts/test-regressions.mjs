@@ -182,7 +182,7 @@ try {
  assert.equal((await req('/api/me/push-subscriptions',subscription,b.cookie,'POST',pushEnv)).body.subscribed,true);pass('push unsubscribe and re-enable maintain account registration');
 } finally {globalThis.fetch=transport}
 const beforeData=sql.prepare('SELECT count(*) n FROM users').get().n;
-assert.equal((await req('/api/config')).body.serviceName,'모두의클리어');assert.equal((await req('/api/config')).body.internalCode,'MODU_CHALLENGE');assert.equal(sql.prepare('SELECT count(*) n FROM users').get().n,beforeData);pass('new public brand retains internal identifier and accounts');
+assert.equal((await req('/api/config')).body.serviceName,'모두의클리어');assert.equal((await req('/api/config')).body.internalCode,'MODU_CHALLENGE');assert.equal((await req('/api/config')).body.moderationRewardThreshold,500000);assert.equal(sql.prepare('SELECT count(*) n FROM users').get().n,beforeData);pass('new public brand retains internal identifier, moderation threshold and accounts');
 assert.equal(legacyNotificationText('모두의 챌린지에서 챌린지를 확인하세요'),'모두의클리어에서 미션을 확인하세요');pass('legacy system notification display migrates without changing stored content');
 
 const storedNotice='모두의 챌린지에서 챌린지를 확인하세요';
@@ -200,9 +200,11 @@ const lifeOne=(await req('/api/challenges/'+life+'/teasers',tBody,os.cookie)).bo
 const lifeTwo=(await req('/api/challenges/'+life+'/teasers',tBody,solver2)).body.teaser.id;
 for(const teaserId of [lifeOne,lifeTwo]) assert.equal((await req('/api/challenges/'+life+'/shortlist',{teaserId},b.cookie)).status,200);
 let lc=(await req('/api/challenges/'+life,undefined,b.cookie)).body.challenge;
-assert.equal(lc.participantCount,2);assert.equal(lc.teaserCount,2);assert.equal(lc.shortlistedCount,2);assert.equal(lc.status,'SHORTLISTED');
-for(const cookie of [os.cookie,solver2])assert.equal((await req('/api/challenges/'+life+'/my-teaser',undefined,cookie)).body.teaser.status,'SHORTLISTED');
-pass('two independent solvers retain their own submissions, shortlist badges and exact counts');
+assert.equal(lc.participantCount,2);assert.equal(lc.teaserCount,2);assert.equal(lc.shortlistedCount,1);assert.equal(lc.status,'SHORTLISTED');
+assert.equal((await req('/api/challenges/'+life+'/my-teaser',undefined,os.cookie)).body.teaser.status,'VIEWED');
+assert.equal((await req('/api/challenges/'+life+'/my-teaser',undefined,solver2)).body.teaser.status,'SHORTLISTED');
+assert.equal(sql.prepare("SELECT count(*) n FROM teasers WHERE challenge_id=? AND status='SHORTLISTED'").get(life).n,1);
+pass('selecting another candidate preserves both submissions but keeps exactly one current candidate');
 assert.equal((await req('/api/challenges/'+life+'/shortlist',{teaserId:lifeOne,mode:'select'},os.cookie,'POST',lifecycleEnv)).status,403);
 assert.equal((await req('/api/challenges/'+life+'/shortlist',{teaserId:lifeOne,mode:'select'},b.cookie)).body.error.code,'MONEY_FLOW_DISABLED');
 assert.equal((await req('/api/challenges/'+life+'/shortlist',{teaserId:lifeOne,mode:'select'},b.cookie,'POST',lifecycleEnv)).body.status,'FUNDING_REQUIRED');
@@ -300,12 +302,14 @@ win.Notification.permission='default';await vm.runInContext('enablePushNotificat
 vm.runInContext("state.user={id:'owner'};state.config={environment:'production',moneyEnabled:false};readFixture.challenge.status='SHORTLISTED';main.innerHTML=renderActivityChallenge(readFixture.challenge)+renderApplicationItem({challenge:readFixture.challenge,teaserStatus:'SHORTLISTED',teaserHeadline:'긴 제안 내용 '.repeat(20),teaserCreatedAt:'2026-09-18'});",context);
 assert.equal(win.document.querySelector('#main .activity-badges').children.length,3);
 assert.equal(win.document.querySelector('#main .candidate-confirmed').textContent,'✓ 후보선정 완료');
-assert.ok(win.document.querySelector('#main [data-action=view-my-teaser]').textContent.includes('후보선정 완료'));
-assert.ok(win.document.querySelector('#main .application-links').textContent.includes('진행상황'));pass('activity cards separate metadata, selected badge, full-width headline and actions');
+assert.equal(win.document.querySelector('#main .application-summary').tagName,'DIV');
+assert.equal(win.document.querySelector('#main .application-summary [data-action]'),null);
+assert.deepEqual([...win.document.querySelectorAll('#main .application-links [data-action]')].map(node=>node.dataset.action),['view-my-teaser','view-challenge-content','view-progress']);
+assert.ok(win.document.querySelector('#main .application-links').textContent.includes('진행상황'));pass('activity cards keep status non-clickable and expose three distinct actions');
 vm.runInContext("main.innerHTML=renderProgressNotice(readFixture.challenge,{isOwner:true})+renderCandidateCard('read-test',{...teaserFixture.teaser,status:'SHORTLISTED'});",context);
 assert.match(win.document.querySelector('#main .workflow-notice').textContent,/결제·지급 연동.*준비 중/);
 assert.equal(win.document.querySelector('#main [data-action=select-finalist]').disabled,true);
-assert.equal(win.document.querySelector('#main [data-action=shortlist]').disabled,true);pass('blocked finalist explains why; shortlist completion is prominent');
+assert.equal(win.document.querySelector('#main [data-action=shortlist]').disabled,true);assert.match(win.document.querySelector('#main [data-action=shortlist]').textContent,/현재 수행자 후보/);pass('blocked finalist explains why; one current candidate is prominent');
 for(const [status,role,action] of [['SHORTLISTED','isOwner','review-candidates'],['FUNDING_REQUIRED','isOwner','fund-challenge'],['EXECUTING','isSelectedSolver','submit-proof'],['PROOF_SUBMITTED','isOwner','confirm-success'],['SUCCESS','isOwner','view-settlement']]) {
  win.stage=status;win.role=role;
  vm.runInContext("state.config={environment:'test',moneyEnabled:false};main.innerHTML=renderProgressNotice({...readFixture.challenge,status:stage},{[role]:true});",context);

@@ -307,6 +307,10 @@ const manifest=JSON.parse(readFileSync(new URL('../public/manifest.webmanifest',
 assert.equal(manifest.name,'모두의클리어');assert.equal(manifest.short_name,'모두의클리어');assert.equal(manifest.id,'/');assert.equal(manifest.start_url,'/?source=pwa');
 assert.equal(win.document.querySelector('meta[property="og:site_name"]').content,'모두의클리어');assert.ok(win.document.title.startsWith('모두의클리어 |'));
 assert.equal(JSON.parse(win.document.querySelector('script[type="application/ld+json"]').textContent).name,'모두의클리어');pass('PWA, SEO and share brand match while installation identity stays unchanged');
+win.cardFixture={...challengeInput,id:'card-impact-test',category:'PUBLIC',status:'OPEN',fundingStatus:'POSTED',participantCount:49,teaserCount:27,rewardAmount:2100000,deadline:'2026-12-31',ownerId:'owner',owner:{displayName:'공공혁신연구소',trustScore:95,strikes:0}};
+vm.runInContext("main.innerHTML=renderChallengeCard(cardFixture)",context);
+assert.equal(win.document.querySelector('.impact-metrics').textContent.includes('49명'),true);assert.equal(win.document.querySelector('.impact-metrics').textContent.includes('27건'),true);
+assert.equal(win.document.querySelector('.challenge-trust-ring strong').textContent,'95/100');assert.equal(win.document.querySelector('.challenge-card-bottom strong').textContent,'2,100,000원');assert.ok(win.document.querySelector('.challenge-visual-status'));pass('impact-data card exposes participation, TEASER, trust, status and reward hierarchy');
 vm.runInContext("state.user=null;state.route='home';state.config={};state.challenges=[];main.innerHTML=renderHome()",context);
 assert.equal(win.document.querySelector('.hero h1').textContent,'미션을 올리고, 해결하고, 보상받다.');
 for(const label of ['미션 등록','미션 찾기'])assert.ok(win.document.querySelector('.hero-actions').textContent.includes(label));

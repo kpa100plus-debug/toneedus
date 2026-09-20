@@ -1,7 +1,7 @@
 # 모두의클리어 배포 상태
 
 기준일: 2026-09-19
-버전: V0.6.8 / PWA v48
+버전: V0.6.9 / PWA v49
 참조코드: `REF-MODUCLEAR-NEW-WORKSPACE-CONTINUE-FULL-EXECUTION-20260919-01`
 
 ## Cloudflare 운영 자원

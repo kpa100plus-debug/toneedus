@@ -1,8 +1,8 @@
 # 모두의클리어 배포 상태
 
-기준일: 2026-09-19
-버전: V0.7.0 / PWA v50
-참조코드: `REF-MODUCLEAR-NEW-WORKSPACE-CONTINUE-FULL-EXECUTION-20260919-01`
+기준일: 2026-09-22
+버전: V0.8.0 / PWA v51
+참조코드: `REF-MODUCLEAR-V080-FULL-FIX-DEPLOY-20260922-01`
 
 ## Cloudflare 운영 자원
 
@@ -13,7 +13,7 @@
 - 원본 저장소: https://github.com/kpa100plus-debug/toneedus/tree/modu-challenge-app/modu-challenge
 - 자동배포 상태: https://github.com/kpa100plus-debug/toneedus/actions/workflows/modu-challenge-cloudflare.yml
 - Worker: `modu-challenge`
-- Worker 버전: `186e9b36-7a44-4f4b-9499-da69afd383f5`
+- Worker 버전: GitHub Actions 운영 배포 시 자동 갱신
 - D1: `modu-challenge-db`
 - D1 ID: `472f68ee-24da-4d11-b9c8-6a8f2ee597be`
 - Cron: `0 * * * *`
@@ -36,12 +36,20 @@
 - PWA 화면·정적 자산 캐시 우선 및 백그라운드 갱신
 - 공개 미션 정렬용 D1 부분 인덱스 추가
 - 중복 자동배포 제거 및 기본 배포 워크플로 단일화
+- Google 인증 이메일 기반 기존 계정 안전 연결 및 중복 계정 방지
+- 미션 위험도 자동분석·안전 미션 자동승인·고위험 미션 관리자 검토 유지
+- 관리자 검토 대기열 전체 자동 재검수 기능
+- 8개 미션 카테고리의 필터·아이콘·카드 색상 일치 및 중복 제거
+- 일반 사용자 화면의 빈 시뮬레이션 영역 제거 및 관리자 전용 접근 적용
+- 모바일 알림 메시지가 하단 내비게이션에 가려지지 않도록 위치 보정
 
 ## 검수 결과
 
-- 라이브 API E2E 8/8 통과
+- 자동 동작 회귀검사 105개 통과
+- 구조·보안·구성 검증 56개 통과
 - JavaScript·Worker 문법 검사 통과
-- 분할 번들 SHA-256 및 14개 런타임 파일 검사 통과
+- 분할 번들 SHA-256 및 30개 런타임 파일 검사 통과
+- 자동승인·관리자 검토 분기와 Google 계정 연결 회귀검사 통과
 - D1 마이그레이션에서 관리자 Seed 제거 확인
 - 보상금 1,000,000원 기준: 플랫폼 100,000원 / 성공 참가자 900,000원
 - 스테이징 실제 돈 게이트: `MONEY_FLOW_DISABLED`

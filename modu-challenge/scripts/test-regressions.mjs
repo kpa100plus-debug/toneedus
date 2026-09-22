@@ -31,7 +31,7 @@ const oc='mc_oauth_signup='+token;
 const os=await req('/api/auth/oauth-signup',{...common,displayName:'소셜활동',phone:'01000001004',email:'attacker@test.invalid'},oc);assert.equal(os.status,201,JSON.stringify(os.body));assert.equal(os.body.user.email,'oauth@test.invalid');assert.equal(sql.prepare("SELECT email_verified FROM users WHERE email = 'oauth@test.invalid'").get().email_verified,1);pass('Google signup without password, provider email verified');
 const repeated=await req('/api/auth/oauth-signup',{...common,displayName:'중복소셜',phone:'01000001005'},oc);assert.equal(repeated.status,401);pass('OAuth signup token single use');
 const challengeInput={title:'동네 로고 디자인 제안',summary:'동네 가게의 새 로고 디자인을 제안해주세요',description:'동네 가게에서 사용할 새 로고와 색상 조합을 디자인하여 제안해주세요.',category:'IDEA',rewardAmount:50000,successCriteria:'원본 디자인과 색상 조합 설명 제출',paymentTrigger:'최종 제안 확인 후 진행 조건 확정',evidenceRequirements:'디자인 원본 파일 제출',deadline:'2099-01-01',visibility:'public'};
-const make=await req('/api/challenges',challengeInput,b.cookie,'POST',env,{'Idempotency-Key':'regression-create-001'});assert.equal(make.status,201,JSON.stringify(make.body));const cid=make.body.challenge.id;pass('challenge create');
+const make=await req('/api/challenges',challengeInput,b.cookie,'POST',env,{'Idempotency-Key':'regression-create-001'});assert.equal(make.status,201,JSON.stringify(make.body));const cid=make.body.challenge.id;assert.equal(make.body.moderationDecision,'AUTO_APPROVED');assert.equal(make.body.moderationRiskScore,0);assert.equal(sql.prepare('SELECT moderation_decision FROM challenges WHERE id=?').get(cid).moderation_decision,'AUTO_APPROVED');pass('safe challenge is automatically reviewed, approved and audited');
 const replay=await req('/api/challenges',challengeInput,b.cookie,'POST',env,{'Idempotency-Key':'regression-create-001'});assert.equal(replay.body.challenge.id,cid);pass('idempotent challenge replay');
 const edited=await req('/api/challenges/'+cid,{...challengeInput,title:'수정된 동네 로고 디자인'},b.cookie,'PUT');assert.equal(edited.status,200,JSON.stringify(edited.body));assert.equal(edited.body.challenge.title,'수정된 동네 로고 디자인');pass('challenge edit saved and returned');
 // Reward policy: existing-account migration, create and update boundaries.
@@ -52,11 +52,12 @@ for (const rewardAmount of [10000,3000000,100000000]) {
  if(rewardAmount>=500000){assert.equal(valid.body.moderationPending,true);assert.equal((await req('/api/challenges/'+cid)).status,404)}
 }
 pass('edit accepts minimum, 3 million, maximum; high reward remains private pending review');
-const highCreate=await req('/api/challenges',{...challengeInput,rewardAmount:3000000},b.cookie,'POST',env,{'Idempotency-Key':'reward-high-create-001'});assert.equal(highCreate.status,201);assert.equal(highCreate.body.moderationPending,true);
+const highCreate=await req('/api/challenges',{...challengeInput,rewardAmount:3000000},b.cookie,'POST',env,{'Idempotency-Key':'reward-high-create-001'});assert.equal(highCreate.status,201);assert.equal(highCreate.body.moderationPending,true);assert.equal(highCreate.body.moderationDecision,'ADMIN_REVIEW');assert.equal(highCreate.body.moderationRiskScore,25);
 assert.equal((await req('/api/challenges/'+highCreate.body.challenge.id,undefined,b.cookie)).body.challenge.rewardAmount,3000000);pass('new high reward saves and reopens for owner');
 sql.prepare('UPDATE users SET is_admin=1 WHERE id=?').run(b.body.user.id);
 sql.prepare("INSERT INTO admin_roles (user_id,role,appointed_by) VALUES (?, 'primary', ?)").run(b.body.user.id,b.body.user.id);
 const adminEnv={...env,PRIMARY_ADMIN_EMAIL:'b@test.invalid'};
+const automaticRecheck=await req('/api/admin/moderation/auto-review',{},b.cookie,'POST',adminEnv);assert.equal(automaticRecheck.status,200);assert.ok(automaticRecheck.body.checked>=1);assert.ok(automaticRecheck.body.adminReview>=1);assert.equal(sql.prepare('SELECT status FROM challenges WHERE id=?').get(highCreate.body.challenge.id).status,'REVIEW');pass('automatic queue recheck keeps high-risk items for administrator approval');
 assert.equal((await req('/api/admin/members/'+a.body.user.id+'/status',{status:'limited',reason:'반복 요청 검증을 위한 운영 제한 기록입니다.'},os.cookie,'POST',adminEnv)).status,403);
 const limitedMember=await req('/api/admin/members/'+a.body.user.id+'/status',{status:'limited',reason:'반복 요청 검증을 위한 운영 제한 기록입니다.'},b.cookie,'POST',adminEnv);
 assert.equal(limitedMember.status,200,JSON.stringify(limitedMember.body));assert.equal(sql.prepare('SELECT status FROM users WHERE id=?').get(a.body.user.id).status,'limited');
@@ -117,6 +118,13 @@ try {
  const start=await worker.fetch(new Request('https://test.invalid/api/auth/oauth/google?returnTo=%23%2Fdashboard'),mailEnv,{});assert.equal(start.status,302);const stateToken=new URL(start.headers.get('location')).searchParams.get('state');
  const callback=await worker.fetch(new Request('https://test.invalid/api/auth/oauth/google/callback?state='+stateToken+'&code=stub',{headers:{Cookie:start.headers.get('set-cookie').split(';')[0]}}),mailEnv,{});
  assert.equal(callback.status,200);assert.match(await callback.text(),/#\/dashboard\?oauth=success/);assert.match(callback.headers.get('set-cookie'),/mc_session=/);assert.equal(sql.prepare('SELECT count(*) n FROM users').get().n,userCount);pass('Google callback links existing verified account without duplicate and restores route');
+
+ globalThis.fetch=async(url,options)=>String(url)==='https://api.brevo.com/v3/smtp/email'?(sentMail=JSON.parse(options?.body || '{}'),Response.json({messageId:'test'})):String(url).includes('/token')?Response.json({access_token:'stub-access'}):Response.json({sub:'google-unverified-link',email:'googlelink@test.invalid',email_verified:true,name:'구글연결회원'});
+ const pendingGoogleLink=await req('/api/auth/signup',{...common,displayName:'구글연결회원',phone:'01000001994',email:'googlelink@test.invalid'},'', 'POST',mailEnv);assert.equal(pendingGoogleLink.body.pendingVerification,true);
+ const pendingGoogleUserCount=sql.prepare('SELECT count(*) n FROM users').get().n;
+ const googleLinkStart=await worker.fetch(new Request('https://test.invalid/api/auth/oauth/google?returnTo=%23%2Fdashboard'),mailEnv,{});const googleLinkState=new URL(googleLinkStart.headers.get('location')).searchParams.get('state');
+ const googleLinkCallback=await worker.fetch(new Request('https://test.invalid/api/auth/oauth/google/callback?state='+googleLinkState+'&code=stub',{headers:{Cookie:googleLinkStart.headers.get('set-cookie').split(';')[0]}}),mailEnv,{});
+ assert.equal(googleLinkCallback.status,200);assert.match(await googleLinkCallback.text(),/#\/dashboard\?oauth=success/);assert.match(googleLinkCallback.headers.get('set-cookie'),/mc_session=/);assert.equal(sql.prepare('SELECT count(*) n FROM users').get().n,pendingGoogleUserCount);assert.equal(sql.prepare("SELECT email_verified FROM users WHERE email='googlelink@test.invalid'").get().email_verified,1);assert.equal(sql.prepare("SELECT count(*) n FROM auth_identities WHERE provider='google' AND provider_subject='google-unverified-link'").get().n,1);assert.equal(sql.prepare("SELECT count(*) n FROM email_verifications e JOIN users u ON u.id=e.user_id WHERE u.email='googlelink@test.invalid' AND e.used_at IS NULL").get().n,0);pass('Google verified email links and activates an existing unverified account without duplication');
 
  // Exercise both providers through their real start/callback/signup/session handlers.
  async function oauthRoundTrip(provider, {cookieOverride, error, returnTo='#/dashboard'}={}) {
@@ -358,7 +366,7 @@ assert.equal(win.document.querySelectorAll('#main .flow-step.done,.flow-step.act
 
 // Virtual checkout is usable without enabling any real payment flow.
 win.approvedSimulation=approvedSimulation;
-vm.runInContext("state.user={id:'sandbox-owner'};state.loading=false;state.route='simulation';state.routeError=null;state.simulations=[approvedSimulation];state.simulation={...approvedSimulation,stage:'FUNDING_REQUIRED',paymentStatus:'NONE'};state.simulationRole='owner';main.innerHTML=renderSimulation();",context);
+vm.runInContext("state.user={id:'sandbox-owner',isAdmin:true};state.loading=false;state.route='simulation';state.routeError=null;state.simulations=[approvedSimulation];state.simulation={...approvedSimulation,stage:'FUNDING_REQUIRED',paymentStatus:'NONE'};state.simulationRole='owner';main.innerHTML=renderSimulation();",context);
 assert.match(win.document.querySelector('#main').textContent,/실제 청구 및 송금 0원/);
 assert.match(win.document.querySelector('#main .simulation-checkout').textContent,/90,000원/);
 assert.ok(win.document.querySelector('#main [data-step=PAY_APPROVE]'));assert.ok(win.document.querySelector('#main [data-step=PAY_FAIL]'));assert.ok(win.document.querySelector('#main [data-step=PAY_CANCEL]'));

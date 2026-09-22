@@ -13,13 +13,13 @@ export async function testSimulations({req, sql, ownerCookie, otherCookie, sourc
   const created=await create();assert.equal(created.status,201,JSON.stringify(created.body));let s=created.body.simulation;
   assert.equal(s.mode,'SIMULATION');assert.equal(s.actualCharge,0);assert.equal(s.platformFee,10000);assert.equal(s.solverPayout,90000);
   const sid=s.id;
-  assert.equal((await req('/api/simulations/'+sid,undefined,otherCookie)).status,404);
-  assert.equal((await req('/api/simulations/'+sid,{requestId:key(),revision:s.revision,role:'solver',action:'SUBMIT_TEASERS'},otherCookie)).status,404);
-  assert.equal((await req('/api/simulations',undefined,otherCookie)).body.simulations.length,0);
+  assert.equal((await req('/api/simulations/'+sid,undefined,otherCookie)).status,403);
+  assert.equal((await req('/api/simulations/'+sid,{requestId:key(),revision:s.revision,role:'solver',action:'SUBMIT_TEASERS'},otherCookie)).status,403);
+  assert.equal((await req('/api/simulations',undefined,otherCookie)).status,403);
   pass('virtual transactions require login, validate amounts and remain private to their creator');
   const clone=await create({challengeId:sourceId,rewardAmount:10000});
   assert.equal(clone.status,201);assert.equal(clone.body.simulation.rewardAmount,sql.prepare('SELECT reward_amount FROM challenges WHERE id=?').get(sourceId).reward_amount);
-  assert.equal((await req('/api/simulations',{requestId:key(),challengeId:sourceId},otherCookie)).status,404);
+  assert.equal((await req('/api/simulations',{requestId:key(),challengeId:sourceId},otherCookie)).status,403);
   const creationId=key();const once=await create({requestId:creationId});const twice=await create({requestId:creationId});
   assert.equal(once.body.simulation.id,twice.body.simulation.id);
   pass('copy uses authorized source values without editing source; creation retry is idempotent');

@@ -52,6 +52,17 @@ jobs:
           npm test
           node scripts/stamp-build.mjs
 
+      - name: Back up existing production D1
+        run: npx wrangler d1 export DB --remote --output=modu-challenge-db-pre-v0.9.0.sql
+
+      - name: Preserve encrypted workflow backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: modu-challenge-db-pre-v0.9.0-${{ github.run_id }}
+          path: modu-challenge/modu-challenge-db-pre-v0.9.0.sql
+          retention-days: 14
+          if-no-files-found: error
+
       - name: Apply pending D1 migrations
         run: npx wrangler d1 migrations apply DB --remote
 

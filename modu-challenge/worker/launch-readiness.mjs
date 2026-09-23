@@ -10,6 +10,8 @@ export function identityConfigured(env) {
 export function launchReadiness(env) {
   return {
     liveTransactionsAvailable: false,
+    entityReviewImplemented: true,
+    financialSandboxAdaptersImplemented: true,
     identityConnected: identityConfigured(env),
     verificationEnforcement: ['test','development'].includes(env.APP_ENV) ? (env.VERIFICATION_ENFORCEMENT || 'required') : 'required',
     blockers: [

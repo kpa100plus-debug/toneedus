@@ -2021,3 +2021,5 @@ input:-webkit-autofill,select:-webkit-autofill {-webkit-box-shadow:0 0 0 1000px 
 
 .transaction-launch-notice{padding:12px 20px;background:#fff6df;color:#63451a;text-align:center;font-size:14px;line-height:1.6;border-bottom:1px solid #eeddb5;overflow-wrap:anywhere}
 @media(max-width:480px){.transaction-launch-notice{font-size:13px;padding:10px 16px}}
+
+.entity-panel {overflow-wrap:anywhere}.entity-panel .preview-row{flex-wrap:wrap;gap:12px}.entity-panel .auth-form{margin:20px 0;padding:16px;border:1px solid #d8dce8;border-radius:14px}.entity-panel input:not([type=checkbox]),.entity-panel select,.entity-panel textarea{width:100%;max-width:100%;box-sizing:border-box}.entity-panel input[type=checkbox]{width:auto}.entity-panel .btn{white-space:normal;min-height:44px}

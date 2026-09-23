@@ -1,3 +1,6 @@
+import { entityApi, entityConfigured, purgeEntityEvidence } from './entity-verification.mjs';
+import { createTestOrder, transitionTestOrder } from './transactions.mjs';
+import { executeProviderOperation, reconcileProviderOperation, reconcileWebhook, reconcilePendingOperations } from './provider-operations.mjs';
 import { LIVE_FINANCIAL_ADAPTERS_RELEASED, identityConfigured, launchReadiness } from './launch-readiness.mjs';
 import { identityApi, IDENTITY_CONSENT_VERSION } from './identity.mjs';
 import { simulationApi } from './simulation.mjs';
@@ -77,6 +80,7 @@ export default {
       if (String(error).includes('MODU_PHONE_EXISTS')) return problem(409, 'PHONE_EXISTS', '이미 가입에 사용된 휴대전화 번호입니다.');
       if (String(error).includes('MODU_DISPLAY_NAME_EXISTS')) return problem(409, 'DISPLAY_NAME_EXISTS', '이미 사용 중인 활동명입니다.');
       if (String(error).includes('UNIQUE constraint failed: users.email')) return problem(409, 'EMAIL_EXISTS', '이미 가입된 이메일입니다. 로그인 또는 인증메일 재발송을 이용해주세요.');
+      if(error?.code && Number.isInteger(error.status)) return problem(error.status,error.code,({ENTITY_REVIEW_NOT_READY:'자격 심사 보안 설정·정책 승인 전입니다.',IDENTITY_REQUIRED:'기관 본인확인이 먼저 필요합니다.',SELF_REVIEW_DENIED:'본인 신청은 직접 승인할 수 없습니다.',REGISTRY_CHECK_REQUIRED:'최근 사업자 진위 확인이 필요합니다.',STALE_REVISION:'정보가 변경되었습니다. 새로고침 후 다시 확인해주세요.',EVIDENCE_REQUIRED:'필수 증빙을 첨부해주세요.',NTS_PROVIDER_REQUIRED:'국세청 진위확인 API 연결이 필요합니다.',ENTITY_ALREADY_REPRESENTED:'이미 다른 계정에서 확인한 등록 주체입니다. 대표·위임 권한 변경 심사가 필요합니다.',CASE_ALREADY_EXISTS:'진행 중인 신청을 먼저 확인해주세요.',EVIDENCE_SIZE_LIMIT:'증빙 이미지를 512KB 이하로 줄여주세요.',EVIDENCE_EXPIRED:'증빙 보유기간이 끝나 파기되었습니다.',CASE_NOT_REVIEWABLE:'현재 상태에서는 심사를 진행할 수 없습니다.',REGISTRY_UNAVAILABLE:'국세청 조회에 실패했습니다. 잠시 후 다시 확인해주세요.',PROVIDER_SANDBOX_NOT_CONFIGURED:'업체 테스트 환경이 연결되지 않았습니다.',OPERATION_ALREADY_RESERVED:'이미 접수된 거래입니다. 재요청하지 말고 대사 결과를 확인해주세요.'})[error.code] || '요청 조건을 확인하지 못했습니다. 상태를 새로 확인해주세요.');
       console.error('Unhandled API error', error?.name || 'Error');
       return problem(500, 'INTERNAL_ERROR', '요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.');
     }
@@ -85,6 +89,8 @@ export default {
   async scheduled(_controller, env, ctx) {
     ctx.waitUntil(Promise.allSettled([
       processOverdueFunding(env),
+      purgeEntityEvidence(env),
+      reconcilePendingOperations(env),
       autoReviewPendingChallenges(env),
     ]));
   },
@@ -114,6 +120,51 @@ async function route(request, env, ctx, url) {
     return json(result.data, result.status, { 'Cache-Control': 'private, no-store' });
   }
 
+  if (path.startsWith('/api/me/entity-cases') || path.startsWith('/api/admin/entity-cases')) {
+    const admin=path.startsWith('/api/admin/');
+    const user=admin?await requirePrimaryAdmin(request,env):await requireAuth(request,env);
+    if(user instanceof Response)return user;
+    return entityApi({request,env,user,admin,path,method,json});
+  }
+  if(path==='/api/provider-webhooks/toss'){
+    if(env.APP_ENV!=='test'||env.PROVIDER_SANDBOX_ENABLED!=='true')return problem(503,'MONEY_FLOW_DISABLED','실거래 웹훅은 아직 개방되지 않았습니다.');
+    if(method!=='POST')return problem(405,'METHOD_NOT_ALLOWED','POST 요청만 지원합니다.');
+    const body=await readJson(request);if(body instanceof Response)return body;
+    return json(await reconcileWebhook(env,body));
+  }
+  if(path.startsWith('/api/transactions/test/')&&env.APP_ENV==='test'&&env.PROVIDER_SANDBOX_ENABLED==='true'){
+    const user=await requireAuth(request,env);if(user instanceof Response)return user;
+    if(method!=='POST')return problem(405,'METHOD_NOT_ALLOWED','POST 요청만 지원합니다.');
+    const body=await readJson(request);if(body instanceof Response)return body;
+    const key=request.headers.get('Idempotency-Key');
+    if(path==='/api/transactions/test/orders'){
+      const mission=await fetchChallenge(body.challengeId,env);
+      if(!mission||mission.owner_id!==user.id)return problem(403,'OWNER_ONLY','의뢰자만 요청할 수 있습니다.');
+      const gate=await verifiedPartiesGate(mission,null,{...env,VERIFICATION_ENFORCEMENT:"required"});if(gate)return gate;
+      return json(await createTestOrder(env,{challengeId:mission.id,ownerId:user.id,solverId:mission.selected_solver_id,amount:mission.reward_amount,requestKey:key}),201);
+    }
+    const match=path.match(/^\/api\/transactions\/test\/orders\/([^/]+)\/(action|provider|reconcile)$/);
+    if(!match)return problem(404,'NOT_FOUND','거래 경로가 없습니다.');
+    const order=await env.DB.prepare("SELECT * FROM transaction_orders WHERE id=? AND mode='TEST'").bind(match[1]).first();
+    if(!order)return problem(404,'ORDER_NOT_FOUND','거래가 없습니다.');
+    const admin=await requirePrimaryAdmin(request,env),primary=!(admin instanceof Response);
+    if(![order.owner_id,order.solver_id].includes(user.id)&&!primary)return problem(403,'PARTY_REQUIRED','당사자만 확인할 수 있습니다.');
+    if(match[2]==='action'){
+      if(!['REQUEST_PAYMENT','REQUEST_REFUND','SUBMIT_PROOF','REJECT_PROOF','ACCEPT_PROOF','CANCEL','OPEN_DISPUTE','RESOLVE_REFUND','RESOLVE_PAYOUT','QUEUE_PAYOUT'].includes(body.action))return problem(403,'PROVIDER_ONLY','기관 결과는 직접 입력할 수 없습니다.');
+      const operator=['RESOLVE_REFUND','RESOLVE_PAYOUT','QUEUE_PAYOUT'].includes(body.action);
+      if(operator&&!primary)return problem(403,'PRIMARY_ADMIN_REQUIRED','최고관리자 확인이 필요합니다.');
+      const mission=await fetchChallenge(order.challenge_id,env);const gate=await verifiedPartiesGate(mission,null,{...env,VERIFICATION_ENFORCEMENT:"required"});if(gate)return gate;
+      return json(await transitionTestOrder(env,{orderId:order.id,requestKey:key,action:body.action,actorId:operator?'TEST_OPERATOR':user.id,revision:body.revision,reason:body.reason||''}));
+    }
+    if(match[2]==='provider'){
+      if(body.kind==='PAYOUT'&&!primary)return problem(403,'PRIMARY_ADMIN_REQUIRED','최고관리자 확인이 필요합니다.');
+      const mission=await fetchChallenge(order.challenge_id,env);const gate=await verifiedPartiesGate(mission,null,{...env,VERIFICATION_ENFORCEMENT:"required"});if(gate)return gate;
+      return json(await executeProviderOperation(env,{orderId:order.id,kind:body.kind,actorId:body.kind==='PAYOUT'?'TEST_OPERATOR':user.id,requestKey:key,paymentKey:body.paymentKey,reason:body.reason||''}));
+    }
+    const op=await env.DB.prepare('SELECT id FROM provider_operations WHERE id=? AND order_id=?').bind(body.operationId,order.id).first();
+    if(!op)return problem(404,'OPERATION_NOT_FOUND','처리 요청이 없습니다.');
+    return json(await reconcileProviderOperation(env,op.id,primary?body.providerReference:null));
+  }
   if (method === 'GET' && path === '/api/launch-readiness') return json(launchReadiness(env));
   if (path.startsWith('/api/transactions') && method !== 'GET') return problem(503, 'MONEY_FLOW_DISABLED', '실제 결제·환불·지급은 업체 연동과 검증 완료 전까지 차단됩니다.');
   if (method === 'GET' && path === '/api/me/transactions') {
@@ -928,7 +979,7 @@ function verificationRequirements(subjectType) {
 }
 
 function verificationProviderConfigured(type, env) {
-  return type === 'IDENTITY' && identityConfigured(env);
+  return type === 'IDENTITY' ? identityConfigured(env) : entityConfigured(env);
 }
 
 function verificationEnforcement(env) {
@@ -937,7 +988,7 @@ function verificationEnforcement(env) {
 }
 
 function verificationIsReusable(row) {
-  if (!row || row.status !== 'VERIFIED' || row.revoked_at || row.provider !== 'portone-v2' || !row.provider_reference_hash || !row.verified_at || !row.expires_at) return false;
+  if (!row || row.status !== 'VERIFIED' || row.revoked_at || !((row.verification_type==='IDENTITY'&&row.provider==='portone-v2')||(row.verification_type!=='IDENTITY'&&row.provider==='entity-review-v1')) || !row.provider_reference_hash || !row.verified_at || !row.expires_at) return false;
   return Number.isFinite(Date.parse(row.expires_at)) && Date.parse(row.expires_at) > Date.now();
 }
 
@@ -947,7 +998,7 @@ function publicVerification(row) {
     type: row.verification_type,
     subjectType: row.subject_type,
     status: verificationIsReusable(row) ? 'VERIFIED' : (row.status === 'VERIFIED' ? 'EXPIRED' : row.status),
-    provider: row.provider ? (row.provider === 'legacy' ? '기존 인증 이관' : '외부 인증기관') : null,
+    provider: row.provider ? (row.provider === 'legacy' ? '기존 인증 이관' : row.provider === 'entity-review-v1' ? '사업자·단체 자격 심사' : '외부 인증기관') : null,
     subjectName: row.subject_name ? `${String(row.subject_name).slice(0, 1)}***` : null,
     verifiedAt: row.verified_at || null,
     expiresAt: row.expires_at || null,
@@ -2632,7 +2683,7 @@ async function getTrustProfile(userId, env) {
   const actorProfiles = await env.DB.prepare(`SELECT subject_type, activity_name, organization_name, industry, company_intro, public_fields_json
     FROM member_actor_profiles WHERE user_id = ? ORDER BY created_at ASC`).bind(userId).all();
   const verifiedTypes = await env.DB.prepare(`SELECT verification_type, subject_type, verified_at, expires_at
-    FROM member_verifications WHERE user_id = ? AND status = 'VERIFIED' AND provider='portone-v2' AND provider_reference_hash IS NOT NULL AND revoked_at IS NULL
+    FROM member_verifications WHERE user_id = ? AND status = 'VERIFIED' AND ((verification_type='IDENTITY' AND provider='portone-v2') OR (verification_type IN ('BUSINESS','CORPORATION','ORGANIZATION') AND provider='entity-review-v1')) AND provider_reference_hash IS NOT NULL AND revoked_at IS NULL
       AND expires_at IS NOT NULL AND julianday(expires_at) > julianday('now')`).bind(userId).all();
   const trustPolicy = await env.DB.prepare(`SELECT p.version, p.status, i.item_key, i.label, i.enabled, i.weight
     FROM trust_policy_versions p JOIN trust_policy_items i ON i.policy_id = p.id

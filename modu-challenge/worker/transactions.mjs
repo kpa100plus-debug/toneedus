@@ -1,7 +1,7 @@
 // Durable transaction core. Provider transport is deliberately unreleased.
 // TEST orders never update legacy missions/settlements or make network calls.
 const uid=()=>crypto.randomUUID();
-const error=(code)=>{const e=new Error(code);e.code=code;throw e;};
+const error=(code)=>{const e=new Error(code);e.code=code;e.status=409;throw e;};
 const keyOK=k=>typeof k==='string' && /^[a-zA-Z0-9_-]{16,100}$/.test(k);
 export async function createTestOrder(env,{challengeId,ownerId,solverId,amount,requestKey}) {
   if (env.APP_ENV!=='test') error('LIVE_PROVIDER_NOT_RELEASED');
@@ -45,7 +45,7 @@ export async function transitionTestOrder(env,{orderId,requestKey,action,actorId
   const state=(allowed,target)=>{if(!allowed.includes(s)) error('INVALID_TRANSITION');next=target;};
   const pair=(debit,credit,value)=>{ledger.push([debit,value,0],[credit,0,value]);};
   const providerCheck=expected=>{
-    if(!providerReference||typeof providerReference!=='string'||providerReference.length>120||currency!=='KRW'||amount!==expected) error('PROVIDER_RESULT_MISMATCH');
+    if(!providerReference||typeof providerReference!=='string'||providerReference.length>200||currency!=='KRW'||amount!==expected) error('PROVIDER_RESULT_MISMATCH');
   };
   switch(action) {
     case 'REQUEST_PAYMENT':state(['CREATED','PAYMENT_FAILED'],'PAYMENT_PENDING');break;

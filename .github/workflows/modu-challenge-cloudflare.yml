@@ -9,11 +9,12 @@ on:
     paths:
       - "modu-challenge/**"
       - ".github/workflows/modu-challenge-cloudflare.yml"
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
   group: modu-challenge-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -55,6 +56,7 @@ jobs:
       - name: Back up and encrypt existing production D1
         run: |
           npx wrangler d1 export DB --remote --output=production-before.sql
+          python3 scripts/restore-backup-check.py production-before.sql restore-validation.json
           openssl cms -encrypt -binary -aes256 -in production-before.sql -out production-before.sql.cms -outform DER scripts/backup-recipient.pem
           test -s production-before.sql.cms
           rm production-before.sql
@@ -69,6 +71,7 @@ jobs:
           name: modu-clear-encrypted-backup-${{ github.run_id }}
           path: |
             modu-challenge/production-before.sql.cms
+            modu-challenge/restore-validation.json
             modu-challenge/preservation.json
             modu-challenge/provider-secret-names.json
           retention-days: 90

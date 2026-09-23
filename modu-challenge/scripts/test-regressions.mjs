@@ -1,3 +1,4 @@
+import {setupEntityUi} from '../public/assets/entity-ui.js';
 import { testSimulations } from './simulation-regressions.mjs';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
@@ -271,7 +272,7 @@ const approvedSimulation=await testSimulations({req,sql,ownerCookie:b.cookie,oth
 // DOM regression: run real delegated handlers against real DOM (no browser globals/auth).
 const html=readFileSync(new URL('../public/index.html',import.meta.url),'utf8');
 const dom=new JSDOM(html,{url:'https://test.invalid/',runScripts:'outside-only',pretendToBeVisual:true});const win=dom.window;win.scrollTo=()=>{};win.HTMLElement.prototype.scrollIntoView=()=>{};win.matchMedia=()=>({matches:false});
-win.legacyNotificationText=legacyNotificationText;
+win.legacyNotificationText=legacyNotificationText;win.setupEntityUi=setupEntityUi;
 const context=dom.getInternalVMContext();let app=readFileSync(new URL('../public/assets/live-app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('init().catch((error) => fatal(error));','');
 vm.runInContext("class ApiError extends Error {constructor(message, opts={}){super(message); Object.assign(this,opts)}}; const apiClient={};",context);vm.runInContext(app,context);
 // Reproduce the screenshot: a successful login from the verification page must leave it.

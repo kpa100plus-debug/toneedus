@@ -1,13 +1,15 @@
-import { legacyNotificationText } from './brand.js?v=53';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=53';
-import { calculateSettlement } from './business-rules.js?v=53';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=53';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=54';
+import { legacyNotificationText } from './brand.js?v=54';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=54';
+import { calculateSettlement } from './business-rules.js?v=54';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=54';
 
 /**
  * 모두의클리어 live frontend
  * © 2026 ISEA GROUP. All Rights Reserved.
  */
 
+setupEntityUi({openModal});
 const main = document.querySelector('#main');
 const modalRoot = document.querySelector('#modal-root');
 const toastRoot = document.querySelector('#toast-root');
@@ -120,7 +122,7 @@ async function init() {
         document.body.append(button);
       }
     });
-    navigator.serviceWorker.register('/sw.js?v=53').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=54').then((registration) => {
       registration.update().catch(() => undefined);
       registration.addEventListener('updatefound', () => {
         registration.installing?.addEventListener('statechange', () => {
@@ -431,6 +433,9 @@ async function handleAction(action, data, button) {
     if (action === 'retry-current-route') return await refreshCurrentRoute();
     if (action === 'view-owned-challenges') return await openOwnedChallenges();
     if (action === 'view-trust-guide') return await openTrustGuide();
+    if (action === 'entity-cases') return await openEntityCases(false);
+    if (action === 'admin-entity-cases') return await openEntityCases(true);
+    if (action.startsWith('entity-')) return await withBusy(button,()=>entityAction(button));
     if (action === 'admin-verifications') return await openAdminVerifications();
     if (action === 'review-verification') return openVerificationReview(button.dataset.verificationId);
     if (action === 'manage-verifications') return await openVerificationManager();
@@ -455,6 +460,7 @@ async function handleAction(action, data, button) {
 async function handleForm(form) {
   const submit = form.querySelector('[type="submit"]');
   try {
+    if (form.id.startsWith('entity-')) return await withBusy(submit,()=>entityForm(form));
     if (form.id === 'login-form') return await withBusy(submit, () => submitLogin(form));
     if (['signup-form', 'oauth-signup-form'].includes(form.id)) return await withBusy(submit, () => submitSignup(form));
     if (form.id === 'identity-start-form') return await withBusy(submit, () => startIdentityVerification(form));
@@ -1129,7 +1135,7 @@ async function openVerificationManager() {
       const status = item?.status || 'UNVERIFIED';
       return `<div class="preview-row"><span>${VERIFICATION_LABELS[type] || type}</span><strong>${status === 'VERIFIED' ? '인증 완료·재사용 가능' : status === 'PROVIDER_REQUIRED' ? '기관 연결 필요' : status}</strong>${status !== 'VERIFIED' ? `<button class="btn btn-outline btn-small" type="button" data-action="request-verification" data-verification-type="${type}" data-subject-type="${subjectType}">인증 안내</button>` : ''}</div>`;
     }).join('')}</div></section>`).join('');
-    openModal(`<div class="verification-manager"><div class="notice-box ${data.providerConnectionRequired ? 'warning' : ''}"><span>i</span><div><strong>회원 기준으로 인증을 한 번만 관리합니다</strong><p>의뢰자용·수행자용 인증을 중복 생성하지 않습니다. 외부 인증기관 계약·API가 연결되지 않은 인증은 완료로 표시하지 않습니다.</p></div></div>${data.identityAvailable ? `<form id="identity-start-form" class="auth-form"><p>본인확인 결과의 이름·휴대전화·성인 여부를 대조하고 중복확인 식별값을 해시로 처리합니다. 인증 유효기간은 1년입니다.</p><label><input type="checkbox" name="consent" required> 본인확인 결과 조회·처리에 동의합니다.</label><button class="btn btn-primary" type="submit">본인확인 시작</button></form>` : ''}<div class="verification-grid">${panels}</div><p class="privacy-note">원본 신분증·주민등록번호·통장 사본을 이 화면이나 미션에 올리지 마세요. 기관 연결 전에는 인증이 필요한 신규 의뢰·도전·선정을 진행할 수 없습니다.</p></div>`, { title: '인증·공개정보 관리', wide: true });
+    openModal(`<div class="verification-manager"><div class="notice-box ${data.providerConnectionRequired ? 'warning' : ''}"><span>i</span><div><strong>회원 기준으로 인증을 한 번만 관리합니다</strong><p>의뢰자용·수행자용 인증을 중복 생성하지 않습니다. 외부 인증기관 계약·API가 연결되지 않은 인증은 완료로 표시하지 않습니다.</p></div></div>${data.identityAvailable ? `<form id="identity-start-form" class="auth-form"><p>본인확인 결과의 이름·휴대전화·성인 여부를 대조하고 중복확인 식별값을 해시로 처리합니다. 인증 유효기간은 1년입니다.</p><label><input type="checkbox" name="consent" required> 본인확인 결과 조회·처리에 동의합니다.</label><button class="btn btn-primary" type="submit">본인확인 시작</button></form>` : ''}<div class="verification-grid">${panels}</div><button class="btn btn-outline" data-action="entity-cases">사업자·법인·단체 자격 신청</button><p class="privacy-note">원본 신분증·주민등록번호·통장 사본을 이 화면이나 미션에 올리지 마세요. 기관 연결 전에는 인증이 필요한 신규 의뢰·도전·선정을 진행할 수 없습니다.</p></div>`, { title: '인증·공개정보 관리', wide: true });
   } catch (error) { closeModal(); showError(error); }
 }
 
@@ -2503,7 +2509,7 @@ function escapeAttribute(value) { return escapeHTML(value).replace(/`/g, '&#96;'
 
 const POLICIES = {
   terms: { title: '이용약관 · 현재 서비스 범위', body: '<h3>플랫폼의 역할</h3><p>모두의클리어는 미션 게시·참가·TEASER·후보선정·진행기록·Funding 상태·정산·리뷰 기능을 제공합니다.</p><h3>당사자의 책임</h3><p>미션의 적법성, 필요한 자격·면허·권한과 제공정보의 정확성은 관련 당사자가 확인합니다. 플랫폼은 불법·허위·권리침해를 인지한 경우 게시 제한과 자료보존 등 필요한 조치를 수행합니다.</p><h3>운영자·이용 제한</h3><p>운영·관리 주체는 (주)ISEA GROUP입니다. 회원가입과 이메일·소셜 로그인은 본인확인이 아닙니다. 유효한 본인확인 및 활동 자격이 확인되지 않으면 신규 의뢰·도전·후보선정을 제한합니다.</p><h3>현재 거래 상태</h3><p>실제 결제·자금보관·환불·지급 서비스는 제공하지 않습니다. 예시·가상 거래는 실제 계약 이행이나 입금·송금을 증명하지 않습니다. 외부 계좌로 보상금을 임의 송금하지 마세요.</p><h3>거래 개시 조건</h3><p>인증·결제·지급업체 계약, 사업자 표시사항, 고객지원 연락처, 전체 거래약관과 개인정보 처리방침을 확정·고지한 뒤 별도 동의를 받아야 실거래를 개시할 수 있습니다. 기존 동의를 변경된 거래약관에 대한 동의로 간주하지 않습니다.</p>' },
-  privacy: { title: '개인정보 처리 안내 · 거래 기능 준비 중', body: '<h3>처리 주체</h3><p>개인정보 처리·관리 주체는 ㈜ISEA GROUP입니다.</p><h3>수집 항목과 목적</h3><p>회원가입 시 이름·활동명, 휴대전화, 이메일, 비밀번호 검증값, 활동 지역, 출생연도, 성별, 참여 목적을 수집하여 계정 생성·연락·서비스 운영에 사용하며 입력만으로 본인확인을 완료하지 않습니다. 관심·전문분야, 기관·회사명, 마케팅 수신 동의는 선택 항목입니다.</p><h3>본인확인 정보</h3><p>기관 연동 시 명시적 동의를 받고 인증 결과를 서버에서 조회합니다. 중복확인 식별값은 비밀키 기반 해시로 처리하며 원본 주민등록번호·신분증·CI·DI는 저장하지 않는 구조입니다. 연계정보 해시도 개인정보로 보호합니다. 인증 유효기간은 운영정책상 1년이며 철회·만료 시 재확인합니다.</p><h3>거래 개시 전 확정 항목</h3><p>수탁사·보유기간·파기·권리행사 절차는 실제 운영사와 제공사를 확정한 후 전체 방침에 반영합니다.</p>' },
+  privacy: { title: '개인정보 처리 안내 · 거래 기능 준비 중', body: '<h3>처리 주체</h3><p>개인정보 처리·관리 주체는 ㈜ISEA GROUP입니다.</p><h3>수집 항목과 목적</h3><p>회원가입 시 이름·활동명, 휴대전화, 이메일, 비밀번호 검증값, 활동 지역, 출생연도, 성별, 참여 목적을 수집하여 계정 생성·연락·서비스 운영에 사용하며 입력만으로 본인확인을 완료하지 않습니다. 관심·전문분야, 기관·회사명, 마케팅 수신 동의는 선택 항목입니다.</p><h3>본인확인 정보</h3><p>기관 연동 시 명시적 동의를 받고 인증 결과를 서버에서 조회합니다. 중복확인 식별값은 비밀키 기반 해시로 처리하며 원본 주민등록번호·신분증·CI·DI는 저장하지 않는 구조입니다. 연계정보 해시도 개인정보로 보호합니다. 인증 유효기간은 운영정책상 1년이며 철회·만료 시 재확인합니다.</p><h3>사업자·법인·단체 자격 심사</h3><p>개인 본인확인과 별도로 등록 증빙·대표 또는 위임 권한을 심사합니다. 계약과 처리방침이 확정되기 전에는 접수를 차단합니다. 신청 정보와 가린 이미지 증빙은 암호화하여 신청자와 최고관리자만 열람하며, 접수일부터 30일 후 원문을 파기합니다. 승인 자격은 1년 후 재확인하며 최소 심사·열람 기록은 1년 보유 후 파기합니다. 주민등록번호·신분증·계좌번호는 제출하지 마세요. 원문이 포함된 암호화 배포 백업은 최대 90일 후 삭제하며 복원 시 파기 기한을 다시 적용합니다.</p><h3>거래 개시 전 확정 항목</h3><p>수탁사·보유기간·파기·권리행사 절차는 실제 운영사와 제공사를 확정한 후 전체 방침에 반영합니다.</p>' },
   rules: { title: '운영정책 · TRUST · 3-Strike', body: '<h3>일반 미이행</h3><p>정당한 사유 없는 Funding 미이행·반복 잠수·허위 TEASER는 경고, 한도축소, 기능제한, 장기정지 단계로 처리할 수 있습니다.</p><h3>즉시 제한</h3><p>허위신원·자격위조·증거조작·불법거래·개인정보 악용 등 중대한 행위는 즉시 제한할 수 있습니다.</p><h3>이의신청</h3><p>파산·중대한 사고 등 객관적인 사유가 있으면 예외심사를 신청할 수 있습니다.</p>' },
   fees: { title: '수수료·Funding·정산 정책', body: '<h3>기본 수수료</h3><p>클리어 성공 시 표시 보상금의 10%를 플랫폼 이용수수료로 정산하고 나머지 90%를 성공자에게 지급하는 구조가 기본입니다.</p><h3>취소·환불·분쟁</h3><p>현재 실제 청구는 차단되어 있습니다. 거래 개시 후 결제 전 취소는 청구 없이 종료하고, 결제 후에는 업체의 원거래 취소 결과가 확인되어야 환불 완료로 표시합니다. 수행·검수 중 이견은 분쟁으로 접수하여 지급을 보류하고, 합의 또는 심사 결과를 기록합니다. 지급 요청과 지급 완료를 구분하며 실패·응답 지연 때 재송금하지 않습니다. 이미 송금된 금액은 자동 환불로 처리하지 않습니다.</p><h3>정산 내역</h3><p>10만원 보상 기준 서비스 수수료 1만원, 수행자 예상액 9만원입니다. 적용 세금·원천징수·PG 비용·취소기한·정산일은 계약과 검토 후 개시 전에 확정 고지합니다.</p><h3>고지</h3><p>목록에서는 보상금을 중심으로 표시하되, 참가 확정 전 수수료율과 예상 실수령액을 확인할 수 있도록 고지합니다.</p><h3>후행 Funding</h3><p>등록 시 선결제하지 않고 FINALIST 선정 등 사전에 정한 시점에서 승인된 결제·지급 구조로 자금을 확보합니다.</p>' },
 };
@@ -2515,7 +2521,7 @@ function fundingDisplay(challenge) {
   return meta;
 }
 function renderLaunchReadiness(overview) {
-  return `<section class="page-section"><div class="container"><section class="dashboard-card"><span class="admin-kicker">거래 개시 점검</span><h2>실제 결제·지급 차단 중</h2><p>본인확인, 사업자·법인·단체 권한 심사, PG 자금보관 계약, 지급업체 KYC 및 실거래 검증이 필요합니다. 환경설정만으로 실거래를 켤 수 없습니다.</p><div class="preview-list"><div class="preview-row"><span>양측 본인확인</span><strong>필수 · 미인증 활동 차단</strong></div><div class="preview-row"><span>PG·지급 연동</span><strong>미완료</strong></div><div class="preview-row"><span>가상 거래</span><strong>실제 청구·송금 0원</strong></div></div><button class="btn btn-outline" data-action="admin-verifications">인증 요청 심사·재확인</button></section></div></section>`;
+  return `<section class="page-section"><div class="container"><section class="dashboard-card"><span class="admin-kicker">거래 개시 점검</span><h2>실제 결제·지급 차단 중</h2><p>본인확인, 사업자·법인·단체 권한 심사, PG 자금보관 계약, 지급업체 KYC 및 실거래 검증이 필요합니다. 환경설정만으로 실거래를 켤 수 없습니다.</p><div class="preview-list"><div class="preview-row"><span>양측 본인확인</span><strong>필수 · 미인증 활동 차단</strong></div><div class="preview-row"><span>PG·지급 연동</span><strong>미완료</strong></div><div class="preview-row"><span>가상 거래</span><strong>실제 청구·송금 0원</strong></div></div><button class="btn btn-outline" data-action="admin-verifications">인증 요청 심사·재확인</button> <button class="btn btn-outline" data-action="admin-entity-cases">사업자·법인·단체 심사</button></section></div></section>`;
 }
 async function openAdminVerifications() {
   openModal(renderModalLoading(),{title:'인증 요청 심사',wide:true});

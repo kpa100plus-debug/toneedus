@@ -52,19 +52,36 @@ jobs:
           npm test
           node scripts/stamp-build.mjs
 
-      - name: Back up existing production D1
-        run: npx wrangler d1 export DB --remote --output=modu-challenge-db-pre-v0.9.0.sql
+      - name: Back up and encrypt existing production D1
+        run: |
+          npx wrangler d1 export DB --remote --output=production-before.sql
+          openssl cms -encrypt -binary -aes256 -in production-before.sql -out production-before.sql.cms -outform DER scripts/backup-recipient.pem
+          test -s production-before.sql.cms
+          rm production-before.sql
+          npx wrangler d1 execute DB --remote --json --command="SELECT id,email,is_admin FROM users ORDER BY id; SELECT id,owner_id FROM challenges ORDER BY id; SELECT user_id,role FROM admin_roles ORDER BY user_id;" > inventory-before.json
+          node scripts/production-preservation.mjs before inventory-before.json preservation.json
+          rm inventory-before.json
+          npx wrangler secret list > provider-secret-names.json
 
-      - name: Preserve encrypted workflow backup artifact
+      - name: Preserve encrypted backup before migrations
         uses: actions/upload-artifact@v4
         with:
-          name: modu-challenge-db-pre-v0.9.0-${{ github.run_id }}
-          path: modu-challenge/modu-challenge-db-pre-v0.9.0.sql
-          retention-days: 14
+          name: modu-clear-encrypted-backup-${{ github.run_id }}
+          path: |
+            modu-challenge/production-before.sql.cms
+            modu-challenge/preservation.json
+            modu-challenge/provider-secret-names.json
+          retention-days: 90
           if-no-files-found: error
 
       - name: Apply pending D1 migrations
         run: npx wrangler d1 migrations apply DB --remote
+
+      - name: Verify existing member mission and administrator preservation
+        run: |
+          npx wrangler d1 execute DB --remote --json --command="SELECT id,email,is_admin FROM users ORDER BY id; SELECT id,owner_id FROM challenges ORDER BY id; SELECT user_id,role FROM admin_roles ORDER BY user_id;" > inventory-after.json
+          node scripts/production-preservation.mjs after inventory-after.json preservation.json
+          rm inventory-after.json
 
       - name: Deploy existing Worker
         run: npx wrangler deploy

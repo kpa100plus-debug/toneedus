@@ -28,6 +28,10 @@ const runtimePaths = [
   'public/setup-admin.html',
   'public/sw.js',
   'worker/index.mjs',
+  'worker/identity.mjs',
+  'worker/launch-readiness.mjs',
+  'worker/transactions.mjs',
+  'migrations/0019_transaction_readiness.sql',
   'worker/simulation.mjs',
   'migrations/0014_payment_simulations.sql',
   'migrations/0015_preserve_and_hide_operational_test_records.sql',
@@ -64,7 +68,7 @@ const prepareSource = await readFile(prepareUrl, 'utf8');
 if (!/const EXPECTED_SHA256 = "[a-f0-9]{64}";/.test(prepareSource)) {
   throw new Error('Could not locate the bundle integrity hash');
 }
-const updatedPrepareSource = prepareSource.replace(
+const updatedPrepareSource = prepareSource.replace(/const EXPECTED_FILE_COUNT = \d+;/, `const EXPECTED_FILE_COUNT = ${runtimePaths.length};`).replace(
   /const EXPECTED_SHA256 = "[a-f0-9]{64}";/,
   `const EXPECTED_SHA256 = "${sha256}";`,
 );

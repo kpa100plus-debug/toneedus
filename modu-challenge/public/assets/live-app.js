@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=55';
-import { legacyNotificationText } from './brand.js?v=55';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=55';
-import { calculateSettlement } from './business-rules.js?v=55';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=55';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=56';
+import { legacyNotificationText } from './brand.js?v=56';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=56';
+import { calculateSettlement } from './business-rules.js?v=56';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=56';
 
 /**
  * 모두의클리어 live frontend
@@ -131,7 +131,7 @@ async function init() {
         document.body.append(button);
       }
     });
-    navigator.serviceWorker.register('/sw.js?v=55').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=56').then((registration) => {
       registration.update().catch(() => undefined);
       registration.addEventListener('updatefound', () => {
         registration.installing?.addEventListener('statechange', () => {
@@ -619,7 +619,7 @@ function updateWebAppInstallBanner() {
   const installed = sessionStorage.getItem('modu-web-app-installed') === '1' || isStandaloneWebApp();
   const showIOSGuide = isIOSSafari() && !installed;
   const showSamsungGuide = isSamsungInternet() && !installed;
-  banner.hidden = dismissed || installed || (!deferredInstallPrompt && !showIOSGuide && !showSamsungGuide && !/Chrome|Chromium|Edg\//.test(navigator.userAgent));
+  banner.hidden = state.route === 'admin' || dismissed || installed || (!deferredInstallPrompt && !showIOSGuide && !showSamsungGuide && !/Chrome|Chromium|Edg\//.test(navigator.userAgent));
   if (banner.hidden) return;
   const title = banner.querySelector('#app-install-title');
   const copy = banner.querySelector('#app-install-copy');

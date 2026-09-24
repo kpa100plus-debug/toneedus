@@ -2072,6 +2072,12 @@ input:-webkit-autofill,select:-webkit-autofill {-webkit-box-shadow:0 0 0 1000px 
 [data-home-theme="editorial"] .hero-search input{color:#25282d}
 [data-home-theme="editorial"] .hero-search input::placeholder{color:#716d67}
 [data-home-theme="editorial"] .hero-board{background:rgba(255,253,247,.96);color:#222939;border-color:#e5d5bc;transform:rotate(0);box-shadow:0 22px 60px rgba(78,53,37,.2)}
+[data-home-theme="editorial"] .hero-challenge h3{color:#222939}
+[data-home-theme="editorial"] .hero-challenge p{color:#545a65}
+[data-home-theme="editorial"] .hero-challenge-bottom small{color:#5c6270}
+[data-home-theme="editorial"] .hero-challenge-bottom strong{color:#9b4c37}
+[data-home-theme="editorial"] .hero-challenge-bottom>span{color:#6d483b;background:#f2e3d0}
+[data-home-theme="editorial"] .category-label{color:#824733}
 [data-home-theme="editorial"] .live-pill{color:#292939}
 [data-home-theme="editorial"] .hero-photo-frame{border-radius:4px}
 [data-home-theme="editorial"] .impact-showcase{background:linear-gradient(180deg,#f5ebdc,#fff)}

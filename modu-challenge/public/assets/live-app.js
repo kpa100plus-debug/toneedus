@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=59';
-import { legacyNotificationText } from './brand.js?v=59';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=59';
-import { calculateSettlement } from './business-rules.js?v=59';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=59';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=60';
+import { legacyNotificationText } from './brand.js?v=60';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=60';
+import { calculateSettlement } from './business-rules.js?v=60';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=60';
 
 /**
  * 모두의클리어 live frontend
@@ -136,7 +136,7 @@ async function init() {
         document.body.append(button);
       }
     });
-    navigator.serviceWorker.register('/sw.js?v=59').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=60').then((registration) => {
       registration.update().catch(() => undefined);
       registration.addEventListener('updatefound', () => {
         registration.installing?.addEventListener('statechange', () => {
@@ -564,7 +564,7 @@ async function submitPushAnnouncement(form) {
 
 function render() {
   if (state.loading) return;
-  document.body.dataset.homeTheme = state.route === 'home' && state.previewHomeTheme
+  document.body.dataset.homeTheme = state.previewHomeTheme && state.user?.adminRole === 'primary'
     ? state.previewHomeTheme : (state.config?.homeTheme || 'original');
   if (heroRotationTimer) {
     clearInterval(heroRotationTimer);
@@ -585,6 +585,9 @@ function render() {
   else if (['login', 'signup', 'social-signup'].includes(state.route)) main.innerHTML = renderHome();
   else if (state.route === 'admin') main.innerHTML = renderAdmin();
   else main.innerHTML = renderNotFound();
+  if (state.previewHomeTheme && state.user?.adminRole === 'primary') {
+    main.insertAdjacentHTML('afterbegin', `<div class="home-theme-preview-bar"><strong>${escapeHTML(HOME_THEME_OPTIONS.find((item) => item.id === state.previewHomeTheme)?.title || '')} 전체 화면 미리보기</strong><span>방문자에게는 아직 적용되지 않았습니다. 메뉴를 눌러 세부 화면도 확인하세요.</span><button class="btn btn-outline btn-small" type="button" data-action="return-theme-settings">관리자로 돌아가기</button></div>`);
+  }
   hydratePage();
   focusActivitySection();
   updateWebAppInstallBanner();
@@ -728,7 +731,6 @@ function renderHome() {
   const homeTheme = state.previewHomeTheme && state.user?.adminRole === 'primary' ? state.previewHomeTheme : state.config?.homeTheme;
   const studioTheme = ['luxury', 'community', 'command', 'magazine', 'journey'].includes(homeTheme);
   return `
-    ${state.previewHomeTheme && state.user?.adminRole === 'primary' ? `<div class="home-theme-preview-bar"><strong>${escapeHTML(HOME_THEME_OPTIONS.find((item) => item.id === state.previewHomeTheme)?.title || '')} 미리보기</strong><span>방문자에게는 아직 적용되지 않았습니다.</span><button class="btn btn-outline btn-small" type="button" data-action="return-theme-settings">관리자로 돌아가기</button></div>` : ''}
     ${studioTheme ? renderStudioHome(homeTheme) : `<section class="hero">
       <div class="container hero-grid">
         <div class="hero-copy">
@@ -761,7 +763,7 @@ function renderHome() {
       <div class="impact-shell">
         <div class="impact-orbit impact-orbit-one"></div><div class="impact-orbit impact-orbit-two"></div>
         <div class="impact-heading">
-          <div><span class="impact-kicker"><i></i> 함께 만든 기회</span><h2 id="impact-title">문제 하나가 해결될 때,<br><em>시간과 비용이 움직입니다.</em></h2></div>
+          <div><span class="impact-kicker"><i></i> 함께 만든 기회</span><h2 id="impact-title">하나의 미션에서,<br><em>새로운 해결의 기회가 시작됩니다.</em></h2></div>
           <div class="impact-preview-badge"><strong>LIVE PREVIEW</strong><span>예시 데이터 기반</span></div>
         </div>
         <div class="impact-counter-grid">
@@ -783,7 +785,7 @@ function renderHome() {
     </div></section>
 
     <section class="page-section"><div class="container">
-      <div class="section-head"><div><span class="eyebrow">미션 마켓</span><h2>지금 도전할 수 있는 미션</h2><p>능력·정보·아이디어·인맥·실행력으로 결과를 만들어보세요.</p></div><button class="btn btn-outline" type="button" data-route="explore">전체 보기</button></div>
+      <div class="section-head"><div><span class="eyebrow">미션 마켓</span><h2>지금 살펴볼 수 있는 미션</h2><p>능력·정보·아이디어·인맥·실행력으로 결과를 만들어보세요.</p></div><button class="btn btn-outline" type="button" data-route="explore">전체 보기</button></div>
       ${featured.length ? `<div class="challenge-grid">${featured.map(renderChallengeCard).join('')}</div>` : renderEmpty('공개된 미션이 없습니다', '첫 미션을 만들어 시장을 시작해보세요.', '<button class="btn btn-primary" data-route="create">미션 등록</button>')}
     </div></section>
 
@@ -1334,7 +1336,7 @@ function renderAdmin() {
 function renderHomeThemeControls(overview) {
   const active = overview.homeTheme?.theme || 'original';
   return `<section class="page-section admin-theme-section"><div class="container"><div class="dashboard-card admin-theme-panel">
-    <div class="dashboard-card-head"><div><span class="admin-kicker">HOMEPAGE STUDIO</span><h2>메인페이지 디자인</h2><p class="form-hint">각 컨셉을 먼저 확인한 뒤 적용하세요. 선택 즉시 모든 방문자의 홈 화면에 반영되며 기존 메뉴·미션 데이터는 유지됩니다.</p></div><span class="theme-live-label">현재 적용: ${escapeHTML(HOME_THEME_OPTIONS.find((item) => item.id === active)?.title || '오리지널 네이비')}</span></div>
+    <div class="dashboard-card-head"><div><span class="admin-kicker">SITE DESIGN STUDIO</span><h2>사이트 전체 디자인</h2><p class="form-hint">미리보기에서 홈과 세부 화면을 확인하세요. 적용하면 전체 페이지의 색상과 구성 요소가 함께 전환되며 기존 메뉴·미션 데이터는 유지됩니다.</p></div><span class="theme-live-label">현재 적용: ${escapeHTML(HOME_THEME_OPTIONS.find((item) => item.id === active)?.title || '오리지널 네이비')}</span></div>
     <h3 class="studio-admin-group">전체 화면 시안 · 5종</h3><div class="home-theme-grid">${HOME_THEME_OPTIONS.filter((item) => ['luxury', 'community', 'command', 'magazine', 'journey'].includes(item.id)).map((item) => `<article class="home-theme-option${active === item.id ? ' is-active' : ''}">
       <div class="home-theme-swatch theme-swatch-${item.id}" aria-hidden="true"><span class="swatch-kicker">MODU CLEAR</span><strong>${escapeHTML(item.title)}</strong><i></i><span class="swatch-board">미션 찾기 <b>↗</b></span></div>
       <div class="home-theme-description"><strong>${item.title}</strong><span>${item.detail}</span></div>
@@ -1351,7 +1353,7 @@ async function applyHomeTheme(theme) {
   state.config.homeTheme = response.homeTheme.theme;
   state.previewHomeTheme = null;
   render();
-  toast('메인페이지 디자인을 적용했습니다', '방문자가 새로 접속하면 선택한 컨셉이 표시됩니다.', 'success');
+  toast('사이트 전체 디자인을 적용했습니다', '방문자가 새로 접속하면 선택한 컨셉이 모든 페이지에 표시됩니다.', 'success');
 }
 
 function renderAdminStaffControls(overview) {

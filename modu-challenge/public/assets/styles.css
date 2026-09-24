@@ -2104,7 +2104,7 @@ input:-webkit-autofill,select:-webkit-autofill {-webkit-box-shadow:0 0 0 1000px 
 
 /* Full homepage concepts: layout, mission hierarchy, and mobile presentation. */
 .studio-admin-group{margin:30px 0 14px;color:#172035;font-size:1.05rem}
-.theme-swatch-luxury{color:#f6dfaa;background:linear-gradient(110deg,#0b2e27 48%,#bfac80 49%,#eaddc2)}
+.theme-swatch-luxury{color:#f6dfaa;background:linear-gradient(110deg,#0b2e27 73%,#bfac80 74%,#eaddc2)}
 .theme-swatch-community{background:radial-gradient(circle at 75% 25%,#ffcc90,transparent 40%),linear-gradient(125deg,#f4653f,#ff9a5a 70%,#8bd2ec)}
 .theme-swatch-command{background:radial-gradient(circle,#168be9 1px,transparent 2px) 0 0/19px 19px,linear-gradient(135deg,#07162f,#003f77);color:#a6f3ff}
 .theme-swatch-magazine{background:linear-gradient(90deg,#f9f6ef 70%,#2366df 70%);color:#101b2e}

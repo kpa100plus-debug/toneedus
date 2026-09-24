@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=57';
-import { legacyNotificationText } from './brand.js?v=57';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=57';
-import { calculateSettlement } from './business-rules.js?v=57';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=57';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=58';
+import { legacyNotificationText } from './brand.js?v=58';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=58';
+import { calculateSettlement } from './business-rules.js?v=58';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=58';
 
 /**
  * 모두의클리어 live frontend
@@ -136,7 +136,7 @@ async function init() {
         document.body.append(button);
       }
     });
-    navigator.serviceWorker.register('/sw.js?v=57').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=58').then((registration) => {
       registration.update().catch(() => undefined);
       registration.addEventListener('updatefound', () => {
         registration.installing?.addEventListener('statechange', () => {
@@ -815,29 +815,42 @@ function renderStudioMission(challenge, index = 0) {
   const title = escapeHTML(challenge.title);
   const reward = formatWon(challenge.rewardAmount);
   return `<button class="studio-mission" type="button" data-challenge-id="${escapeAttribute(challenge.id)}" style="--mission-accent:${category.color}">
-    <span class="studio-mission-top"><b>${String(index + 1).padStart(2, '0')}</b><span>${category.icon} ${escapeHTML(category.label)}</span></span>
+    <span class="studio-mission-top"><b>${String(index + 1).padStart(2, '0')}</b><span>${category.icon} ${escapeHTML(category.label)}${challenge.isExample ? ' · 예시 미션' : ''}</span></span>
     <strong>${title}</strong><span class="studio-mission-summary">${escapeHTML(challenge.summary)}</span>
-    <span class="studio-mission-reward"><small>제시 보상금</small><b>${reward}</b><i aria-hidden="true">↗</i></span>
+    <span class="studio-mission-reward"><small>${challenge.isExample ? '예시 제시금' : '제시 보상금'}</small><b>${reward}</b><i aria-hidden="true">↗</i></span>
   </button>`;
 }
 
 function renderStudioHome(theme) {
   const open = sortChallenges(state.challenges.filter((item) => item.status === 'OPEN' && !item.moderationPending && daysLeft(item.deadline) >= 0), 'reward');
-  const missions = open.slice(0, 6);
+  const missions = [];
+  const seenTitles = new Set();
+  const seenCategories = new Set();
+  for (const item of open) {
+    const key = item.title.replace(/^\[예시\]\s*/, '').trim();
+    if (seenTitles.has(key) || seenCategories.has(item.category)) continue;
+    missions.push(item); seenTitles.add(key); seenCategories.add(item.category);
+    if (missions.length === 6) break;
+  }
+  for (const item of open) {
+    const key = item.title.replace(/^\[예시\]\s*/, '').trim();
+    if (missions.length === 6) break;
+    if (!seenTitles.has(key)) { missions.push(item); seenTitles.add(key); }
+  }
   const lead = missions[0];
   const reward = lead ? formatWon(lead.rewardAmount) : '';
-  const summary = `<p class="studio-truth">공개 미션의 제시 보상금입니다. 실제 결제·지급은 현재 차단되어 있습니다.</p>`;
+  const summary = `<p class="studio-truth">예시 미션의 금액은 실제 상금이나 지급 실적이 아닙니다. 현재 실제 결제·지급은 차단되어 있습니다.</p>`;
   const search = `<form class="studio-search" id="hero-search-form"><input name="q" aria-label="미션 검색" placeholder="내가 해결할 수 있는 미션을 찾아보세요"><button type="submit">미션 찾기 →</button></form>`;
   const actions = `<div class="studio-actions"><button type="button" class="btn btn-primary btn-lg" data-route="explore">미션 찾기</button><button type="button" class="btn btn-outline btn-lg" data-route="create">미션 등록</button></div>`;
   const heroPhoto = `<img class="studio-photo" src="/assets/modu-young-challengers.webp" alt="사람들이 함께 미션을 논의하는 모습" width="1600" height="1024" fetchpriority="high">`;
-  const spotlight = lead ? `<button class="studio-spotlight" type="button" data-challenge-id="${escapeAttribute(lead.id)}"><span>공개 미션 · ${escapeHTML(CATEGORY_META[lead.category]?.label || '미션')}</span><strong>${escapeHTML(lead.title)}</strong><b>제시 보상금 ${reward} ↗</b></button>` : '';
+  const spotlight = lead ? `<button class="studio-spotlight" type="button" data-challenge-id="${escapeAttribute(lead.id)}"><span>${lead.isExample ? '예시 미션' : '공개 미션'} · ${escapeHTML(CATEGORY_META[lead.category]?.label || '미션')}</span><strong>${escapeHTML(lead.title)}</strong><b>${lead.isExample ? '예시 제시금' : '제시 보상금'} ${reward} ↗</b></button>` : '';
   let hero = '';
   if (theme === 'luxury') hero = `<div class="studio-stage studio-luxury"><div class="container studio-luxury-grid"><div class="studio-copy"><span class="studio-kicker">PEOPLE · MISSIONS · OPPORTUNITIES</span><h1>누군가의 문제를,<br><em>우리의 기회로.</em></h1><p>경험과 아이디어를 미션에 연결하세요. 내가 해결할 수 있는 일부터 시작할 수 있습니다.</p>${actions}${summary}</div><div class="studio-visual">${heroPhoto}${spotlight}</div></div></div>`;
   if (theme === 'community') hero = `<div class="studio-stage studio-community"><div class="container"><div class="studio-community-grid"><div class="studio-community-photo">${heroPhoto}${spotlight}</div><div class="studio-copy"><span class="studio-kicker">오늘의 미션 마켓</span><h1>오늘의 미션,<br><em>함께 클리어!</em></h1><p>내가 할 수 있는 일은 생각보다 가까이 있습니다. 관심 있는 미션부터 둘러보세요.</p>${search}${summary}</div><div class="studio-community-bubbles"><span>아이디어로 도전</span><span>경험으로 해결</span><span>새로운 기회 발견</span></div></div></div></div>`;
-  if (theme === 'command') hero = `<div class="studio-stage studio-command"><div class="container studio-command-grid"><div class="studio-copy"><span class="studio-kicker">PEOPLE × MISSIONS × SOLUTIONS</span><h1>해결할 사람이<br><em>연결되는 순간.</em></h1><p>공개 미션을 확인하고 내 경험으로 해결 가능한 일에 도전하세요.</p>${actions}${summary}</div><div class="studio-network" aria-label="미션과 사람을 잇는 연결 그래픽"><div class="studio-orbit orbit-one"></div><div class="studio-orbit orbit-two"></div><div class="studio-network-core">M<span>모두의클리어</span></div><span class="studio-node node-one">아이디어</span><span class="studio-node node-two">디자인</span><span class="studio-node node-three">생활·도움</span><span class="studio-node node-four">비즈니스</span></div><div class="studio-live"><span class="studio-kicker">● LIVE · 공개 미션</span>${open.slice(0, 4).map((item) => `<button type="button" data-challenge-id="${escapeAttribute(item.id)}"><strong>${escapeHTML(item.title)}</strong><span>제시 보상금 ${formatWon(item.rewardAmount)}</span></button>`).join('') || '<p>첫 미션을 기다리고 있습니다.</p>'}</div></div></div>`;
-  if (theme === 'magazine') hero = `<div class="studio-stage studio-magazine"><div class="container studio-magazine-grid"><div class="studio-copy"><span class="studio-kicker">PEOPLE × MISSIONS × A BRIGHTER TOMORROW</span><h1>작은 의뢰가<br><em>큰 변화를 만듭니다.</em></h1><p>누군가에게 필요한 일과 내가 잘하는 일이 만나는 곳. 공개된 미션을 살펴보세요.</p>${search}${summary}</div><div class="studio-magazine-issue"><span>ISSUE No. 01</span><strong>${state.challenges.length.toLocaleString('ko-KR')}</strong><span>공개 미션</span></div><div class="studio-magazine-photo">${heroPhoto}</div></div></div>`;
+  if (theme === 'command') hero = `<div class="studio-stage studio-command"><div class="container studio-command-grid"><div class="studio-copy"><span class="studio-kicker">PEOPLE × MISSIONS × SOLUTIONS</span><h1>해결할 사람이<br><em>연결되는 순간.</em></h1><p>공개 미션을 확인하고 내 경험으로 해결 가능한 일에 도전하세요.</p>${actions}${summary}</div><div class="studio-network" aria-label="미션과 사람을 잇는 연결 그래픽"><div class="studio-orbit orbit-one"></div><div class="studio-orbit orbit-two"></div><div class="studio-network-core">M<span>모두의클리어</span></div><span class="studio-node node-one">아이디어</span><span class="studio-node node-two">디자인</span><span class="studio-node node-three">생활·도움</span><span class="studio-node node-four">비즈니스</span></div><div class="studio-live"><span class="studio-kicker">● LIVE · 공개 미션</span>${missions.slice(0, 4).map((item) => `<button type="button" data-challenge-id="${escapeAttribute(item.id)}"><strong>${escapeHTML(item.title)}</strong><span>${item.isExample ? '예시 제시금' : '제시 보상금'} ${formatWon(item.rewardAmount)}</span></button>`).join('') || '<p>첫 미션을 기다리고 있습니다.</p>'}</div></div></div>`;
+  if (theme === 'magazine') hero = `<div class="studio-stage studio-magazine"><div class="container studio-magazine-grid"><div class="studio-copy"><span class="studio-kicker">PEOPLE × MISSIONS × A BRIGHTER TOMORROW</span><h1>작은 의뢰가<br><em>큰 변화를 만듭니다.</em></h1><p>누군가에게 필요한 일과 내가 잘하는 일이 만나는 곳. 공개된 미션을 살펴보세요.</p>${search}${summary}</div><div class="studio-magazine-issue"><span>ISSUE No. 01</span><strong>${state.challenges.length.toLocaleString('ko-KR')}</strong><span>공개 미션 · 예시 포함</span></div><div class="studio-magazine-photo">${heroPhoto}</div></div></div>`;
   if (theme === 'journey') hero = `<div class="studio-stage studio-journey"><div class="studio-journey-photo">${heroPhoto}</div><div class="container studio-journey-content"><div class="studio-copy"><span class="studio-kicker">TOGETHER WE CLEAR</span><h1>함께라면,<br><em>못 풀 문제는 없습니다.</em></h1><p>내게 맞는 미션을 발견하고, 내가 가진 경험으로 한 걸음씩 해결해보세요.</p>${actions}${summary}</div></div><div class="studio-journey-track"><div class="container"><strong>MISSION JOURNEY</strong><span>01 · 미션 찾기</span><span>02 · 제안하기</span><span>03 · 함께 해결하기</span><span>04 · 클리어</span></div></div></div>`;
-  return `<section class="studio-home studio-${theme}">${hero}<div class="studio-market container"><div class="studio-market-head"><div><span class="studio-kicker">OPEN MISSIONS</span><h2>${theme === 'magazine' ? '이번 주의 미션' : theme === 'community' ? '나도 도전할 수 있는 미션' : '지금 주목할 미션'}</h2><p>보상금이 큰 미션부터 살펴보고, 상세 내용과 참여 조건을 확인하세요.</p></div><button class="btn btn-outline" type="button" data-route="explore">전체 미션 보기 →</button></div>${missions.length ? `<div class="studio-mission-grid">${missions.map(renderStudioMission).join('')}</div>` : `<div class="studio-empty">공개 중인 미션이 없습니다. <button class="btn btn-primary" type="button" data-route="create">첫 미션 등록</button></div>`}</div></section>`;
+  return `<section class="studio-home studio-${theme}">${hero}<div class="studio-market container"><div class="studio-market-head"><div><span class="studio-kicker">OPEN MISSIONS</span><h2>${theme === 'magazine' ? '공개된 미션' : theme === 'community' ? '내게 맞는 미션 찾기' : '지금 주목할 미션'}</h2><p>분야별 미션의 상세 내용과 참여 조건을 확인하세요. 신규 의뢰·도전은 본인확인 연동 후 가능합니다.</p></div><button class="btn btn-outline" type="button" data-route="explore">전체 미션 보기 →</button></div>${missions.length ? `<div class="studio-mission-grid">${missions.map(renderStudioMission).join('')}</div>` : `<div class="studio-empty">공개 중인 미션이 없습니다. <button class="btn btn-primary" type="button" data-route="create">첫 미션 등록</button></div>`}</div></section>`;
 }
 
 function renderImpactCounter(code, value, format, label, sub, icon) {

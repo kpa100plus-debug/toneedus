@@ -1,4 +1,4 @@
-import {api} from './api-client.js?v=56';
+import {api} from './api-client.js?v=57';
 const labels={DRAFT:'작성 중',SUBMITTED:'심사 대기',APPROVED:'자격 확인 완료',REJECTED:'보완 후 재신청',REVOKED:'재확인 필요',EXPIRED:'기간 만료',WITHDRAWN:'철회 완료'};
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const url=admin=>admin?'/api/admin/entity-cases':'/api/me/entity-cases';

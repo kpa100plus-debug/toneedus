@@ -36,6 +36,16 @@ const themeChange=await req('/api/admin/home-theme',{theme:'emerald',revision:1}
 assert.equal((await req('/api/admin/home-theme',{theme:'sunset',revision:1},a.cookie)).status,409);
 assert.equal((await req('/api/bootstrap')).body.config.homeTheme,'emerald');
 assert.equal(sql.prepare("SELECT count(*) n FROM audit_logs WHERE action='HOME_THEME_CHANGED'").get().n,1);
+let studioRevision = 2;
+for (const theme of ['luxury', 'community', 'command', 'magazine', 'journey']) {
+  const updated = await req('/api/admin/home-theme', { theme, revision: studioRevision }, a.cookie);
+  assert.equal(updated.status, 200, JSON.stringify(updated.body));
+  assert.equal(updated.body.homeTheme.revision, ++studioRevision);
+  assert.equal((await req('/api/bootstrap')).body.config.homeTheme, theme);
+  assert.equal((await req('/api/admin/home-theme', { theme: 'original', revision: studioRevision - 1 }, a.cookie)).status, 409);
+}
+assert.equal(sql.prepare('SELECT revision FROM home_theme_settings WHERE id = 1').get().revision, 7);
+assert.equal(sql.prepare("SELECT count(*) n FROM audit_logs WHERE action='HOME_THEME_CHANGED'").get().n, 6);
 sql.prepare('DELETE FROM admin_roles WHERE user_id IN (?,?)').run(a.body.user.id,b.body.user.id);
 sql.prepare('UPDATE users SET is_admin=0 WHERE id IN (?,?)').run(a.body.user.id,b.body.user.id);
 pass('homepage theme persists for visitors and rejects unauthorized, invalid and stale changes');

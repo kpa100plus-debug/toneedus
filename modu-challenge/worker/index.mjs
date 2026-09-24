@@ -1592,7 +1592,7 @@ async function publicBootstrap(url, env) {
   });
 }
 
-const HOME_THEMES = new Set(['original', 'emerald', 'editorial', 'sunset', 'cobalt']);
+const HOME_THEMES = new Set(['original', 'emerald', 'editorial', 'sunset', 'cobalt', 'luxury', 'community', 'command', 'magazine', 'journey']);
 
 async function getHomeTheme(env) {
   const row = await env.DB.prepare('SELECT theme, revision FROM home_theme_settings WHERE id = 1').first();

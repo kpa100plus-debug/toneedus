@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=60';
-import { legacyNotificationText } from './brand.js?v=60';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=60';
-import { calculateSettlement } from './business-rules.js?v=60';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=60';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=61';
+import { legacyNotificationText } from './brand.js?v=61';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=61';
+import { calculateSettlement } from './business-rules.js?v=61';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=61';
 
 /**
  * 모두의클리어 live frontend
@@ -136,7 +136,7 @@ async function init() {
         document.body.append(button);
       }
     });
-    navigator.serviceWorker.register('/sw.js?v=60').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=61').then((registration) => {
       registration.update().catch(() => undefined);
       registration.addEventListener('updatefound', () => {
         registration.installing?.addEventListener('statechange', () => {
@@ -816,8 +816,8 @@ function renderStudioMission(challenge, index = 0) {
   const category = CATEGORY_META[challenge.category] || CATEGORY_META.BUSINESS;
   const title = escapeHTML(challenge.title);
   const reward = formatWon(challenge.rewardAmount);
-  return `<button class="studio-mission" type="button" data-challenge-id="${escapeAttribute(challenge.id)}" style="--mission-accent:${category.color}">
-    <span class="studio-mission-top"><b>${String(index + 1).padStart(2, '0')}</b><span>${category.icon} ${escapeHTML(category.label)}${challenge.isExample ? ' · 예시 미션' : ''}</span></span>
+  return `<button class="studio-mission" type="button" data-challenge-id="${escapeAttribute(challenge.id)}">
+    <span class="studio-mission-top"><b>${String(index + 1).padStart(2, '0')}</b><span class="studio-mission-category"><span class="studio-mission-icon">${category.icon}</span><span>${escapeHTML(category.label)}${challenge.isExample ? ' · 예시 미션' : ''}</span></span></span>
     <strong>${title}</strong><span class="studio-mission-summary">${escapeHTML(challenge.summary)}</span>
     <span class="studio-mission-reward"><small>${challenge.isExample ? '예시 제시금' : '제시 보상금'}</small><b>${reward}</b><i aria-hidden="true">↗</i></span>
   </button>`;
@@ -1337,11 +1337,11 @@ function renderHomeThemeControls(overview) {
   const active = overview.homeTheme?.theme || 'original';
   return `<section class="page-section admin-theme-section"><div class="container"><div class="dashboard-card admin-theme-panel">
     <div class="dashboard-card-head"><div><span class="admin-kicker">SITE DESIGN STUDIO</span><h2>사이트 전체 디자인</h2><p class="form-hint">미리보기에서 홈과 세부 화면을 확인하세요. 적용하면 전체 페이지의 색상과 구성 요소가 함께 전환되며 기존 메뉴·미션 데이터는 유지됩니다.</p></div><span class="theme-live-label">현재 적용: ${escapeHTML(HOME_THEME_OPTIONS.find((item) => item.id === active)?.title || '오리지널 네이비')}</span></div>
-    <h3 class="studio-admin-group">전체 화면 시안 · 5종</h3><div class="home-theme-grid">${HOME_THEME_OPTIONS.filter((item) => ['luxury', 'community', 'command', 'magazine', 'journey'].includes(item.id)).map((item) => `<article class="home-theme-option${active === item.id ? ' is-active' : ''}">
+    <h3 class="studio-admin-group">전체 화면 시안 · 5종</h3><div class="home-theme-grid">${HOME_THEME_OPTIONS.filter((item) => ['luxury', 'community', 'command', 'magazine', 'journey'].includes(item.id)).map((item) => `<article class="home-theme-option${active === item.id ? ' is-active' : ''}" data-theme="${item.id}">
       <div class="home-theme-swatch theme-swatch-${item.id}" aria-hidden="true"><span class="swatch-kicker">MODU CLEAR</span><strong>${escapeHTML(item.title)}</strong><i></i><span class="swatch-board">미션 찾기 <b>↗</b></span></div>
       <div class="home-theme-description"><strong>${item.title}</strong><span>${item.detail}</span></div>
       <div class="home-theme-actions"><button class="btn btn-outline btn-small" type="button" data-action="preview-home-theme" data-theme="${item.id}">미리보기</button><button class="btn btn-primary btn-small" type="button" data-action="apply-home-theme" data-theme="${item.id}" ${active === item.id ? 'disabled' : ''}>${active === item.id ? '적용 중' : '적용하기'}</button></div>
-    </article>`).join('')}</div><h3 class="studio-admin-group">기존 디자인</h3><div class="home-theme-grid">${HOME_THEME_OPTIONS.filter((item) => !['luxury', 'community', 'command', 'magazine', 'journey'].includes(item.id)).map((item) => `<article class="home-theme-option${active === item.id ? ' is-active' : ''}"><div class="home-theme-swatch theme-swatch-${item.id}" aria-hidden="true"><span class="swatch-kicker">MODU CLEAR</span><strong>미션을 올리고,<br>해결하고, 보상받다.</strong><i></i><span class="swatch-board">현재 공개 미션 <b>↗</b></span></div><div class="home-theme-description"><strong>${item.title}</strong><span>${item.detail}</span></div><div class="home-theme-actions"><button class="btn btn-outline btn-small" type="button" data-action="preview-home-theme" data-theme="${item.id}">미리보기</button><button class="btn btn-primary btn-small" type="button" data-action="apply-home-theme" data-theme="${item.id}" ${active === item.id ? 'disabled' : ''}>${active === item.id ? '적용 중' : '적용하기'}</button></div></article>`).join('')}</div>
+    </article>`).join('')}</div><h3 class="studio-admin-group">기존 디자인</h3><div class="home-theme-grid">${HOME_THEME_OPTIONS.filter((item) => !['luxury', 'community', 'command', 'magazine', 'journey'].includes(item.id)).map((item) => `<article class="home-theme-option${active === item.id ? ' is-active' : ''}" data-theme="${item.id}"><div class="home-theme-swatch theme-swatch-${item.id}" aria-hidden="true"><span class="swatch-kicker">MODU CLEAR</span><strong>미션을 올리고,<br>해결하고, 보상받다.</strong><i></i><span class="swatch-board">현재 공개 미션 <b>↗</b></span></div><div class="home-theme-description"><strong>${item.title}</strong><span>${item.detail}</span></div><div class="home-theme-actions"><button class="btn btn-outline btn-small" type="button" data-action="preview-home-theme" data-theme="${item.id}">미리보기</button><button class="btn btn-primary btn-small" type="button" data-action="apply-home-theme" data-theme="${item.id}" ${active === item.id ? 'disabled' : ''}>${active === item.id ? '적용 중' : '적용하기'}</button></div></article>`).join('')}</div>
   </div></div></section>`;
 }
 

@@ -2276,3 +2276,41 @@ body[data-home-theme]:not([data-home-theme="original"]) .toast{background:var(--
 .studio-mission-reward b{white-space:normal;overflow-wrap:anywhere}
 .challenge-card-bottom strong{white-space:normal;overflow-wrap:anywhere}
 @media(max-width:400px){.studio-search{flex-wrap:wrap}.studio-search input{flex-basis:100%}.studio-search button{width:100%}.impact-heading h2{font-size:clamp(1.85rem,8vw,2.4rem)}}
+
+/* The studio cards use the same restrained icon scale as the rest of the site. */
+.studio-mission{min-height:252px}
+.studio-mission-top{align-items:flex-start;justify-content:space-between;gap:14px}
+.studio-mission-top>b{font-size:1.5rem;opacity:1}
+.studio-mission-category{display:inline-flex;align-items:center;justify-content:flex-end;gap:7px;min-width:0;max-width:75%;line-height:1.35;text-align:right;word-break:keep-all}
+.studio-mission-category>span:last-child{overflow-wrap:anywhere}
+.studio-mission-icon{display:inline-grid;flex:0 0 32px;place-items:center;width:32px;height:32px;border-radius:10px;color:var(--primary-2);background:var(--primary-soft)}
+.studio-mission-icon svg{display:block;width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.studio-mission>strong{font-size:1.11rem;line-height:1.42}
+.studio-mission-summary{font-size:.86rem;line-height:1.6;color:var(--muted)}
+.studio-mission-reward small{font-size:.77rem;color:var(--muted)}
+.studio-mission-reward b{font-size:clamp(1.16rem,1.5vw,1.4rem)}
+body[data-home-theme="command"] .studio-mission-icon{color:#9bedff;background:rgba(155,237,255,.14)}
+body[data-home-theme="command"] .studio-mission-category{color:#bcecff}
+body[data-home-theme="command"] .studio-mission-summary,
+body[data-home-theme="command"] .studio-mission-reward small{color:#d2dfe9}
+@media(max-width:700px){.studio-mission{min-height:215px}.studio-mission-category{max-width:80%}}
+
+/* Each admin choice keeps its own identity, independently of the currently active theme. */
+.home-theme-option[data-theme="original"]{--option-accent:#5144c5}
+.home-theme-option[data-theme="luxury"]{--option-accent:#155541}
+.home-theme-option[data-theme="community"]{--option-accent:#a94328}
+.home-theme-option[data-theme="command"]{--option-accent:#075b91}
+.home-theme-option[data-theme="magazine"]{--option-accent:#2257ad}
+.home-theme-option[data-theme="journey"]{--option-accent:#306a40}
+.home-theme-option[data-theme="emerald"]{--option-accent:#165e48}
+.home-theme-option[data-theme="editorial"]{--option-accent:#9c4c36}
+.home-theme-option[data-theme="sunset"]{--option-accent:#a33767}
+.home-theme-option[data-theme="cobalt"]{--option-accent:#2155b1}
+body[data-home-theme] .home-theme-option{border-color:#dde2ec;background:#fff}
+body[data-home-theme] .home-theme-option.is-active{outline-color:var(--option-accent)}
+body[data-home-theme] .home-theme-option .home-theme-actions .btn{border-radius:11px}
+body[data-home-theme] .home-theme-option .home-theme-actions .btn-primary{color:#fff;background:var(--option-accent);border-color:var(--option-accent);box-shadow:none}
+body[data-home-theme] .home-theme-option .home-theme-actions .btn-primary:hover{background:var(--option-accent);filter:brightness(.92)}
+body[data-home-theme] .home-theme-option .home-theme-actions .btn-primary:disabled{opacity:1;color:var(--option-accent);background:color-mix(in srgb,var(--option-accent) 12%,white);border-color:color-mix(in srgb,var(--option-accent) 30%,white);filter:none}
+body[data-home-theme] .home-theme-option .home-theme-actions .btn-outline{color:#243047;background:#fff;border-color:#cad2df}
+body[data-home-theme]:not([data-home-theme="original"]) .page-section.admin-theme-section{background:var(--surface-2)}

@@ -176,6 +176,7 @@ export const apiClient = {
   verificationReviews: () => api('/api/admin/verification-reviews'),
   reviewVerification: body => api('/api/admin/verification-reviews', {method:'POST',body}),
   adminOverview: () => api('/api/admin/overview'),
+  updateHomeTheme: (theme, revision) => api('/api/admin/home-theme', { method: 'POST', body: { theme, revision } }),
   sendPushAnnouncement: (data) => api('/api/admin/push-announcements', { method: 'POST', body: data }),
   approveModerationChallenge: (id) => api(`/api/admin/challenges/${encodeURIComponent(id)}/moderation/approve`, { method: 'POST', body: {} }),
   archiveModerationChallenge: (id, reason) => api(`/api/admin/challenges/${encodeURIComponent(id)}/moderation/archive`, { method: 'POST', body: { reason } }),

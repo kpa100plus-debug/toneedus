@@ -190,6 +190,7 @@ async function route(request, env, ctx, url) {
   if (method === 'POST' && path === '/api/admin/verification-reviews') return reviewMemberVerification(request,env);
 
   if (method === 'GET' && path === '/api/bootstrap') return publicBootstrap(url, env);
+  if (method === 'POST' && path === '/api/admin/home-theme') return updateHomeTheme(request, env);
 
   if (method === 'POST' && path === '/api/internal/bootstrap-admin') return bootstrapAdmin(request, env);
   if (method === 'POST' && path === '/api/internal/payout/confirm') return confirmPayoutWebhook(request, env);
@@ -1537,6 +1538,7 @@ function validateReward(amount, user, env) {
 
 function publicConfig(env) {
   return {
+    homeTheme: 'original',
     rewardBounds: rewardBounds(env),
     moderationRewardThreshold: HIGH_REWARD_REVIEW_AMOUNT,
     serviceName: '모두의클리어',
@@ -1580,14 +1582,38 @@ async function publicBootstrap(url, env) {
   const query = new URL(url);
   query.searchParams.set('limit', '50');
   query.searchParams.set('sort', 'new');
-  const challengeData = await queryChallenges(query, env);
+  const [challengeData, homeTheme] = await Promise.all([queryChallenges(query, env), getHomeTheme(env)]);
   return json({
-    config: publicConfig(env),
+    config: { ...publicConfig(env), homeTheme: homeTheme.theme },
     health: publicHealth(env),
     ...challengeData,
   }, 200, {
     'Cache-Control': 'public, max-age=10, stale-while-revalidate=30',
   });
+}
+
+const HOME_THEMES = new Set(['original', 'emerald', 'editorial', 'sunset', 'cobalt']);
+
+async function getHomeTheme(env) {
+  const row = await env.DB.prepare('SELECT theme, revision FROM home_theme_settings WHERE id = 1').first();
+  return { theme: HOME_THEMES.has(row?.theme) ? row.theme : 'original', revision: Number(row?.revision || 1) };
+}
+
+async function updateHomeTheme(request, env) {
+  const admin = await requirePrimaryAdmin(request, env);
+  if (admin instanceof Response) return admin;
+  const body = await readJson(request);
+  if (body instanceof Response) return body;
+  if (!HOME_THEMES.has(body.theme)) return problem(400, 'INVALID_HOME_THEME', '선택할 수 없는 메인페이지 디자인입니다.');
+  const current = await getHomeTheme(env);
+  if (body.revision !== current.revision) return problem(409, 'STALE_REVISION', '다른 관리자가 디자인을 변경했습니다. 새로고침 후 다시 선택해주세요.');
+  if (current.theme === body.theme) return json({ homeTheme: current });
+  const result = await env.DB.prepare(`UPDATE home_theme_settings SET theme = ?, revision = revision + 1,
+    updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1 AND revision = ?`)
+    .bind(body.theme, admin.id, current.revision).run();
+  if (!result.meta?.changes) return problem(409, 'STALE_REVISION', '다른 관리자가 디자인을 변경했습니다. 새로고침 후 다시 선택해주세요.');
+  await audit(env, admin.id, 'HOME_THEME_CHANGED', 'home_theme_settings', '1', { theme: current.theme }, { theme: body.theme });
+  return json({ homeTheme: { theme: body.theme, revision: current.revision + 1 } });
 }
 
 async function getChallenge(challengeId, request, env) {
@@ -2750,7 +2776,7 @@ async function adminOverview(request, env) {
   await ensureModerationNoteStorage(env);
   await ensurePushStorage(env);
   await ensurePushDeliveryStorage(env);
-  const [users, challenges, money, disputes, recent, recentUsers, openDisputes, pendingSettlements, staffCandidates, staffMembers, draftChallenges, moderationChallenges, pushSummary, pushDelivery, moderationStats, moderationAppeals, verificationStats] = await env.DB.batch([
+  const [users, challenges, money, disputes, recent, recentUsers, openDisputes, pendingSettlements, staffCandidates, staffMembers, draftChallenges, moderationChallenges, pushSummary, pushDelivery, moderationStats, moderationAppeals, verificationStats, homeTheme] = await env.DB.batch([
     env.DB.prepare(`SELECT COUNT(*) total, SUM(status = 'suspended') suspended, SUM(strike_count > 0) with_strikes FROM users`),
     env.DB.prepare(`SELECT COUNT(*) total, SUM(status = 'DRAFT') draft, SUM(status = 'OPEN') open, SUM(status = 'SUCCESS') success, SUM(status = 'DISPUTED') disputed FROM challenges`),
     env.DB.prepare(`SELECT COALESCE(SUM(platform_fee), 0) platform_revenue, COALESCE(SUM(solver_payout), 0) solver_payouts FROM settlements WHERE status = 'PAID'`),
@@ -2795,6 +2821,7 @@ async function adminOverview(request, env) {
       FROM moderation_appeals a JOIN challenges c ON c.id = a.challenge_id JOIN users u ON u.id = a.user_id
       WHERE a.status IN ('OPEN','REVIEWING') ORDER BY a.created_at ASC LIMIT 30`),
     env.DB.prepare(`SELECT status, verification_type, COUNT(*) count FROM member_verifications GROUP BY status, verification_type`),
+    env.DB.prepare('SELECT theme, revision FROM home_theme_settings WHERE id = 1'),
   ]);
 
   const isPrimary = role === 'primary';
@@ -2802,6 +2829,7 @@ async function adminOverview(request, env) {
   return json({
     overview: {
       role,
+      homeTheme: isPrimary ? (homeTheme.results?.[0] || { theme: 'original', revision: 1 }) : null,
       launchReadiness: launchReadiness(env),
       users: users.results?.[0] || {},
       challenges: challenges.results?.[0] || {},

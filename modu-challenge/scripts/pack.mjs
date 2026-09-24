@@ -35,6 +35,7 @@ const runtimePaths = [
   'worker/provider-operations.mjs',
   'public/assets/entity-ui.js',
   'migrations/0020_entity_financial_adapters.sql',
+  'migrations/0021_home_theme.sql',
   'worker/launch-readiness.mjs',
   'worker/transactions.mjs',
   'migrations/0019_transaction_readiness.sql',

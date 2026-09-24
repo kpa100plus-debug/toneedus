@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=54';
-import { legacyNotificationText } from './brand.js?v=54';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=54';
-import { calculateSettlement } from './business-rules.js?v=54';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=54';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=55';
+import { legacyNotificationText } from './brand.js?v=55';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=55';
+import { calculateSettlement } from './business-rules.js?v=55';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=55';
 
 /**
  * 모두의클리어 live frontend
@@ -32,6 +32,7 @@ const state = {
   trustProfile: null,
   verifications: null,
   adminOverview: null,
+  previewHomeTheme: null,
   emailVerification: null,
   selectedChallenge: null,
   category: 'ALL',
@@ -46,6 +47,14 @@ const state = {
   loading: true,
   apiAvailable: true,
 };
+
+const HOME_THEME_OPTIONS = [
+  { id: 'original', title: '오리지널 네이비', detail: '현재 사용 중인 선명한 미션 마켓 디자인' },
+  { id: 'emerald', title: '에메랄드 프리미엄', detail: '딥그린과 골드의 고급스러운 무대' },
+  { id: 'editorial', title: '아이보리 에디토리얼', detail: '넓은 여백과 읽기 쉬운 매거진 화면' },
+  { id: 'sunset', title: '코랄 선셋', detail: '밝고 따뜻한 참여형 커뮤니티' },
+  { id: 'cobalt', title: '코발트 스튜디오', detail: '대담한 블루와 그래픽 중심 레이아웃' },
+];
 
 function isLocalMoneySimulation() {
   return ['development', 'test'].includes(String(state.config?.environment || '').toLowerCase());
@@ -122,7 +131,7 @@ async function init() {
         document.body.append(button);
       }
     });
-    navigator.serviceWorker.register('/sw.js?v=54').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=55').then((registration) => {
       registration.update().catch(() => undefined);
       registration.addEventListener('updatefound', () => {
         registration.installing?.addEventListener('statechange', () => {
@@ -394,6 +403,13 @@ async function handleAction(action, data, button) {
     if (action === 'logout') return await logout();
     if (action === 'retry') return location.reload();
     if (action === 'open-demo') return location.assign('/demo.html');
+    if (action === 'preview-home-theme') {
+      if (state.user?.adminRole !== 'primary') return;
+      state.previewHomeTheme = HOME_THEME_OPTIONS.some((item) => item.id === data.theme) ? data.theme : null;
+      return navigate('home');
+    }
+    if (action === 'return-theme-settings') { state.previewHomeTheme = null; return navigate('admin'); }
+    if (action === 'apply-home-theme') return await withBusy(button, () => applyHomeTheme(data.theme));
     if (action === 'submit-teaser') return await requireLogin(() => openTeaserForm(data.challengeId));
     if (action === 'view-my-teaser' || action === 'retry-my-teaser') return await requireLogin(() => openMyTeaser(data.challengeId));
     if (action === 'view-challenge-content') return await openChallengeContent(data.challengeId);
@@ -543,6 +559,8 @@ async function submitPushAnnouncement(form) {
 
 function render() {
   if (state.loading) return;
+  document.body.dataset.homeTheme = state.route === 'home' && state.previewHomeTheme
+    ? state.previewHomeTheme : (state.config?.homeTheme || 'original');
   if (heroRotationTimer) {
     clearInterval(heroRotationTimer);
     heroRotationTimer = null;
@@ -703,6 +721,7 @@ function renderHome() {
   const estimatedHoursSaved = totalTeasers * 2;
   const estimatedSearchCostSaved = estimatedHoursSaved * 20_000;
   return `
+    ${state.previewHomeTheme && state.user?.adminRole === 'primary' ? `<div class="home-theme-preview-bar"><strong>${escapeHTML(HOME_THEME_OPTIONS.find((item) => item.id === state.previewHomeTheme)?.title || '')} 미리보기</strong><span>방문자에게는 아직 적용되지 않았습니다.</span><button class="btn btn-outline btn-small" type="button" data-action="return-theme-settings">관리자로 돌아가기</button></div>` : ''}
     <section class="hero">
       <div class="container hero-grid">
         <div class="hero-copy">
@@ -1242,6 +1261,7 @@ function renderAdmin() {
   const automaticPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-moderation-card"><div class="dashboard-card-head"><div><span class="admin-kicker">AUTO MODERATION</span><h2>자동검수 처리 현황</h2><p class="form-hint">일상 승인은 시스템이 처리하며, 관리자는 이의신청·분쟁·특수 예외만 확인합니다.</p></div><strong>${Number(stats.total || 0)}</strong></div><div class="stats-grid"><div><strong>${Number(stats.auto_approved || 0)}</strong><span>자동승인</span></div><div><strong>${Number(stats.changes_required || 0)}</strong><span>자동 수정요청</span></div><div><strong>${Number(stats.auto_rejected || 0)}</strong><span>자동거절</span></div></div><div class="dashboard-card-head"><h3>이의신청·예외</h3><strong>${overview.moderationAppeals?.length || 0}</strong></div><div class="audit-table">${overview.moderationAppeals?.length ? overview.moderationAppeals.map((item) => `<button class="audit-row admin-row-button" type="button" data-challenge-id="${escapeAttribute(item.challenge_id)}"><strong>${escapeHTML(item.title)}</strong><span>${escapeHTML(item.moderation_action)} · 위험도 ${Number(item.moderation_risk_score || 0)}</span><small>${escapeHTML(item.display_name)} · ${formatDateTime(item.created_at)}</small></button>`).join('') : '<p class="muted">확인할 이의신청·예외가 없습니다.</p>'}</div></section></div></section>`;
   const draftPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-draft-card"><div class="dashboard-card-head"><div><span class="admin-kicker">DRAFT CENTER</span><h2>비공개 초안</h2><p class="form-hint">자동 수정요청·자동거절·사용자 초안을 삭제하지 않고 보존합니다.</p></div><strong>${overview.draftChallenges?.length || 0}</strong></div><div class="audit-table">${overview.draftChallenges?.length ? overview.draftChallenges.map((item) => `<button class="audit-row admin-row-button" type="button" data-challenge-id="${escapeAttribute(item.id)}"><strong>${escapeHTML(item.title)}</strong><span>초안 · 비공개 · ${formatWon(item.reward_amount)}</span><small>마감 ${formatDateTime(item.deadline)}</small></button>`).join('') : '<p class="muted">비공개 초안이 없습니다.</p>'}</div></section></div></section>`;
   return `<section class="page-hero compact admin-hero"><div class="container"><span class="eyebrow">ADMIN CONTROL</span><h1>운영 관리자</h1><button class="btn btn-outline" data-route="simulation">가상 결제·지급 테스트</button><p>회원·미션·분쟁·정산·Audit 상태를 확인합니다.</p></div></section>
+    ${renderHomeThemeControls(overview)}
     ${renderLaunchReadiness(overview)}${renderAdminStaffControls(overview)}
     ${pushPanel}
     ${pushAudit}
@@ -1253,6 +1273,29 @@ function renderAdmin() {
       ${adminMetric('플랫폼 매출', formatWon(overview.money?.platform_revenue), `지급 ${formatWon(overview.money?.solver_payouts)}`)}
       ${adminMetric('분쟁', overview.disputes?.open, `전체 ${overview.disputes?.total || 0}`)}
     </div><div class="admin-ops-grid"><section class="dashboard-card"><div class="dashboard-card-head"><div><h2>최근 가입 회원</h2><p class="form-hint">최고관리자만 가입·동의 정보를 조회할 수 있으며 조회 기록이 남습니다.</p></div><strong>${overview.recentUsers?.length || 0}</strong></div><div class="audit-table">${overview.recentUsers?.length ? overview.recentUsers.map((item) => `<button class="audit-row admin-row-button" type="button" data-action="view-admin-member" data-user-id="${escapeAttribute(item.id)}"><strong>${escapeHTML(item.display_name)}</strong><span>${accountTypeLabel(item.account_type)} · TRUST ${item.trust_score} · Strike ${item.strike_count}/3</span><small>${escapeHTML(item.status)} · 가입 ${formatDateTime(item.created_at)}</small></button>`).join('') : '<p class="muted">회원 기록이 없습니다.</p>'}</div></section><section class="dashboard-card"><div class="dashboard-card-head"><div><h2>처리할 분쟁</h2><p class="form-hint">처리 단계와 종결 결과는 당사자 알림·감사 기록에 남습니다.</p></div><strong>${overview.openDisputes?.length || 0}</strong></div><div class="audit-table">${overview.openDisputes?.length ? overview.openDisputes.map((item) => `<button class="audit-row admin-row-button" type="button" data-action="open-admin-dispute" data-dispute-id="${escapeAttribute(item.id)}"><strong>${escapeHTML(item.title)}</strong><span>${escapeHTML(item.reason_code)} · ${escapeHTML(item.status)}</span><small>${escapeHTML(item.opened_by_name || '-')} → ${escapeHTML(item.respondent_name || '상대방 미지정')} · ${formatDateTime(item.created_at)}</small></button>`).join('') : '<p class="muted">처리 대기 분쟁이 없습니다.</p>'}</div></section><section class="dashboard-card"><div class="dashboard-card-head"><h2>정산 대기</h2><strong>${overview.pendingSettlements?.length || 0}</strong></div><div class="audit-table">${overview.pendingSettlements?.length ? overview.pendingSettlements.map((item) => `<button class="audit-row admin-row-button" type="button" data-challenge-id="${escapeAttribute(item.challenge_id)}"><strong>${escapeHTML(item.title)}</strong><span>${formatWon(item.solver_payout)} 지급 · ${escapeHTML(item.status)}</span><small>${formatDateTime(item.created_at)}</small></button>`).join('') : '<p class="muted">처리 대기 정산이 없습니다.</p>'}</div></section><section class="dashboard-card"><div class="dashboard-card-head"><h2>최근 Audit Log</h2><strong>${overview.recentAudit?.length || 0}</strong></div><div class="audit-table">${overview.recentAudit?.length ? overview.recentAudit.map((item) => `<div class="audit-row"><strong>${escapeHTML(item.action)}</strong><span>${escapeHTML(item.resource_type)} · ${escapeHTML(item.resource_id || '-')}</span><small>${formatDateTime(item.created_at)}</small></div>`).join('') : '<p class="muted">기록이 없습니다.</p>'}</div></section></div></div></section>`;
+}
+
+function renderHomeThemeControls(overview) {
+  const active = overview.homeTheme?.theme || 'original';
+  return `<section class="page-section admin-theme-section"><div class="container"><div class="dashboard-card admin-theme-panel">
+    <div class="dashboard-card-head"><div><span class="admin-kicker">HOMEPAGE STUDIO</span><h2>메인페이지 디자인</h2><p class="form-hint">각 컨셉을 먼저 확인한 뒤 적용하세요. 선택 즉시 모든 방문자의 홈 화면에 반영되며 기존 메뉴·미션 데이터는 유지됩니다.</p></div><span class="theme-live-label">현재 적용: ${escapeHTML(HOME_THEME_OPTIONS.find((item) => item.id === active)?.title || '오리지널 네이비')}</span></div>
+    <div class="home-theme-grid">${HOME_THEME_OPTIONS.map((item) => `<article class="home-theme-option${active === item.id ? ' is-active' : ''}">
+      <div class="home-theme-swatch theme-swatch-${item.id}" aria-hidden="true"><span class="swatch-kicker">MODU CLEAR</span><strong>미션을 올리고,<br>해결하고, 보상받다.</strong><i></i><span class="swatch-board">₩ &nbsp; 현재 공개 미션 <b>↗</b></span></div>
+      <div class="home-theme-description"><strong>${item.title}</strong><span>${item.detail}</span></div>
+      <div class="home-theme-actions"><button class="btn btn-outline btn-small" type="button" data-action="preview-home-theme" data-theme="${item.id}">미리보기</button><button class="btn btn-primary btn-small" type="button" data-action="apply-home-theme" data-theme="${item.id}" ${active === item.id ? 'disabled' : ''}>${active === item.id ? '적용 중' : '적용하기'}</button></div>
+    </article>`).join('')}</div>
+  </div></div></section>`;
+}
+
+async function applyHomeTheme(theme) {
+  if (state.user?.adminRole !== 'primary' || !state.adminOverview?.homeTheme) throw new ApiError('최고관리자만 디자인을 변경할 수 있습니다.', { code: 'PRIMARY_ADMIN_REQUIRED' });
+  if (!HOME_THEME_OPTIONS.some((item) => item.id === theme)) return;
+  const response = await apiClient.updateHomeTheme(theme, state.adminOverview.homeTheme.revision);
+  state.adminOverview.homeTheme = response.homeTheme;
+  state.config.homeTheme = response.homeTheme.theme;
+  state.previewHomeTheme = null;
+  render();
+  toast('메인페이지 디자인을 적용했습니다', '방문자가 새로 접속하면 선택한 컨셉이 표시됩니다.', 'success');
 }
 
 function renderAdminStaffControls(overview) {

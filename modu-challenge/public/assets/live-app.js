@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=58';
-import { legacyNotificationText } from './brand.js?v=58';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=58';
-import { calculateSettlement } from './business-rules.js?v=58';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=58';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=59';
+import { legacyNotificationText } from './brand.js?v=59';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=59';
+import { calculateSettlement } from './business-rules.js?v=59';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=59';
 
 /**
  * 모두의클리어 live frontend
@@ -136,7 +136,7 @@ async function init() {
         document.body.append(button);
       }
     });
-    navigator.serviceWorker.register('/sw.js?v=58').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=59').then((registration) => {
       registration.update().catch(() => undefined);
       registration.addEventListener('updatefound', () => {
         registration.installing?.addEventListener('statechange', () => {
@@ -842,7 +842,13 @@ function renderStudioHome(theme) {
   const summary = `<p class="studio-truth">예시 미션의 금액은 실제 상금이나 지급 실적이 아닙니다. 현재 실제 결제·지급은 차단되어 있습니다.</p>`;
   const search = `<form class="studio-search" id="hero-search-form"><input name="q" aria-label="미션 검색" placeholder="내가 해결할 수 있는 미션을 찾아보세요"><button type="submit">미션 찾기 →</button></form>`;
   const actions = `<div class="studio-actions"><button type="button" class="btn btn-primary btn-lg" data-route="explore">미션 찾기</button><button type="button" class="btn btn-outline btn-lg" data-route="create">미션 등록</button></div>`;
-  const heroPhoto = `<img class="studio-photo" src="/assets/modu-young-challengers.webp" alt="사람들이 함께 미션을 논의하는 모습" width="1600" height="1024" fetchpriority="high">`;
+  const studioPhotos = {
+    community: ['/assets/studio-community.webp', '밝은 공간에서 함께 미션을 논의하는 사람들'],
+    magazine: ['/assets/studio-editorial.webp', '도시를 바라보며 새로운 기회를 생각하는 사람'],
+    journey: ['/assets/studio-journey.webp', '서울 옥상에서 함께 미션을 논의하는 사람들'],
+  };
+  const [photoSrc, photoAlt] = studioPhotos[theme] || ['/assets/modu-young-challengers.webp', '사람들이 함께 미션을 논의하는 모습'];
+  const heroPhoto = `<img class="studio-photo" src="${photoSrc}" alt="${photoAlt}" width="${studioPhotos[theme] ? 1672 : 1600}" height="${studioPhotos[theme] ? 941 : 1024}" fetchpriority="high">`;
   const spotlight = lead ? `<button class="studio-spotlight" type="button" data-challenge-id="${escapeAttribute(lead.id)}"><span>${lead.isExample ? '예시 미션' : '공개 미션'} · ${escapeHTML(CATEGORY_META[lead.category]?.label || '미션')}</span><strong>${escapeHTML(lead.title)}</strong><b>${lead.isExample ? '예시 제시금' : '제시 보상금'} ${reward} ↗</b></button>` : '';
   let hero = '';
   if (theme === 'luxury') hero = `<div class="studio-stage studio-luxury"><div class="container studio-luxury-grid"><div class="studio-copy"><span class="studio-kicker">PEOPLE · MISSIONS · OPPORTUNITIES</span><h1>누군가의 문제를,<br><em>우리의 기회로.</em></h1><p>경험과 아이디어를 미션에 연결하세요. 내가 해결할 수 있는 일부터 시작할 수 있습니다.</p>${actions}${summary}</div><div class="studio-visual">${heroPhoto}${spotlight}</div></div></div>`;

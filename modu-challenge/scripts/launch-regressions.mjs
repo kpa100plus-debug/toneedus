@@ -35,7 +35,7 @@ let resultFor,providerCalls=0;
 globalThis.fetch=async()=>{providerCalls++;return Response.json(resultFor);};
 async function begin(account) {
  const r=await req('/api/me/identity/start',{consent:true,consentVersion:IDENTITY_CONSENT_VERSION},account.cookie,connected);
- assert.equal(r.status,201,JSON.stringify(r.body));return r.body.identityVerificationId;
+ assert.equal(r.status,201,JSON.stringify(r.body));assert.match(r.body.identityVerificationId,/^[A-Za-z0-9]{1,40}$/);return r.body.identityVerificationId;
 }
 function proof(id,phone,di) {return {id,status:'VERIFIED',verifiedAt:new Date().toISOString(),verifiedCustomer:{name:common.realName,phoneNumber:phone,birthDate:'1980-01-01',di}};}
 const idA=await begin(a);

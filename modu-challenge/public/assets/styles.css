@@ -2314,3 +2314,13 @@ body[data-home-theme] .home-theme-option .home-theme-actions .btn-primary:hover{
 body[data-home-theme] .home-theme-option .home-theme-actions .btn-primary:disabled{opacity:1;color:var(--option-accent);background:color-mix(in srgb,var(--option-accent) 12%,white);border-color:color-mix(in srgb,var(--option-accent) 30%,white);filter:none}
 body[data-home-theme] .home-theme-option .home-theme-actions .btn-outline{color:#243047;background:#fff;border-color:#cad2df}
 body[data-home-theme]:not([data-home-theme="original"]) .page-section.admin-theme-section{background:var(--surface-2)}
+
+/* v62: absorb row-height differences above the owner, keep the reward gap fixed. */
+.challenge-card > .challenge-card-copy { flex: 1 0 auto; }
+.challenge-card > .challenge-owner { flex: 0 0 auto; min-width: 0; }
+.challenge-owner .profile-trigger > span:last-child { min-width: 0; }
+.challenge-owner strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.challenge-card > .challenge-card-bottom { flex: 0 0 auto; margin-top: 20px; min-width: 0; }
+.challenge-card-bottom > div:first-child { min-width: 0; flex: 1 1 auto; }
+.challenge-card-bottom .funding-pill { flex: 0 0 auto; }
+.verification-manager .notice-box, .verification-manager > .btn { margin-bottom: 16px; }

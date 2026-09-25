@@ -11,7 +11,8 @@ export async function identityApi({action,user,body,env,json,problem,auditStatem
     if (body.consentVersion !== IDENTITY_CONSENT_VERSION || body.consent !== true) return problem(400,'IDENTITY_CONSENT_REQUIRED','본인확인 처리 안내를 확인하고 동의해주세요.');
     const count = await env.DB.prepare("SELECT count(*) AS n FROM identity_attempts WHERE user_id=? AND created_at>datetime('now','-1 hour')").bind(user.id).first();
     if (count.n >= 5) return problem(429,'IDENTITY_RATE_LIMIT','인증 요청이 많습니다. 잠시 후 다시 시도해주세요.');
-    const id = `iv_${crypto.randomUUID()}`;
+    // KCP accepts only alphanumeric request IDs, at most 40 characters.
+    const id = `iv${crypto.randomUUID().replaceAll('-', '')}`;
     const expires = new Date(Date.now()+600000).toISOString();
     await env.DB.batch([
       env.DB.prepare('INSERT INTO identity_attempts(id,user_id,consent_version,expires_at) VALUES(?,?,?,?)').bind(id,user.id,IDENTITY_CONSENT_VERSION,expires),

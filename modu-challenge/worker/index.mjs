@@ -1,7 +1,7 @@
 import { entityApi, entityConfigured, purgeEntityEvidence } from './entity-verification.mjs';
 import { createTestOrder, transitionTestOrder } from './transactions.mjs';
 import { executeProviderOperation, reconcileProviderOperation, reconcileWebhook, reconcilePendingOperations } from './provider-operations.mjs';
-import { LIVE_FINANCIAL_ADAPTERS_RELEASED, identityConfigured, launchReadiness } from './launch-readiness.mjs';
+import { LIVE_FINANCIAL_ADAPTERS_RELEASED, identityConfigured, identitySetupChecks, launchReadiness } from './launch-readiness.mjs';
 import { identityApi, IDENTITY_CONSENT_VERSION } from './identity.mjs';
 import { simulationApi } from './simulation.mjs';
 import { legacyNotificationText } from '../public/assets/brand.js';
@@ -185,7 +185,7 @@ async function route(request, env, ctx, url) {
     if (admin instanceof Response) return admin;
     const rows = await env.DB.prepare("SELECT id,user_id,verification_type,subject_type,status,status_reason,verified_at,expires_at,created_at FROM member_verifications ORDER BY updated_at DESC LIMIT 100").all();
     await audit(env,admin.id,'VERIFICATION_REVIEW_LIST','verification',null,null,{count:rows.results.length});
-    return json({verifications:rows.results,readiness:launchReadiness(env)});
+    return json({verifications:rows.results,readiness:launchReadiness(env),identitySetup:identitySetupChecks(env)},200,{'Cache-Control':'private, no-store'});
   }
   if (method === 'POST' && path === '/api/admin/verification-reviews') return reviewMemberVerification(request,env);
 
@@ -1547,6 +1547,7 @@ function publicConfig(env) {
     feeRate: Number(env.PLATFORM_FEE_RATE || 0.1),
     verificationEnforcement: verificationEnforcement(env),
     liveTransactionsAvailable: false,
+    identityAvailable: identityConfigured(env),
     moneyEnabled: isPublicMoneyEnabled(env),
     moneyMode: moneyFlowMode(env),
     termsVersion: env.TERMS_VERSION || '2026-08-28-v1',

@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=61';
-import { legacyNotificationText } from './brand.js?v=61';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=61';
-import { calculateSettlement } from './business-rules.js?v=61';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=61';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=62';
+import { legacyNotificationText } from './brand.js?v=62';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=62';
+import { calculateSettlement } from './business-rules.js?v=62';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=62';
 
 /**
  * 모두의클리어 live frontend
@@ -110,7 +110,8 @@ async function init() {
     return;
   }
 
-  if (state.user && new URLSearchParams(location.search).has('identityVerificationId')) await completeIdentityRedirect();
+  const identityReturn = new URLSearchParams(location.search).has('identityVerificationId');
+  if (state.user && identityReturn) await completeIdentityRedirect();
   if (state.route === 'verify-email') await verifyEmailFromLink();
   normalizeSignedInRoute();
   if (state.route === 'reset-password') state.routeError = null;
@@ -122,6 +123,11 @@ async function init() {
   openDirectAuthRoute();
   if (state.route === 'social-signup') await openSocialSignup().catch(showError);
   await openDeepLinkedChallenge();
+
+  if (identityReturn) {
+    if (state.user) await openVerificationManager({ remember: false });
+    else toast('로그인이 필요합니다', '본인확인을 시작한 계정으로 로그인하면 결과 확인을 이어갑니다.', 'warning');
+  }
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     let hadController = Boolean(navigator.serviceWorker.controller);
@@ -136,7 +142,7 @@ async function init() {
         document.body.append(button);
       }
     });
-    navigator.serviceWorker.register('/sw.js?v=61').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=62').then((registration) => {
       registration.update().catch(() => undefined);
       registration.addEventListener('updatefound', () => {
         registration.installing?.addEventListener('statechange', () => {
@@ -460,6 +466,8 @@ async function handleAction(action, data, button) {
     if (action === 'admin-verifications') return await openAdminVerifications();
     if (action === 'review-verification') return openVerificationReview(button.dataset.verificationId);
     if (action === 'manage-verifications') return await openVerificationManager();
+    if (action === 'identity-return') return await returnFromIdentity();
+    if (action === 'identity-recheck') return await withBusy(button, () => retryIdentityResult());
     if (action === 'request-verification') return await withBusy(button, () => requestVerification(button.dataset.verificationType, button.dataset.subjectType));
     if (action === 'create-mode') { saveCreateDraft(); state.createMode = data.mode === 'direct' ? 'direct' : 'easy'; render(); restoreCreateDraft(); return; }
     if (action === 'generate-challenge-draft') return await generateChallengeDraft(button);
@@ -969,6 +977,7 @@ function renderCreate() {
   return `<section class="page-hero compact"><div class="container"><span class="eyebrow">미션 등록</span><h1>미션 등록</h1><p>${easy ? '몇 가지만 선택하면 미션 글을 자동으로 완성해드립니다.' : '결과와 기준을 직접 구체적으로 작성할 수 있습니다.'}</p></div></section>
     <section class="page-section"><div class="container create-layout">
       <form class="form-card" id="challenge-create-form">
+        ${renderIdentityNotice()}
         <div class="notice-box"><span>✓</span><div><strong>이번 의뢰의 활동 주체를 선택하세요</strong><p>회원 계정 종류가 아니라 이 미션에서의 자격입니다. 보유한 유효 인증은 수행자 활동에서도 다시 사용됩니다.</p></div></div>
         <div class="field full activity-subject-field"><label>의뢰 활동 주체 <span class="required">*</span></label><select name="subjectType" required><option value="individual">개인</option><option value="business">개인사업자</option><option value="corporation">법인</option><option value="organization">단체</option></select><small>부족한 인증만 안내하며, 외부 인증기관 연결 전에는 인증 완료로 표시하지 않습니다.</small></div>
         <div class="create-mode-label"><strong>작성 방법을 선택하세요</strong><span>글쓰기가 어렵다면 간편 만들기를 이용하세요</span></div><div class="create-mode-switch" role="tablist" aria-label="작성 방식"><button type="button" role="tab" aria-selected="${easy}" class="${easy ? 'active' : ''}" data-action="create-mode" data-mode="easy"><b>추천</b><strong>간편 만들기</strong><span>몇 가지만 고르면 전체 글 자동 완성</span></button><button type="button" role="tab" aria-selected="${!easy}" class="${!easy ? 'active' : ''}" data-action="create-mode" data-mode="direct"><strong>직접 작성</strong><span>모든 내용을 직접 입력</span></button></div>
@@ -1200,7 +1209,9 @@ function openTrustGuide() {
 
 const VERIFICATION_LABELS = { IDENTITY: '본인확인', BUSINESS: '사업자확인', CORPORATION: '법인확인', ORGANIZATION: '단체확인' };
 
-async function openVerificationManager() {
+async function openVerificationManager({ remember = true } = {}) {
+  if (!state.user) return openAuthModal('login');
+  if (remember) rememberIdentityReturn();
   openModal(renderModalLoading(), { title: '인증·공개정보 관리', wide: true });
   try {
     state.verifications = await apiClient.myVerifications();
@@ -1209,11 +1220,16 @@ async function openVerificationManager() {
     const statusByKey = new Map((data.verifications || []).map((item) => [`${item.subjectType}:${item.type}`, item]));
     const panels = types.map((subjectType) => `<section class="dashboard-card"><div class="dashboard-card-head"><h3>${accountTypeLabel(subjectType)} 활동</h3><strong>의뢰·수행 공통</strong></div><div class="preview-list">${(data.requirementsBySubjectType?.[subjectType] || []).map((type) => {
       const item = statusByKey.get(`${subjectType}:${type}`) || [...statusByKey.values()].find((value) => type === 'IDENTITY' && value.type === 'IDENTITY');
-      const status = item?.status || 'UNVERIFIED';
-      return `<div class="preview-row"><span>${VERIFICATION_LABELS[type] || type}</span><strong>${status === 'VERIFIED' ? '인증 완료·재사용 가능' : status === 'PROVIDER_REQUIRED' ? '기관 연결 필요' : status}</strong>${status !== 'VERIFIED' ? `<button class="btn btn-outline btn-small" type="button" data-action="request-verification" data-verification-type="${type}" data-subject-type="${subjectType}">인증 안내</button>` : ''}</div>`;
+      const status = type === 'IDENTITY' && !data.identityAvailable ? 'PROVIDER_REQUIRED' : item?.status || 'UNVERIFIED';
+      return `<div class="preview-row"><span>${VERIFICATION_LABELS[type] || type}</span><strong>${({ VERIFIED:'인증 완료·재사용 가능', PROVIDER_REQUIRED:'기관 연결 대기', UNVERIFIED:'미인증', PENDING:'확인 대기', EXPIRED:'인증 만료', REJECTED:'인증 거절', REVOKED:'인증 철회', RECONFIRM_REQUIRED:'재확인 필요' })[status] || '확인 필요'}</strong>${status !== 'VERIFIED' && type !== 'IDENTITY' ? `<button class="btn btn-outline btn-small" type="button" data-action="request-verification" data-verification-type="${type}" data-subject-type="${subjectType}">인증 안내</button>` : ''}</div>`;
     }).join('')}</div></section>`).join('');
     openModal(`<div class="verification-manager"><div class="notice-box ${data.providerConnectionRequired ? 'warning' : ''}"><span>i</span><div><strong>회원 기준으로 인증을 한 번만 관리합니다</strong><p>의뢰자용·수행자용 인증을 중복 생성하지 않습니다. 외부 인증기관 계약·API가 연결되지 않은 인증은 완료로 표시하지 않습니다.</p></div></div>${data.identityAvailable ? `<form id="identity-start-form" class="auth-form"><p>본인확인 결과의 이름·휴대전화·성인 여부를 대조하고 중복확인 식별값을 해시로 처리합니다. 인증 유효기간은 1년입니다.</p><label><input type="checkbox" name="consent" required> 본인확인 결과 조회·처리에 동의합니다.</label><button class="btn btn-primary" type="submit">본인확인 시작</button></form>` : ''}<div class="verification-grid">${panels}</div><button class="btn btn-outline" data-action="entity-cases">사업자·법인·단체 자격 신청</button><p class="privacy-note">원본 신분증·주민등록번호·통장 사본을 이 화면이나 미션에 올리지 마세요. 기관 연결 전에는 인증이 필요한 신규 의뢰·도전·선정을 진행할 수 없습니다.</p></div>`, { title: '인증·공개정보 관리', wide: true });
-  } catch (error) { closeModal(); showError(error); }
+    const manager = modalRoot.querySelector('.verification-manager');
+    if (!data.identityAvailable) manager?.insertAdjacentHTML('afterbegin', '<div class="notice-box warning"><span>!</span><div><strong>휴대전화 본인확인 서비스 연결 대기</strong><p>운영팀의 인증기관 계약·연동 설정이 필요합니다. 현재는 회원이 인증을 시도해도 완료할 수 없습니다. 미션과 수행 신청 내용은 작성할 수 있으나 제출은 인증 연결 후 가능합니다.</p></div></div>');
+    const pending = identityReturnContext();
+    if (pending?.attempt) manager?.insertAdjacentHTML('afterbegin', '<div class="notice-box"><span>i</span><div><strong>인증 결과 확인 대기</strong><p>인증창을 완료했다면 결과를 다시 확인하세요. 기관 결과 확인 전에는 인증 완료로 처리하지 않습니다.</p><button type="button" class="btn btn-outline" data-action="identity-recheck">인증 결과 다시 확인</button></div></div>');
+    if (pending) manager?.insertAdjacentHTML('beforeend', '<button type="button" class="btn btn-primary btn-block" data-action="identity-return">이전 작성 화면으로 돌아가기</button>');
+  } catch (error) { renderModalRequestError(error); }
 }
 
 async function requestVerification(type, subjectType) {
@@ -1716,6 +1732,11 @@ async function completeAuthentication(user) {
   await loadRouteData();
   renderSystemNotice();
   render();
+  if (new URLSearchParams(location.search).has('identityVerificationId')) {
+    await completeIdentityRedirect();
+    await loadRouteData(); render();
+    await openVerificationManager({ remember: false });
+  }
 }
 
 async function submitLogin(form) {
@@ -1918,6 +1939,9 @@ async function logout() {
   let endpoint = '';
   try { const registration = await navigator.serviceWorker?.getRegistration(); endpoint = (await registration?.pushManager.getSubscription())?.endpoint || ''; } catch {}
   await apiClient.logout(endpoint);
+  sessionStorage.removeItem('modu-identity-return');
+  state.createDraft = null;
+  state.verifications = null;
   state.user = null;
   state.activity = null;
   state.trustProfile = null;
@@ -1961,6 +1985,7 @@ function openTeaserForm(challengeId) {
   const challenge = state.selectedChallenge?.challenge || state.challenges.find((item) => item.id === challengeId);
   openModal(`<form id="teaser-form" data-challenge-id="${challengeId}"><div class="notice-box"><span>◉</span><div><strong>TEASER는 해결 가능성의 예고편입니다</strong><p>개인정보·회사명·영업비밀은 가리고, 의뢰자가 가능성을 판단할 수준만 제출하세요.</p></div></div><button class="btn btn-soft btn-lg btn-block teaser-template-button" type="button" data-action="fill-teaser-template" data-challenge-id="${challengeId}">✦ 이 미션에 맞춰 자동 양식 채우기</button><p class="form-hint teaser-template-hint">초안이 자동 입력됩니다. 실제 경험과 방법에 맞게 꼭 수정한 뒤 제출하세요.</p><div class="form-guide"><strong>작성 기준</strong><span>한 줄 제안 5자 이상 · 해결능력 20자 이상 · 접근방법 20자 이상</span></div><div class="form-grid"><div class="field full"><label>한 줄 제안 <small>5~100자</small></label><input name="headline" required minlength="5" maxlength="100" placeholder="예: 지역 배송 운영 경험으로 실행안을 제안합니다" data-count /></div><div class="field full"><label>해결능력·경험 <small>20자 이상</small></label><textarea name="capability" required minlength="20" maxlength="1200" rows="4" placeholder="관련 경험, 실적, 가능한 역할을 구체적으로 적어주세요" data-count></textarea></div><div class="field full"><label>접근방법 <small>20자 이상</small></label><textarea name="approach" required minlength="20" maxlength="1600" rows="4" placeholder="어떤 순서와 방법으로 해결할지 적어주세요" data-count></textarea></div><div class="field"><label>예상기간(일)</label><input name="expectedDays" type="number" min="1" max="365" required value="7" /></div><div class="field"><label>자격 유형</label><input name="qualificationType" maxlength="80" placeholder="필요한 경우만" /></div><div class="field full"><label>마스킹 증빙</label><textarea name="maskedEvidence" maxlength="1000" rows="3" placeholder="실명·연락처·회사명을 가린 증빙"></textarea></div><div class="field full"><label>자격 참조정보</label><input name="qualificationRef" maxlength="160" placeholder="공식 확인 가능한 정보만" /></div></div><label class="check-row"><input type="checkbox" required /><span>허위정보와 타인의 개인정보를 제출하지 않겠습니다.</span></label><button class="btn btn-primary btn-lg btn-block" type="submit">TEASER 제출</button></form>`, { title: escapeHTML(challenge?.title || 'TEASER 제출'), wide: true });
   const teaserForm = document.querySelector('#teaser-form');
+  teaserForm?.insertAdjacentHTML('afterbegin', renderIdentityNotice());
   teaserForm?.querySelector('.notice-box')?.insertAdjacentHTML('afterend', `<div class="field full activity-subject-field"><label>이번 수행 활동 주체</label><select name="subjectType" required><option value="individual">개인</option><option value="business">개인사업자</option><option value="corporation">법인</option><option value="organization">단체</option></select><small>보유한 유효 인증은 의뢰·수행 활동에 공통으로 재사용합니다.</small></div>`);
   restoreTransientModalDraft(teaserForm);
 }
@@ -2229,7 +2254,7 @@ async function submitCancel(form) {
 }
 
 function transientModalDraftKey(form) {
-  return `modu-transient-${form?.id || 'form'}-${form?.dataset?.challengeId || 'unknown'}`;
+  return `modu-transient-${state.user?.id || 'anonymous'}-${form?.id || 'form'}-${form?.dataset?.challengeId || 'unknown'}`;
 }
 
 function saveTransientModalDraft(form) {
@@ -2384,6 +2409,10 @@ async function withBusy(button, callback) {
 
 function showError(error) {
   console.error(error);
+  if (error?.code === 'VERIFICATION_REQUIRED') {
+    openVerificationManager().catch(() => toast('인증 상태 확인 실패', '잠시 후 다시 확인해주세요.', 'error'));
+    return;
+  }
   const message = error instanceof ApiError ? error.message : '요청을 처리하지 못했습니다.';
   toast('처리하지 못했습니다', message, 'error');
 }
@@ -2629,6 +2658,7 @@ async function openAdminVerifications() {
   try {
     const data=await apiClient.verificationReviews();
     openModal(`<p>기관 검증 없이 인증 완료로 승인할 수 없습니다. 거절·철회·재확인 요청에는 사유와 관리자 감사기록이 남습니다.</p><div class="audit-table">${data.verifications.length ? data.verifications.map(v=>`<div class="audit-row"><strong>${escapeHTML(VERIFICATION_LABELS[v.verification_type])} · ${escapeHTML(v.status)}</strong><span>${escapeHTML(v.user_id)}<br>${escapeHTML(v.status_reason||'')}</span><button class="btn btn-outline btn-small" data-action="review-verification" data-verification-id="${escapeAttribute(v.id)}">심사</button></div>`).join(''):'<p>접수된 인증 요청이 없습니다.</p>'}</div>`,{title:'인증 요청 심사',wide:true});
+    modalRoot.querySelector('.modal-body')?.insertAdjacentHTML('afterbegin', `<section class="dashboard-card"><h3>본인확인 연결 설정</h3><p>값은 공개하지 않고 설정 여부만 표시합니다. 설정 완료와 실제 기관 검증은 별개입니다.</p><div class="preview-list">${(data.identitySetup || []).map(check => `<div class="preview-row"><span>${escapeHTML(check.label)}</span><strong>${check.ready ? '설정됨' : '미완료'}</strong></div>`).join('')}</div></section>`);
   } catch(error) { renderModalRequestError(error); }
 }
 function openVerificationReview(id) {
@@ -2639,30 +2669,129 @@ async function submitVerificationReview(form) {
   await openAdminVerifications();
 }
 
+// The return context is tab-scoped, expires, and is bound to the signed-in member.
+function identityReturnContext() {
+  try {
+    const value = JSON.parse(sessionStorage.getItem('modu-identity-return') || 'null');
+    if (!value || value.userId !== state.user?.id || Date.now() - value.savedAt > 86400000) return null;
+    return value;
+  } catch { return null; }
+}
+function saveIdentityReturn(value) {
+  try { sessionStorage.setItem('modu-identity-return', JSON.stringify(value)); }
+  catch { throw new ApiError('작성 화면을 보관할 수 없습니다. 브라우저의 저장공간 설정을 확인해주세요.'); }
+}
+function rememberIdentityReturn() {
+  const teaser = document.querySelector('#teaser-form');
+  const create = document.querySelector('#challenge-create-form');
+  if (create) saveCreateDraft();
+  if (teaser) saveTransientModalDraft(teaser);
+  const previous = identityReturnContext();
+  saveIdentityReturn({ ...previous, userId: state.user.id, savedAt: Date.now(),
+    hash: location.hash || '#/dashboard',
+    createDraft: create ? state.createDraft : previous?.createDraft || null,
+    createMode: state.createMode,
+    challengeId: teaser?.dataset.challengeId || previous?.challengeId || null,
+  });
+}
+function renderIdentityNotice() {
+  if (state.user?.verification?.identity) return '';
+  const available = state.config?.identityAvailable;
+  return `<div class="notice-box ${available ? '' : 'warning'}"><span>i</span><div><strong>${available ? '제출 전에 본인확인이 필요합니다' : '본인확인 서비스 연결 대기'}</strong><p>${available ? '작성 내용은 유지됩니다. 인증 후 돌아와 내용을 확인하고 제출해주세요.' : '인증기관 연결 전에는 미션 등록·수행 신청을 제출할 수 없습니다. 지금은 작성 내용을 준비할 수 있습니다.'}</p><button class="btn btn-outline btn-small" type="button" data-action="manage-verifications">${available ? '본인확인 진행' : '인증 상태·안내 확인'}</button></div></div>`;
+}
+async function returnFromIdentity() {
+  const pending = identityReturnContext();
+  closeModal({ preserveHistory: true });
+  if (!pending) return;
+  const hash = /^#\/(home|explore|create|dashboard|profile)(?:\?|$)/.test(pending.hash) ? pending.hash : '#/dashboard';
+  if (pending.createDraft) { state.createDraft = pending.createDraft; state.createMode = pending.createMode || 'easy'; }
+  history.replaceState(null, '', location.pathname + hash);
+  state.route = routeFromHash();
+  await loadRouteData(); render();
+  if (pending.challengeId) openTeaserForm(pending.challengeId);
+  // Keep an unresolved server check available, but never auto-submit a mission.
+  if (!pending.attempt) sessionStorage.removeItem('modu-identity-return');
+}
+
 let identitySdkPromise;
-async function startIdentityVerification(form) {
-  if(!new FormData(form).has('consent')) throw new Error('본인확인 처리 동의가 필요합니다.');
-  const attempt=await apiClient.startIdentity({consent:true,consentVersion:state.verifications.identityConsentVersion});
-  if(!identitySdkPromise) identitySdkPromise=new Promise((resolve,reject)=>{
-    const script=document.createElement('script');script.src='https://cdn.portone.io/v2/browser-sdk.js';script.async=true;
-    script.onload=()=>window.PortOne ? resolve(window.PortOne) : reject(new Error('인증 창을 불러오지 못했습니다.'));
-    script.onerror=()=>{identitySdkPromise=null;reject(new Error('인증기관 연결을 확인해주세요.'));};
+function loadIdentitySdk() {
+  if (typeof window.PortOne?.requestIdentityVerification === 'function') return Promise.resolve(window.PortOne);
+  if (identitySdkPromise) return identitySdkPromise;
+  identitySdkPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = 'https://cdn.portone.io/v2/browser-sdk.js'; script.async = true;
+    let finished = false;
+    const finish = (error) => {
+      if (finished) return;
+      finished = true; clearTimeout(timer); script.onload = script.onerror = null;
+      if (error) { identitySdkPromise = null; script.remove(); reject(error); }
+      else resolve(window.PortOne);
+    };
+    const timer = setTimeout(() => finish(new ApiError('인증창 연결 시간이 초과되었습니다. 다시 시도해주세요.')), 15000);
+    script.onload = () => finish(typeof window.PortOne?.requestIdentityVerification === 'function' ? null : new ApiError('인증창을 불러오지 못했습니다. 다시 시도해주세요.'));
+    script.onerror = () => finish(new ApiError('인증기관에 연결하지 못했습니다. 네트워크를 확인하고 다시 시도해주세요.'));
     document.head.appendChild(script);
   });
-  const sdk=await identitySdkPromise;
-  const result=await sdk.requestIdentityVerification({...attempt,redirectUrl:location.origin+'/'});
-  if(result?.code) throw new Error('인증이 완료되지 않았습니다. 다시 시도해주세요.');
-  if(!result?.identityVerificationId) return;
-  await apiClient.completeIdentity({identityVerificationId:result.identityVerificationId});
-  await openVerificationManager();
+  return identitySdkPromise;
+}
+async function startIdentityVerification(form) {
+  if (!new FormData(form).has('consent')) throw new ApiError('본인확인 처리 동의가 필요합니다.');
+  // Failed SDK loading must not consume the server's hourly attempt allowance.
+  const sdk = await loadIdentitySdk();
+  const attempt = await apiClient.startIdentity({ consent: true, consentVersion: state.verifications.identityConsentVersion });
+  if (!identityReturnContext()) rememberIdentityReturn();
+  saveIdentityReturn({ ...identityReturnContext(), attempt: attempt.identityVerificationId, expiresAt: attempt.expiresAt });
+  let result;
+  try {
+    result = await sdk.requestIdentityVerification({ storeId: attempt.storeId, channelKey: attempt.channelKey,
+      identityVerificationId: attempt.identityVerificationId, redirectUrl: location.origin + '/' });
+  } catch {
+    await openVerificationManager({ remember: false });
+    throw new ApiError('인증창 연결을 확인하지 못했습니다. 인증을 마쳤다면 결과를 다시 확인하고, 취소했다면 새로 시작해주세요.');
+  }
+  if (!result || result.code !== undefined) {
+    saveIdentityReturn({ ...identityReturnContext(), attempt: null });
+    throw new ApiError('본인확인이 취소되거나 완료되지 않았습니다. 작성 내용은 유지되며 다시 시도할 수 있습니다.');
+  }
+  if (result.identityVerificationId !== attempt.identityVerificationId) throw new ApiError('요청한 인증과 결과가 다릅니다. 인증 완료로 처리하지 않았습니다.');
+  try { await confirmIdentityResult(result.identityVerificationId); }
+  catch (error) { await openVerificationManager({ remember: false }); throw error; }
+  await openVerificationManager({ remember: false });
+}
+async function confirmIdentityResult(id) {
+  await apiClient.completeIdentity({ identityVerificationId: id });
+  state.user = await loadCurrentUser();
+  state.verifications = await apiClient.myVerifications();
+  if (!state.user?.verification?.identity) throw new ApiError('현재 유효한 본인확인을 확인하지 못했습니다. 인증 상태를 다시 확인해주세요.');
+  const pending = identityReturnContext();
+  if (pending) saveIdentityReturn({ ...pending, attempt: null });
+  toast('본인확인 완료', '작성 화면으로 돌아가 내용을 확인한 후 제출해주세요.', 'success');
+}
+async function retryIdentityResult() {
+  const pending = identityReturnContext();
+  if (!pending?.attempt) throw new ApiError('다시 확인할 인증 요청이 없습니다. 본인확인을 시작해주세요.');
+  if (Date.parse(pending.expiresAt) <= Date.now()) {
+    saveIdentityReturn({ ...pending, attempt: null });
+    await openVerificationManager({ remember: false });
+    throw new ApiError('인증 요청이 만료되었습니다. 본인확인을 다시 시작해주세요.');
+  }
+  await confirmIdentityResult(pending.attempt);
+  await openVerificationManager({ remember: false });
 }
 async function completeIdentityRedirect() {
-  const params=new URLSearchParams(location.search),id=params.get('identityVerificationId');
-  history.replaceState(null,'',location.pathname+(location.hash || '#/dashboard'));
+  const params = new URLSearchParams(location.search), id = params.get('identityVerificationId');
+  const pending = identityReturnContext();
+  const hash = pending && /^#\/(home|explore|create|dashboard|profile)(?:\?|$)/.test(pending.hash) ? pending.hash : '#/dashboard';
+  history.replaceState(null, '', location.pathname + hash);
+  state.route = routeFromHash();
+  if (pending?.createDraft) { state.createDraft = pending.createDraft; state.createMode = pending.createMode || 'easy'; }
   try {
-    if(params.has('code')) throw new Error('본인확인이 취소되거나 실패했습니다.');
-    await apiClient.completeIdentity({identityVerificationId:id});
-    state.user=await loadCurrentUser();
-    toast('본인확인', '기관 본인확인 결과를 확인했습니다.', 'success');
-  } catch(error) { showError(error); }
+    if (params.has('code')) {
+      if (pending) saveIdentityReturn({ ...pending, attempt: null });
+      throw new ApiError('본인확인이 취소되거나 실패했습니다. 작성 내용은 유지됩니다. 다시 시도해주세요.');
+    }
+    if (pending?.attempt && pending.attempt !== id) throw new ApiError('진행 중인 인증 요청과 다른 결과입니다. 원래 계정에서 다시 확인해주세요.');
+    // Only the server verifies ownership and provider proof; query values are not proof.
+    await confirmIdentityResult(id);
+  } catch (error) { showError(error); }
 }

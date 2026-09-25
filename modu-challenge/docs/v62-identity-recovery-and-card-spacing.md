@@ -43,3 +43,7 @@ KCP의 본인인증 ID 규격(영문·숫자, 40자 이하)에 맞게 신규 요
 - https://developers.portone.io/opi/ko/integration/pg/v2/kcp-v2-identity-verification
 
 © 2026 ISEA GROUP. All Rights Reserved.
+
+## v63 후속 시각 검수 보완
+
+2026-09-25 v62 배포 후 실제 운영에서 1억 원의 단위가 두 번째 줄로 밀리는 것을 확인했다. 0.13.6/v63에서 상태와 화살표를 오른쪽 열에 배치하고 금액의 폰트 크기를 카드 폭에 맞춰 한 줄로 유지하도록 보완했다. 작성자 아래 20px 간격은 유지한다.

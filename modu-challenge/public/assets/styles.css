@@ -2324,3 +2324,15 @@ body[data-home-theme]:not([data-home-theme="original"]) .page-section.admin-them
 .challenge-card-bottom > div:first-child { min-width: 0; flex: 1 1 auto; }
 .challenge-card-bottom .funding-pill { flex: 0 0 auto; }
 .verification-manager .notice-box, .verification-manager > .btn { margin-bottom: 16px; }
+/* v63: reserve a separate action column so even the maximum reward stays on one line. */
+.challenge-card { container-type: inline-size; }
+.challenge-card > .challenge-card-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  row-gap: 6px;
+}
+.challenge-card-bottom > div:first-child { grid-column: 1; grid-row: 1 / span 2; }
+.challenge-card-bottom .funding-pill { grid-column: 2; grid-row: 1; justify-self: end; }
+.challenge-card-bottom .challenge-open-arrow { grid-column: 2; grid-row: 2; justify-self: end; width: 26px; height: 26px; font-size: 1rem; }
+.challenge-card-bottom strong { font-size: clamp(1.125rem, 6cqi, 1.6rem); white-space: nowrap; overflow-wrap: normal; }

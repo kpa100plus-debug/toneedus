@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=62';
-import { legacyNotificationText } from './brand.js?v=62';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=62';
-import { calculateSettlement } from './business-rules.js?v=62';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=62';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=63';
+import { legacyNotificationText } from './brand.js?v=63';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=63';
+import { calculateSettlement } from './business-rules.js?v=63';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=63';
 
 /**
  * 모두의클리어 live frontend
@@ -142,7 +142,7 @@ async function init() {
         document.body.append(button);
       }
     });
-    navigator.serviceWorker.register('/sw.js?v=62').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=63').then((registration) => {
       registration.update().catch(() => undefined);
       registration.addEventListener('updatefound', () => {
         registration.installing?.addEventListener('statechange', () => {

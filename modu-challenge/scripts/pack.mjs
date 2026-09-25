@@ -28,6 +28,8 @@ const runtimePaths = [
   'public/setup-admin.html',
   'public/sw.js',
   'worker/index.mjs',
+  'worker/email-otp.mjs',
+  'migrations/0023_email_otp.sql',
   'worker/identity.mjs',
   'worker/entity-verification.mjs',
   'worker/secure-data.mjs',

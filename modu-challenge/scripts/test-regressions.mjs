@@ -12,7 +12,7 @@ import { CATEGORY_META, STATUS_META, FUNDING_META } from '../public/assets/data.
 import { calculateSettlement } from '../public/assets/business-rules.js';
 const sql = new DatabaseSync(':memory:');
 for (const file of readdirSync(new URL('../migrations/', import.meta.url)).sort()) if(file.endsWith('.sql')) sql.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
-const DB={prepare(query){return {args:[],bind(...args){this.args=args;return this},async first(){return sql.prepare(query).get(...this.args)||null},async all(){return {results:sql.prepare(query).all(...this.args)}},async run(){if(/^\s*SELECT/i.test(query))return {results:sql.prepare(query).all(...this.args),success:true};const r=sql.prepare(query).run(...this.args);return {meta:{changes:Number(r.changes)},success:true}}}},async batch(stmts){sql.exec('BEGIN');try{const out=[];for(const stmt of stmts)out.push(await stmt.run());sql.exec('COMMIT');return out}catch(e){sql.exec('ROLLBACK');throw e}}};
+const DB={prepare(query){return {args:[],bind(...args){this.args=args;return this},async first(){return sql.prepare(query).get(...this.args)||null},async all(){return {results:sql.prepare(query).all(...this.args)}},async run(){if(/\bRETURNING\b/i.test(query)){const results=sql.prepare(query).all(...this.args);return {results,meta:{changes:Number(sql.prepare('SELECT changes() n').get().n)}}}if(/^\s*SELECT/i.test(query))return {results:sql.prepare(query).all(...this.args),success:true};const r=sql.prepare(query).run(...this.args);return {meta:{changes:Number(r.changes)},success:true}}}},async batch(stmts){sql.exec('BEGIN');try{const out=[];for(const stmt of stmts)out.push(await stmt.run());sql.exec('COMMIT');return out}catch(e){sql.exec('ROLLBACK');throw e}}};
 const env={DB,APP_ENV:'test',VERIFICATION_ENFORCEMENT:'advisory',LOCAL_MONEY_SIMULATION:'false',PUBLIC_MONEY_ENABLED:'false'};
 async function req(path,body,cookie='',method=body?'POST':'GET',e=env, extraHeaders={}){const r=await worker.fetch(new Request('https://test.invalid'+path,{method,headers:{'Content-Type':'application/json',Cookie:cookie,...extraHeaders},body:body?JSON.stringify(body):undefined}),e,{waitUntil(){}});return {status:r.status,body:await r.json(),cookie:r.headers.get('set-cookie')?.split(';')[0]||''}}
 const material={passwordSalt:Buffer.alloc(16,1).toString('base64'),passwordVerifier:Buffer.alloc(32,2).toString('base64')};
@@ -20,6 +20,9 @@ const common={realName:'같은이름',region:'인천',challengeIntent:'both',bir
 let n=0;const pass=(label)=>{n++;console.log('PASS '+label)};
 const a=await req('/api/auth/signup',{...common,displayName:'회귀활동A',phone:'01000001001',email:'a@test.invalid'});assert.equal(a.status,201,JSON.stringify(a.body));pass('ordinary signup inserts all fields');
 const b=await req('/api/auth/signup',{...common,accountType:'corporation',challengeIntent:'owner',displayName:'회귀활동B',phone:'01000001002',email:'b@test.invalid'});assert.equal(b.status,201,JSON.stringify(b.body));assert.equal(sql.prepare("SELECT account_type,challenge_intent FROM users WHERE email='b@test.invalid'").get().account_type,'individual');assert.equal(sql.prepare("SELECT challenge_intent FROM users WHERE email='b@test.invalid'").get().challenge_intent,'both');pass('signup ignores role and permanent subject type while preserving legacy defaults');
+assert.equal(a.body.user.emailVerified,false);
+// Existing behavioral scenarios use verified-email fixtures. OTP itself has dedicated tests.
+sql.exec("UPDATE users SET email_verified=1,email_verified_at=CURRENT_TIMESTAMP");
 for(const [field,value,code] of [['email','a@test.invalid','EMAIL_EXISTS'],['phone','+82 10-0000-1001','PHONE_EXISTS'],['displayName','회귀활동A','DISPLAY_NAME_EXISTS']]){const r=await req('/api/auth/signup',{...common,displayName:'신규활동명',phone:'01000001003',email:'c@test.invalid',[field]:value});assert.equal(r.body.error?.code,code);pass('duplicate '+field+' specific error')}
 const found=await req('/api/auth/find-email',{displayName:'같은이름',phone:'+82 10-0000-1001'});assert.equal(found.body.found,true);assert.ok(found.body.emailHint.includes('*'));pass('email lookup by real name and normalized phone, masked result');
 const health=await req('/api/health');assert.equal(health.body.moneyEnabled,false);assert.equal(health.body.moneyMode,'disabled');pass('money stays disabled');
@@ -59,7 +62,9 @@ const oc='mc_oauth_signup='+token;
 const os=await req('/api/auth/oauth-signup',{...common,displayName:'소셜활동',phone:'01000001004',email:'attacker@test.invalid'},oc);assert.equal(os.status,201,JSON.stringify(os.body));assert.equal(os.body.user.email,'oauth@test.invalid');assert.equal(sql.prepare("SELECT email_verified FROM users WHERE email = 'oauth@test.invalid'").get().email_verified,1);pass('Google signup without password, provider email verified');
 const repeated=await req('/api/auth/oauth-signup',{...common,displayName:'중복소셜',phone:'01000001005'},oc);assert.equal(repeated.status,401);pass('OAuth signup token single use');
 const challengeInput={title:'동네 로고 디자인 제안',summary:'동네 가게의 새 로고 디자인을 제안해주세요',description:'동네 가게에서 사용할 새 로고와 색상 조합을 디자인하여 제안해주세요.',category:'IDEA',rewardAmount:50000,successCriteria:'원본 디자인과 색상 조합 설명 제출',paymentTrigger:'최종 제안 확인 후 진행 조건 확정',evidenceRequirements:'디자인 원본 파일 제출',deadline:'2099-01-01',visibility:'public'};
-const requiredGate=await req('/api/challenges',{...challengeInput,subjectType:'business'},b.cookie,'POST',{...env,VERIFICATION_ENFORCEMENT:'required'},{'Idempotency-Key':'required-verification-001'});assert.equal(requiredGate.status,409);assert.equal(requiredGate.body.error?.code,'VERIFICATION_REQUIRED');pass('required mode blocks missing activity verification without changing signup');
+sql.prepare('UPDATE users SET email_verified=0 WHERE id=?').run(b.body.user.id);
+const requiredGate=await req('/api/challenges',{...challengeInput,subjectType:'business'},b.cookie,'POST',{...env,VERIFICATION_ENFORCEMENT:'required'},{'Idempotency-Key':'required-verification-001'});assert.equal(requiredGate.status,409);assert.equal(requiredGate.body.error?.code,'EMAIL_VERIFICATION_REQUIRED');pass('mission writes require verified email');
+sql.prepare('UPDATE users SET email_verified=1 WHERE id=?').run(b.body.user.id);
 const make=await req('/api/challenges',challengeInput,b.cookie,'POST',env,{'Idempotency-Key':'regression-create-001'});assert.equal(make.status,201,JSON.stringify(make.body));const cid=make.body.challenge.id;assert.equal(make.body.moderationDecision,'AUTO_APPROVED');assert.equal(make.body.moderationRiskScore,0);assert.equal(sql.prepare('SELECT moderation_decision FROM challenges WHERE id=?').get(cid).moderation_decision,'AUTO_APPROVED');pass('safe challenge is automatically reviewed, approved and audited');
 const businessMission=await req('/api/challenges',{...challengeInput,title:'사업자 활동 주체 로고 제안',subjectType:'business'},b.cookie,'POST',env,{'Idempotency-Key':'business-subject-001'});assert.equal(businessMission.status,201);assert.equal(businessMission.body.challenge.ownerSubjectType,'business');assert.equal(businessMission.body.verificationAdvisory,true);assert.equal(sql.prepare("SELECT count(*) n FROM activity_qualifications WHERE challenge_id=? AND activity_role='OWNER' AND subject_type='business'").get(businessMission.body.challenge.id).n,1);pass('one account records owner activity with a separately selected subject type');
 sql.prepare("INSERT INTO member_verifications (id,user_id,verification_type,subject_type,status,provider,provider_reference_hash,private_metadata_json,verified_at) VALUES ('ver_reuse_identity',?,'IDENTITY','individual','VERIFIED','test-provider','secret-reference-hash','{\"rawToken\":\"never-public\"}',CURRENT_TIMESTAMP)").run(b.body.user.id);const reusedIdentity=await req('/api/me/verifications/requests',{type:'IDENTITY',subjectType:'corporation'},b.cookie);assert.equal(reusedIdentity.body.providerConnectionRequired,true);const publicTrust=await req('/api/users/'+b.body.user.id+'/trust');assert.equal(JSON.stringify(publicTrust.body).includes('secret-reference-hash'),false);assert.equal(JSON.stringify(publicTrust.body).includes('never-public'),false);pass('legacy identity verification cannot be reused as provider proof; private data stays private');
@@ -128,15 +133,16 @@ const ordinaryLogin=await req('/api/auth/login',{email:'b@test.invalid',password
 
 // Integration verification uses a stub mail/provider transport; no real messages are sent.
 const transport=globalThis.fetch;let sentMail=null;
-const mailEnv={...env,BREVO_API_KEY:'test-only-placeholder',BREVO_SENDER_EMAIL:'sender@test.invalid',GOOGLE_OAUTH_CLIENT_ID:'test-id',GOOGLE_OAUTH_CLIENT_SECRET:'test-only-placeholder',NAVER_OAUTH_CLIENT_ID:'naver-test-id',NAVER_OAUTH_CLIENT_SECRET:'test-only-placeholder'};
+const mailEnv={...env,BREVO_API_KEY:'test-only-placeholder-not-a-real-key-123456',BREVO_SENDER_EMAIL:'sender@test.invalid',GOOGLE_OAUTH_CLIENT_ID:'test-id',GOOGLE_OAUTH_CLIENT_SECRET:'test-only-placeholder',NAVER_OAUTH_CLIENT_ID:'naver-test-id',NAVER_OAUTH_CLIENT_SECRET:'test-only-placeholder'};
 try {
  globalThis.fetch=async(url,options)=>{if(String(url)==='https://api.brevo.com/v3/smtp/email'){sentMail=JSON.parse(options.body);return Response.json({messageId:'test'})}throw Error('Unexpected external transport')};
- const registered=await req('/api/auth/signup',{...common,displayName:'인증테스트회원',phone:'01000001991',email:'verify@test.invalid'},'', 'POST',mailEnv);assert.equal(registered.body.pendingVerification,true);assert.equal(registered.cookie,'');
- const pendingLogin=await req('/api/auth/login',{email:'verify@test.invalid',passwordVerifier:material.passwordVerifier},'', 'POST',mailEnv);assert.equal(pendingLogin.status,403);
+ const registered=await req('/api/auth/signup',{...common,displayName:'인증테스트회원',phone:'01000001991',email:'verify@test.invalid'},'', 'POST',mailEnv);assert.equal(registered.body.user.emailVerified,false);assert.ok(registered.cookie);
+ const pendingLogin=await req('/api/auth/login',{email:'verify@test.invalid',passwordVerifier:material.passwordVerifier},'', 'POST',mailEnv);assert.equal(pendingLogin.status,200);
+ const otp=await req('/api/me/email-verification/send',{},registered.cookie,'POST',mailEnv);assert.equal(otp.status,200,JSON.stringify(otp.body));
  assert.equal(sentMail.sender.name,'모두의클리어');assert.ok(sentMail.subject.startsWith('[모두의클리어]'));
- const verifyToken=sentMail.htmlContent.match(/token=([A-Za-z0-9_-]+)/)[1];assert.equal((await req('/api/auth/verify-email',{token:verifyToken},'', 'POST',mailEnv)).status,200);
+ const verifyToken=sentMail.textContent.match(/인증번호: (\d{6})/)[1];assert.equal((await req('/api/me/email-verification/confirm',{id:otp.body.challenge.id,code:verifyToken},registered.cookie, 'POST',mailEnv)).status,200);
  const verifiedLogin=await req('/api/auth/login',{email:'verify@test.invalid',passwordVerifier:material.passwordVerifier},'', 'POST',mailEnv);assert.equal(verifiedLogin.status,200);pass('signup → email verification → login with mocked mail delivery');
- assert.equal((await req('/api/auth/verify-email',{token:verifyToken},'', 'POST',mailEnv)).status,400);pass('verification link cannot be reused');
+ assert.equal((await req('/api/me/email-verification/confirm',{id:otp.body.challenge.id,code:verifyToken},registered.cookie, 'POST',mailEnv)).status,400);pass('verification code cannot be reused');
  await req('/api/auth/request-password-reset',{email:'verify@test.invalid'},'','POST',mailEnv);
  assert.ok(sentMail.subject.startsWith('[모두의클리어]'));
  const resetToken=sentMail.htmlContent.match(/token=([A-Za-z0-9_-]+)/)[1];const newMaterial={passwordSalt:Buffer.alloc(16,3).toString('base64'),passwordVerifier:Buffer.alloc(32,4).toString('base64')};
@@ -149,7 +155,7 @@ try {
  assert.equal(callback.status,200);assert.match(await callback.text(),/#\/dashboard\?oauth=success/);assert.match(callback.headers.get('set-cookie'),/mc_session=/);assert.equal(sql.prepare('SELECT count(*) n FROM users').get().n,userCount);pass('Google callback links existing verified account without duplicate and restores route');
 
  globalThis.fetch=async(url,options)=>String(url)==='https://api.brevo.com/v3/smtp/email'?(sentMail=JSON.parse(options?.body || '{}'),Response.json({messageId:'test'})):String(url).includes('/token')?Response.json({access_token:'stub-access'}):Response.json({sub:'google-unverified-link',email:'googlelink@test.invalid',email_verified:true,name:'구글연결회원'});
- const pendingGoogleLink=await req('/api/auth/signup',{...common,displayName:'구글연결회원',phone:'01000001994',email:'googlelink@test.invalid'},'', 'POST',mailEnv);assert.equal(pendingGoogleLink.body.pendingVerification,true);
+ const pendingGoogleLink=await req('/api/auth/signup',{...common,displayName:'구글연결회원',phone:'01000001994',email:'googlelink@test.invalid'},'', 'POST',mailEnv);assert.equal(pendingGoogleLink.body.user.emailVerified,false);
  const pendingGoogleUserCount=sql.prepare('SELECT count(*) n FROM users').get().n;
  const googleLinkStart=await worker.fetch(new Request('https://test.invalid/api/auth/oauth/google?returnTo=%23%2Fdashboard'),mailEnv,{});const googleLinkState=new URL(googleLinkStart.headers.get('location')).searchParams.get('state');
  const googleLinkCallback=await worker.fetch(new Request('https://test.invalid/api/auth/oauth/google/callback?state='+googleLinkState+'&code=stub',{headers:{Cookie:googleLinkStart.headers.get('set-cookie').split(';')[0]}}),mailEnv,{});
@@ -180,11 +186,12 @@ try {
    const pending=await req('/api/auth/oauth-signup',undefined,fresh.cookie,'GET',mailEnv);assert.equal(pending.body.provider,provider);
    const signup=await req('/api/auth/oauth-signup',{...common,displayName:provider+'신규회원',phone:provider==='google'?'01000001992':'01000001993'},fresh.cookie,'POST',mailEnv);
    if(provider==='naver') {
-     assert.equal(signup.body.pendingVerification,true);assert.equal(signup.body.loginProvider,'naver');assert.equal(signup.cookie,'');
-     const blocked=await oauthRoundTrip(provider);assert.match(decodeURIComponent(blocked.body),/가입 이메일 인증/);assert.ok(!blocked.cookie.startsWith('mc_session='));
-     const token=sentMail.htmlContent.match(/token=([A-Za-z0-9_-]+)/)[1];
-     const verification=await req('/api/auth/verify-email',{token},'','POST',mailEnv);assert.equal(verification.body.loginProvider,'naver');
-     pass('NAVER new registration requires email verification and reports its login method');
+     assert.equal(signup.body.user.emailVerified,false);assert.ok(signup.cookie);
+     const beforeVerified=await req('/api/me',undefined,signup.cookie,'GET',mailEnv);assert.equal(beforeVerified.body.user.emailVerified,false);
+     const sent=await req('/api/me/email-verification/send',{},signup.cookie,'POST',mailEnv);assert.equal(sent.status,200,JSON.stringify(sent.body));
+     const code=sentMail.textContent.match(/인증번호: (\d{6})/)[1];
+     assert.equal((await req('/api/me/email-verification/confirm',{id:sent.body.challenge.id,code},signup.cookie,'POST',mailEnv)).status,200);
+     pass('NAVER signup provides limited login; email remains unverified until OTP confirmation');
    } else {
      assert.equal(signup.status,201);assert.equal((await req('/api/me',undefined,signup.cookie,'GET',mailEnv)).body.user.email,'new-google@test.invalid');
      pass('Google first callback → password-free signup → authenticated session');
@@ -303,7 +310,7 @@ vm.runInContext("class ApiError extends Error {constructor(message, opts={}){sup
 // Reproduce the screenshot: a successful login from the verification page must leave it.
 win.CATEGORY_META=CATEGORY_META;win.STATUS_META=STATUS_META;win.FUNDING_META=FUNDING_META;
 win.createPasswordMaterial=async()=>material;
-vm.runInContext("const savedLoadRouteData=loadRouteData;loadRouteData=async()=>{};state.loading=false;apiClient.loginOptions=async()=>({});apiClient.login=async()=>({user:{id:'test',displayName:'로그인테스터',accountType:'individual',trustScore:50}});",context);
+vm.runInContext("const savedLoadRouteData=loadRouteData;loadRouteData=async()=>{};state.loading=false;apiClient.loginOptions=async()=>({});apiClient.login=async()=>({user:{id:'test',displayName:'로그인테스터',emailVerified:true,accountType:'individual',trustScore:50}});",context);
 for(const route of ['verify-email','login','signup','social-signup']) {
  vm.runInContext(`state.user=null;state.route='${route}';history.replaceState(null,'','#/${route}?token=used-test-token');openAuthModal('login');`,context);
  await vm.runInContext("submitLogin(document.querySelector('#login-form'))",context);

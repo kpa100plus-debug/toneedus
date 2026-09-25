@@ -1,3 +1,4 @@
+import { emailOtpApi, emailOtpAvailable, emailOtpSetup } from './email-otp.mjs';
 import { entityApi, entityConfigured, purgeEntityEvidence } from './entity-verification.mjs';
 import { createTestOrder, transitionTestOrder } from './transactions.mjs';
 import { executeProviderOperation, reconcileProviderOperation, reconcileWebhook, reconcilePendingOperations } from './provider-operations.mjs';
@@ -185,7 +186,7 @@ async function route(request, env, ctx, url) {
     if (admin instanceof Response) return admin;
     const rows = await env.DB.prepare("SELECT id,user_id,verification_type,subject_type,status,status_reason,verified_at,expires_at,created_at FROM member_verifications ORDER BY updated_at DESC LIMIT 100").all();
     await audit(env,admin.id,'VERIFICATION_REVIEW_LIST','verification',null,null,{count:rows.results.length});
-    return json({verifications:rows.results,readiness:launchReadiness(env),identitySetup:identitySetupChecks(env)},200,{'Cache-Control':'private, no-store'});
+    return json({verifications:rows.results,readiness:launchReadiness(env),identitySetup:identitySetupChecks(env),emailSetup:emailOtpSetup(env)},200,{'Cache-Control':'private, no-store'});
   }
   if (method === 'POST' && path === '/api/admin/verification-reviews') return reviewMemberVerification(request,env);
 
@@ -212,6 +213,11 @@ async function route(request, env, ctx, url) {
   if (method === 'POST' && path === '/api/auth/recover-primary') return recoverPrimaryAdmin(request, env);
   if (method === 'POST' && path === '/api/auth/logout') return logout(request, env);
   if (method === 'POST' && path === '/api/auth/change-password') return changePassword(request, env);
+  if (path === '/api/me/email-verification' || ['/api/me/email-verification/send','/api/me/email-verification/confirm'].includes(path)) {
+    const user=await requireAuth(request,env); if(user instanceof Response)return user;
+    const body=method==='POST'?await readJson(request):{};if(body instanceof Response)return body;
+    return emailOtpApi({request,env,user,path,method,body,json,problem,auditStatement});
+  }
   if (method === 'GET' && path === '/api/me') return me(request, env);
   if (method === 'GET' && path === '/api/me/activity') return meActivity(request, env);
   if (method === 'GET' && path === '/api/me/verifications') return getMyVerifications(request, env);
@@ -419,8 +425,7 @@ async function signup(request, env, oauth = null) {
   const passwordHash = await hashPasswordVerifier(passwordVerifier);
   const defaultLimit = parsePositiveInt(env.OWNER_DEFAULT_BOUNTY_LIMIT, 100_000_000);
 
-  const verificationRequired = oauth?.provider === 'google' ? false : emailVerificationEnabled(env);
-  if (oauth?.provider === 'naver' && !verificationRequired) return problem(503, 'EMAIL_VERIFICATION_UNAVAILABLE', 'NAVER 신규 가입은 이메일 인증 설정 후 이용할 수 있습니다.');
+  const verificationRequired = oauth?.provider !== 'google';
   const createUser = env.DB.prepare(`
     INSERT INTO users (
       id, email, password_hash, password_salt, display_name, account_type,
@@ -446,11 +451,6 @@ async function signup(request, env, oauth = null) {
   await recordAuthAttempt(env, 'SIGNUP', rate, true);
   await audit(env, id, 'USER_SIGNUP', 'user', id, null, { email, accountType, region, challengeIntent, verificationRequired });
 
-  if (verificationRequired) {
-    const sent = await issueEmailVerification(env, request, { id, email, displayName });
-    return json({ ok: true, pendingVerification: true, email, loginProvider: oauth?.provider || 'password', deliveryPending: !sent.ok }, sent.ok ? 201 : 202);
-  }
-
   const session = await createSession(id, request, env);
 
   return json({ user: publicUser({
@@ -467,33 +467,23 @@ async function verifyEmail(request, env) {
   const token = String(body.token || '');
   if (!/^[A-Za-z0-9_-]{40,200}$/.test(token)) return problem(400, 'INVALID_VERIFICATION_TOKEN', '인증 링크가 올바르지 않습니다.');
   const verification = await env.DB.prepare(`
-    SELECT id, user_id FROM email_verifications
-    WHERE token_hash = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+    SELECT id, user_id, target_email FROM email_verifications
+    WHERE token_hash = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP AND target_email = (SELECT email FROM users WHERE id = email_verifications.user_id)
   `).bind(await sha256(token)).first();
   if (!verification) return problem(400, 'VERIFICATION_EXPIRED', '인증 링크가 만료되었거나 이미 사용되었습니다.');
-  await env.DB.batch([
-    env.DB.prepare('UPDATE email_verifications SET used_at = CURRENT_TIMESTAMP WHERE id = ?').bind(verification.id),
-    env.DB.prepare('UPDATE users SET email_verified = 1, email_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(verification.user_id),
+  const claim=crypto.randomUUID();
+  const result=await env.DB.batch([
+    env.DB.prepare('UPDATE email_verifications SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP').bind(claim,verification.id),
+    env.DB.prepare('UPDATE users SET email_verified = 1, email_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND email = ? AND EXISTS(SELECT 1 FROM email_verifications WHERE id=? AND used_at=?)').bind(verification.user_id,verification.target_email,verification.id,claim),
     auditStatement(env, verification.user_id, 'EMAIL_VERIFIED', 'user', verification.user_id, null, { method: 'email-link' }),
   ]);
+  if(!result[0]?.meta?.changes)return problem(400,'VERIFICATION_EXPIRED','이미 사용한 링크입니다.');
   const user = await env.DB.prepare('SELECT signup_source FROM users WHERE id = ?').bind(verification.user_id).first();
   return json({ ok: true, loginProvider: ['google', 'naver'].includes(user?.signup_source) ? user.signup_source : 'password' });
 }
 
 async function resendEmailVerification(request, env) {
-  if (!emailVerificationEnabled(env)) return problem(503, 'EMAIL_VERIFICATION_UNAVAILABLE', '이메일 인증 설정을 준비하고 있습니다.');
-  const body = await readJson(request);
-  if (body instanceof Response) return body;
-  const email = normalizeEmail(body.email);
-  if (!EMAIL_RE.test(email)) return problem(400, 'INVALID_EMAIL', '올바른 이메일을 입력해주세요.');
-  const rate = await checkAuthRateLimit(request, env, 'SIGNUP', email);
-  if (rate instanceof Response) return rate;
-  const user = await env.DB.prepare('SELECT id, email, display_name, email_verified, email_verification_requested_at FROM users WHERE email = ?').bind(email).first();
-  if (!user || user.email_verified || !user.email_verification_requested_at) return json({ ok: true });
-  const sent = await issueEmailVerification(env, request, user);
-  await recordAuthAttempt(env, 'SIGNUP', rate, sent.ok);
-  if (!sent.ok) return problem(503, 'EMAIL_DELIVERY_UNAVAILABLE', '인증메일을 보내지 못했습니다. 잠시 후 다시 시도해주세요.');
-  return json({ ok: true });
+  return problem(401, 'AUTH_REQUIRED', '로그인 후 이메일 인증 화면에서 인증번호를 요청해주세요.');
 }
 
 async function findAccountEmail(request, env) {
@@ -560,29 +550,6 @@ async function resetPassword(request, env) {
   const session = await createSession(reset.user_id, request, env);
   const restoredUser = { ...reset, password_hash: passwordHash, password_salt: passwordSalt, status: 'active' };
   return json({ user: publicUser(restoredUser), otherSessionsSignedOut: true }, 200, { 'Set-Cookie': session.cookie });
-}
-
-async function issueEmailVerification(env, request, user) {
-  const token = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
-  const verificationId = makeId('emv');
-  await env.DB.batch([
-    env.DB.prepare('UPDATE email_verifications SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL').bind(user.id),
-    env.DB.prepare(`INSERT INTO email_verifications (id, user_id, token_hash, expires_at)
-      VALUES (?, ?, ?, datetime('now', '+24 hours'))`).bind(verificationId, user.id, await sha256(token)),
-  ]);
-  const origin = new URL(request.url).origin;
-  const verificationUrl = `${origin}/#/verify-email?token=${encodeURIComponent(token)}`;
-  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'api-key': String(env.BREVO_API_KEY) },
-    body: JSON.stringify({
-      sender: { name: '모두의클리어', email: String(env.BREVO_SENDER_EMAIL) },
-      to: [{ email: user.email, name: user.display_name }],
-      subject: '[모두의클리어] 이메일 인증을 완료해주세요',
-      htmlContent: `<p>${escapeEmailHtml(user.display_name)}님, 모두의클리어 가입을 완료하려면 아래 버튼을 눌러주세요.</p><p><a href="${verificationUrl}">이메일 인증 완료</a></p><p>이 링크는 24시간 동안 유효합니다.</p>`,
-    }),
-  }).catch(() => null);
-  return { ok: Boolean(response?.ok) };
 }
 
 async function issuePasswordReset(env, request, user) {
@@ -666,7 +633,7 @@ async function findOrCreateOAuthUser(env, provider, profile) {
 }
 
 async function verifyOAuthEmailForExistingUser(env, user, provider, profile) {
-  if (!user || user.email_verified || !profile.emailVerified || provider !== 'google' || ['closed', 'suspended'].includes(user.status)) return user;
+  if (!user || user.email_verified || !profile.emailVerified || normalizeEmail(user.email)!==profile.email || provider !== 'google' || ['closed', 'suspended'].includes(user.status)) return user;
   await env.DB.batch([
     env.DB.prepare('UPDATE users SET email_verified = 1, email_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(user.id),
     env.DB.prepare('UPDATE email_verifications SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL').bind(user.id),
@@ -763,7 +730,10 @@ async function finishOAuth(provider, request, env, url) {
     return oauthCompletionPage(request, { target: `${url.origin}/#/social-signup`, cookie: `mc_oauth_signup=${signupToken}; Path=/api/auth/; HttpOnly${cookieSecureAttribute(request)}; SameSite=Lax; Max-Age=600` });
   }
   if (['closed', 'suspended'].includes(user.status)) return oauthFailure(request, '현재 이용할 수 없는 계정입니다.');
-  if (!user.email_verified) return oauthFailure(request, '가입 이메일 인증을 완료한 뒤 소셜 로그인을 사용할 수 있습니다.');
+  if (!user.email_verified) {
+    const linked=await env.DB.prepare('SELECT id FROM auth_identities WHERE user_id=? AND provider=? AND provider_subject=?').bind(user.id,provider,profile.subject).first();
+    if(!linked)return oauthFailure(request,'가입한 비밀번호로 로그인하여 이메일 인증을 먼저 완료해주세요.');
+  }
   const session = await createSession(user.id, request, env);
   await env.DB.batch([
     env.DB.prepare('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(user.id),
@@ -808,9 +778,7 @@ async function login(request, env) {
   if (user.status === 'suspended') {
     return problem(403, 'ACCOUNT_SUSPENDED', '이용이 정지된 계정입니다. 이의신청 절차를 확인해주세요.');
   }
-  if (user.email_verification_requested_at && !user.email_verified) {
-    return problem(403, 'EMAIL_UNVERIFIED', '이메일 인증을 완료한 뒤 로그인할 수 있습니다.');
-  }
+  // Unverified accounts may sign in to complete OTP; mission writes enforce email separately.
 
   await recordAuthAttempt(env, 'LOGIN', rate, true);
   const promotedUser = await reconcilePrimaryAdmin(user, env);
@@ -1038,10 +1006,16 @@ async function memberVerificationContext(user, subjectType, env) {
     enforcement: verificationEnforcement(env),
     snapshot: {
       subjectType,
+      activityRequirement: 'EMAIL',
+      emailVerified: Boolean(user.email_verified),
       capturedAt: new Date().toISOString(),
       requirements: requirements.map(({ type, satisfied, verification }) => ({ type, satisfied, verificationId: verification?.id || null, status: verification?.status || 'UNVERIFIED' })),
     },
   };
+}
+
+function emailActivityGate(user) {
+  return user.email_verified ? null : problem(409,'EMAIL_VERIFICATION_REQUIRED','미션 등록·수행 신청 전에 이메일 인증을 완료해주세요.');
 }
 
 function verificationGate(context) {
@@ -1059,6 +1033,8 @@ async function getMyVerifications(request, env) {
     env.DB.prepare('SELECT * FROM member_actor_profiles WHERE user_id = ? ORDER BY created_at ASC').bind(user.id),
   ]);
   return json({
+    emailVerified: Boolean(user.email_verified),
+    emailVerificationAvailable: emailOtpAvailable(env),
     identityConsentVersion: IDENTITY_CONSENT_VERSION,
     identityAvailable: identityConfigured(env),
     enforcement: verificationEnforcement(env),
@@ -1552,7 +1528,9 @@ function publicConfig(env) {
     moneyMode: moneyFlowMode(env),
     termsVersion: env.TERMS_VERSION || '2026-08-28-v1',
     privacyVersion: env.PRIVACY_VERSION || '2026-08-31-v2',
-    emailVerificationRequired: emailVerificationEnabled(env),
+    emailVerificationRequired: true,
+    emailVerificationAvailable: emailOtpAvailable(env),
+    activityVerification: 'email',
     socialLogin: {
       google: Boolean(String(env.GOOGLE_OAUTH_CLIENT_ID || '') && String(env.GOOGLE_OAUTH_CLIENT_SECRET || '')),
       naver: Boolean(String(env.NAVER_OAUTH_CLIENT_ID || '') && String(env.NAVER_OAUTH_CLIENT_SECRET || '')),
@@ -1721,7 +1699,7 @@ async function createChallenge(request, env) {
   }
 
   const verification = await memberVerificationContext(user, subjectType, env);
-  const gate = verificationGate(verification);
+  const gate = emailActivityGate(user);
   if (gate) return gate;
   const id = makeId('chl');
   const requestHash = await sha256(JSON.stringify(body));
@@ -1798,7 +1776,7 @@ async function updateChallenge(challengeId, request, env) {
   if (rewardError) return rewardError;
   if (!successCriteria || !paymentTrigger || !evidenceRequirements || !deadline) return problem(400, 'MISSING_RULES', '성공조건, 보상금 준비 시점, 증빙기준과 마감일을 입력해주세요.');
   const verification = await memberVerificationContext(user, subjectType, env);
-  const gate = verificationGate(verification);
+  const gate = emailActivityGate(user);
   if (gate) return gate;
   let moderation = assessChallengeModeration({ title, summary, description, successCriteria, rewardAmount });
   const duplicate = await findSimilarChallenge(user.id, title, challengeId, env);
@@ -2142,7 +2120,7 @@ async function submitTeaser(challengeId, request, env) {
     return problem(400, 'INVALID_TEASER', '해결 가능성, 접근방법과 예상기간을 정확히 입력해주세요.');
   }
   const verification = await memberVerificationContext(user, subjectType, env);
-  const gate = verificationGate(verification);
+  const gate = emailActivityGate(user);
   if (gate) return gate;
 
   const prior = await env.DB.prepare('SELECT * FROM teasers WHERE challenge_id = ? AND solver_id = ?').bind(challengeId, user.id).first();
@@ -2238,7 +2216,7 @@ async function updateTeaser(challengeId, teaserId, request, env) {
   if (!teaser) return problem(404, 'TEASER_NOT_FOUND', 'TEASER를 찾을 수 없습니다.');
   if (teaser.solver_id !== user.id) return problem(403, 'TEASER_OWNER_REQUIRED', '본인이 제출한 TEASER만 수정할 수 있습니다.');
   if (!['SUBMITTED', 'VIEWED'].includes(teaser.status)) return problem(409, 'TEASER_EDIT_LOCKED', '후보 선정이 시작된 TEASER는 수정할 수 없습니다.');
-  const gate = verificationGate(await memberVerificationContext(user, teaser.solver_subject_type || 'individual', env));
+  const gate = emailActivityGate(user);
   if (gate) return gate;
   const body = await readJson(request);
   if (body instanceof Response) return body;

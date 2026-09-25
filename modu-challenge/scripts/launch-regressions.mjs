@@ -20,8 +20,8 @@ const b=await req('/api/auth/signup',{...common,displayName:'인증수행자',em
 const c=await req('/api/auth/signup',{...common,displayName:'추가테스터',email:'third@test.invalid',phone:'01011114444'});
 assert.equal(a.status,201);assert.equal(b.status,201);assert.equal(a.body.user.verification.identity,false);pass('signup is never identity verification');
 const mission={title:'지역 로고 디자인 요청',summary:'동네 가게 로고 디자인을 요청합니다.',description:'가게에서 쓸 로고를 디자인하고 수정 가능한 원본 파일과 설명을 전달해주세요.',category:'IDEA',region:'서울',rewardAmount:100000,successCriteria:'로고 파일과 색상 조합 설명 제출',paymentTrigger:'선정 후 보상금 결제 확인',evidenceRequirements:'디자인 원본 파일 제출',deadline:'2099-01-01',visibility:'public'};
-assert.equal((await req('/api/challenges',mission,a.cookie)).body.error.code,'VERIFICATION_REQUIRED');
-assert.equal((await req('/api/challenges',mission,a.cookie,{...env,IDENTITY_VERIFICATION_PROVIDER:'anything'})).body.error.code,'VERIFICATION_REQUIRED');
+assert.equal((await req('/api/challenges',mission,a.cookie)).body.error.code,'EMAIL_VERIFICATION_REQUIRED');
+assert.equal((await req('/api/challenges',mission,a.cookie,{...env,IDENTITY_VERIFICATION_PROVIDER:'anything'})).body.error.code,'EMAIL_VERIFICATION_REQUIRED');
 assert.equal((await req('/api/health',undefined,'',{...env,PUBLIC_MONEY_ENABLED:'true'})).body.moneyEnabled,false);
 assert.equal((await req('/api/health',undefined,'',{...env,PUBLIC_MONEY_ENABLED:'true'})).body.moneyMode,'disabled');pass('production ignores advisory mode and a money toggle cannot enable live money');
 for(const path of ['/api/transactions','/api/transactions/payments','/api/transactions/refunds','/api/transactions/payouts','/api/internal/payout/confirm','/api/challenges/any/funding/confirm']) assert.equal((await req(path,{},a.cookie)).status,503);
@@ -55,15 +55,17 @@ const idC=await begin(c);sql.prepare("UPDATE identity_attempts SET expires_at='2
 assert.equal((await req('/api/me/identity/complete',{identityVerificationId:idC},c.cookie,connected)).body.error.code,'IDENTITY_ATTEMPT_EXPIRED');
 globalThis.fetch=async()=>{throw Error('timeout')};const idC2=await begin(c);
 assert.equal((await req('/api/me/identity/complete',{identityVerificationId:idC2},c.cookie,connected)).status,503);globalThis.fetch=originalFetch;pass('expiry and provider failure never authenticate');
+// Email fixtures for mission writes; identity fixtures continue to protect transactions.
+sql.prepare('UPDATE users SET email_verified=1 WHERE id IN (?,?)').run(a.body.user.id,b.body.user.id);
 const made=await req('/api/challenges',mission,a.cookie,connected,'POST',{'Idempotency-Key':'launch-mission-0001'});assert.equal(made.status,201,JSON.stringify(made.body));const cid=made.body.challenge.id;
 const teaser={headline:'원본 로고 제작 제안',capability:'브랜드 로고 디자인과 벡터 원본 제작 경험을 보유하고 있습니다.',approach:'요구 사항을 확인하고 시안을 제안한 후 최종 원본을 납품하겠습니다.',expectedDays:3,subjectType:'individual'};
-assert.equal((await req('/api/challenges/'+cid+'/teasers',teaser,c.cookie,connected)).body.error.code,'VERIFICATION_REQUIRED');
+assert.equal((await req('/api/challenges/'+cid+'/teasers',teaser,c.cookie,connected)).body.error.code,'EMAIL_VERIFICATION_REQUIRED');
 const applied=await req('/api/challenges/'+cid+'/teasers',teaser,b.cookie,connected);assert.equal(applied.status,201,JSON.stringify(applied.body));
 sql.prepare("UPDATE member_verifications SET expires_at='2000-01-01T00:00:00Z' WHERE user_id=?").run(b.body.user.id);
 assert.equal((await req('/api/challenges/'+cid+'/shortlist',{teaserId:applied.body.teaser.id},a.cookie,connected)).body.error.code,'VERIFICATION_REQUIRED');
-assert.equal((await req('/api/challenges/'+cid+'/teasers/'+applied.body.teaser.id,teaser,b.cookie,connected,'PUT')).body.error.code,'VERIFICATION_REQUIRED');
-assert.equal((await req('/api/challenges',{...mission,subjectType:'corporation'},a.cookie,connected)).body.error.code,'VERIFICATION_REQUIRED');
-pass('both roles, expired candidate and separate organization qualification enforced');
+assert.equal((await req('/api/challenges/'+cid+'/teasers/'+applied.body.teaser.id,teaser,b.cookie,connected,'PUT')).status,200);
+assert.equal((await req('/api/challenges',{...mission,subjectType:'corporation'},a.cookie,connected)).status,201);
+pass('email allows registration and editing; expired identity still blocks candidate confirmation');
 const adminEnv={...connected,PRIMARY_ADMIN_EMAIL:'owner@test.invalid'};
 const verificationId=sql.prepare("SELECT id FROM member_verifications WHERE user_id=? AND provider='portone-v2'").get(b.body.user.id).id;
 assert.equal((await req('/api/admin/verification-reviews',{verificationId,decision:'VERIFIED',reason:'허위 승인 시도 방지 테스트'},a.cookie,adminEnv)).status,400);

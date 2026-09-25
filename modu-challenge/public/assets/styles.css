@@ -2336,3 +2336,12 @@ body[data-home-theme]:not([data-home-theme="original"]) .page-section.admin-them
 .challenge-card-bottom .funding-pill { grid-column: 2; grid-row: 1; justify-self: end; }
 .challenge-card-bottom .challenge-open-arrow { grid-column: 2; grid-row: 2; justify-self: end; width: 26px; height: 26px; font-size: 1rem; }
 .challenge-card-bottom strong { font-size: clamp(1.125rem, 6cqi, 1.6rem); white-space: nowrap; overflow-wrap: normal; }
+
+/* Email OTP controls fit small screens and never expose code in a URL. */
+.email-otp-panel { min-width:0; display:grid; gap:16px; }
+.email-otp-panel p { margin:0; }
+.email-otp-address { overflow-wrap:anywhere; }
+.email-otp-panel input { box-sizing:border-box; min-width:0; width:100%; min-height:48px; }
+.email-otp-panel input[name="code"] { font-size:24px; letter-spacing:5px; text-align:center; }
+.email-otp-panel .btn { min-height:46px; white-space:normal; }
+.email-verification-summary p { overflow-wrap:anywhere; }

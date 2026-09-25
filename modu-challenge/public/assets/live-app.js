@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=64';
-import { legacyNotificationText } from './brand.js?v=64';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=64';
-import { calculateSettlement } from './business-rules.js?v=64';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=64';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=65';
+import { legacyNotificationText } from './brand.js?v=65';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=65';
+import { calculateSettlement } from './business-rules.js?v=65';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=65';
 
 /**
  * 모두의클리어 live frontend
@@ -144,7 +144,7 @@ async function init() {
         document.body.append(button);
       }
     });
-    navigator.serviceWorker.register('/sw.js?v=64').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=65').then((registration) => {
       registration.update().catch(() => undefined);
       registration.addEventListener('updatefound', () => {
         registration.installing?.addEventListener('statechange', () => {
@@ -2677,7 +2677,7 @@ async function openAdminVerifications() {
   openModal(renderModalLoading(),{title:'인증 요청 심사',wide:true});
   try {
     const data=await apiClient.verificationReviews();
-    openModal(`${(data.emailSetup||[]).length ? '<section class=dashboard-card><h3>이메일 발송 설정</h3>'+data.emailSetup.map(x=>'<p>'+escapeHTML(x.key)+': '+(x.ready?'설정됨':'미완료')+'</p>').join('')+'<p>설정 존재 여부이며 실제 도착을 보장하지 않습니다.</p></section>' : ''}<p>기관 검증 없이 인증 완료로 승인할 수 없습니다. 거절·철회·재확인 요청에는 사유와 관리자 감사기록이 남습니다.</p><div class="audit-table">${data.verifications.length ? data.verifications.map(v=>`<div class="audit-row"><strong>${escapeHTML(VERIFICATION_LABELS[v.verification_type])} · ${escapeHTML(v.status)}</strong><span>${escapeHTML(v.user_id)}<br>${escapeHTML(v.status_reason||'')}</span><button class="btn btn-outline btn-small" data-action="review-verification" data-verification-id="${escapeAttribute(v.id)}">심사</button></div>`).join(''):'<p>접수된 인증 요청이 없습니다.</p>'}</div>`,{title:'인증 요청 심사',wide:true});
+    openModal(`${(data.emailSetup||[]).length ? '<section class=dashboard-card><h3>이메일 발송 설정</h3>'+data.emailSetup.map(x=>'<p>'+escapeHTML(x.key)+': '+(x.ready?'설정됨':'미완료')+'</p>').join('')+'<p>설정 존재 여부이며 실제 도착을 보장하지 않습니다.</p></section>' : ''}<p>기관 검증 없이 인증 완료로 승인할 수 없습니다. 거절·철회·재확인 요청에는 사유와 관리자 감사기록이 남습니다.</p><div class="audit-table">${data.verifications.length ? data.verifications.map(v=>`<div class="audit-row"><strong>${escapeHTML(VERIFICATION_LABELS[v.verification_type])} · ${escapeHTML(({VERIFIED:'현재 인증 유효',RECONFIRM_REQUIRED:'재확인 필요 · 과거 기록 보존',PROVIDER_REQUIRED:'기관 연결 대기',REJECTED:'거절',REVOKED:'철회',EXPIRED:'만료',PENDING:'확인 대기'})[v.status]||v.status)}</strong><span>${escapeHTML(v.user_id)}<br>${escapeHTML(v.status_reason||'')}</span><button class="btn btn-outline btn-small" data-action="review-verification" data-verification-id="${escapeAttribute(v.id)}">심사</button></div>`).join(''):'<p>접수된 인증 요청이 없습니다.</p>'}</div>`,{title:'인증 요청 심사',wide:true});
     modalRoot.querySelector('.modal-body')?.insertAdjacentHTML('afterbegin', `<section class="dashboard-card"><h3>본인확인 연결 설정</h3><p>값은 공개하지 않고 설정 여부만 표시합니다. 설정 완료와 실제 기관 검증은 별개입니다.</p><div class="preview-list">${(data.identitySetup || []).map(check => `<div class="preview-row"><span>${escapeHTML(check.label)}</span><strong>${check.ready ? '설정됨' : '미완료'}</strong></div>`).join('')}</div></section>`);
   } catch(error) { renderModalRequestError(error); }
 }

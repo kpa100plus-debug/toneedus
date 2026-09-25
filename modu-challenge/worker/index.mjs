@@ -184,9 +184,9 @@ async function route(request, env, ctx, url) {
   if (method === 'GET' && path === '/api/admin/verification-reviews') {
     const admin = await requirePrimaryAdmin(request, env);
     if (admin instanceof Response) return admin;
-    const rows = await env.DB.prepare("SELECT id,user_id,verification_type,subject_type,status,status_reason,verified_at,expires_at,created_at FROM member_verifications ORDER BY updated_at DESC LIMIT 100").all();
+    const rows = await env.DB.prepare("SELECT id,user_id,verification_type,subject_type,status,status_reason,verified_at,expires_at,created_at,provider,provider_reference_hash,revoked_at FROM member_verifications ORDER BY updated_at DESC LIMIT 100").all();
     await audit(env,admin.id,'VERIFICATION_REVIEW_LIST','verification',null,null,{count:rows.results.length});
-    return json({verifications:rows.results,readiness:launchReadiness(env),identitySetup:identitySetupChecks(env),emailSetup:emailOtpSetup(env)},200,{'Cache-Control':'private, no-store'});
+    return json({verifications:rows.results.map(row=>({id:row.id,user_id:row.user_id,verification_type:row.verification_type,subject_type:row.subject_type,status:row.status==='VERIFIED' && !(verificationIsReusable(row)&&verificationProviderConfigured(row.verification_type,env))?'RECONFIRM_REQUIRED':row.status,stored_status:row.status,status_reason:row.status_reason,verified_at:row.verified_at,expires_at:row.expires_at,created_at:row.created_at})),readiness:launchReadiness(env),identitySetup:identitySetupChecks(env),emailSetup:emailOtpSetup(env)},200,{'Cache-Control':'private, no-store'});
   }
   if (method === 'POST' && path === '/api/admin/verification-reviews') return reviewMemberVerification(request,env);
 
@@ -2849,7 +2849,7 @@ async function getAdminMemberDetail(userId, request, env) {
     WHERE u.id = ?
   `).bind(userId).first();
   if (!member) return problem(404, 'USER_NOT_FOUND', '가입회원을 찾을 수 없습니다.');
-  const memberVerifications = await env.DB.prepare(`SELECT id, verification_type, subject_type, status, provider, subject_name, verified_at, expires_at, revoked_at, status_reason
+  const memberVerifications = await env.DB.prepare(`SELECT id, verification_type, subject_type, status, provider, provider_reference_hash, subject_name, verified_at, expires_at, revoked_at, status_reason
     FROM member_verifications WHERE user_id = ? ORDER BY created_at DESC`).bind(userId).all();
 
   await audit(env, primary.id, 'ADMIN_MEMBER_DETAIL_VIEW', 'user', member.id, null, {
@@ -2865,9 +2865,9 @@ async function getAdminMemberDetail(userId, request, env) {
       status: member.status,
       adminRole: member.admin_role,
       verification: {
-        identity: Boolean(member.identity_verified),
-        business: Boolean(member.business_verified),
-        professional: Boolean(member.professional_verified),
+        identity: (memberVerifications.results||[]).some(row=>row.verification_type==='IDENTITY' && verificationIsReusable(row) && identityConfigured(env)),
+        business: (memberVerifications.results||[]).some(row=>['BUSINESS','CORPORATION','ORGANIZATION'].includes(row.verification_type) && verificationIsReusable(row) && verificationProviderConfigured(row.verification_type,env)),
+        professional: false,
         email: Boolean(member.email_verified),
       },
       consent: {

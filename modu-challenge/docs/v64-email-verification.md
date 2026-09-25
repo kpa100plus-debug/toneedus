@@ -48,3 +48,8 @@ REF-MODUCLEAR-EMAIL-VERIFICATION-FULL-EXECUTION-20260925-02
 - https://dash.cloudflare.com/
 
 © 2026 ISEA GROUP. All Rights Reserved.
+
+## v65 운영 검수 보완
+
+v64 배포 51ed32478c8a3f92c1f5f38ceabaac2449e6dbb3 및 워크플로 36128368456 성공. DB 백업·보존 검사에서 회원 21명, 미션 61건, 관리자 역할 1건의 식별정보가 일치했다. 운영 이메일 설정 3개가 모두 준비되었으나 실제 발신자 승인과 수신 테스트는 별도다.
+운영 관리자 화면에서 과거 마이그레이션 인증 기록이 현재 VERIFIED처럼 표시되는 것을 확인했다. 0.13.8/v65에서는 원본 기록을 바꾸지 않고 관리자 목록·회원 상세의 현재 유효 여부를 기관 검증과 유효기간에 맞춰 표시한다.

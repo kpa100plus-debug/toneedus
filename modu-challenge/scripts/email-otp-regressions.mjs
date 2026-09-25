@@ -71,5 +71,14 @@ try{
  assert.equal((await req('/api/me/email-verification/send',{purpose:'change_authorize'},c)).body.error.code,'EMAIL_RATE_LIMIT');
  assert.equal(JSON.stringify(emailOtpSetup(env)).includes(env.BREVO_API_KEY),false);
  pass('successful and failed send attempts are rate-limited and admin diagnostics never expose secrets');
+ sql.prepare('UPDATE users SET is_admin=1 WHERE id=?').run(a.id);
+ sql.prepare("INSERT INTO admin_roles(user_id,role) VALUES (?,'primary')").run(a.id);
+ sql.prepare('UPDATE users SET identity_verified=1,business_verified=1 WHERE id=?').run(c.id);
+ sql.prepare("INSERT INTO member_verifications(id,user_id,verification_type,subject_type,status,provider,status_reason) VALUES ('legacy-email-test',?,'IDENTITY','individual','VERIFIED','legacy','기존 인증 데이터 보존')").run(c.id);
+ const detail=await req('/api/admin/members/'+c.id,undefined,a);assert.equal(detail.body.member.verification.identity,false);assert.equal(detail.body.member.verification.business,false);
+ const reviews=await req('/api/admin/verification-reviews',undefined,a);const legacy=reviews.body.verifications.find(x=>x.id==='legacy-email-test');assert.equal(legacy.status,'RECONFIRM_REQUIRED');assert.equal(legacy.stored_status,'VERIFIED');
+ assert.equal(sql.prepare("SELECT status FROM member_verifications WHERE id='legacy-email-test'").get().status,'VERIFIED');
+ pass('admin lists and member badges separate preserved legacy records from current verification');
+
 }finally{globalThis.fetch=realFetch;sql.close()}
 console.log(`Passed ${n} email OTP regression groups`);

@@ -31,8 +31,8 @@
   ],
   "vars": {
     "APP_ENV": "production",
-    "APP_VERSION": "0.13.7",
-    "PWA_VERSION": "v64",
+    "APP_VERSION": "0.13.8",
+    "PWA_VERSION": "v65",
     "PLATFORM_FEE_RATE": "0.10",
     "SESSION_TTL_DAYS": "30",
     "OWNER_DEFAULT_BOUNTY_LIMIT": "100000000",

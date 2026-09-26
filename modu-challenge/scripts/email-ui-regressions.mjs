@@ -15,6 +15,8 @@ let count=0;const pass=s=>{count++;console.log('PASS email UI: '+s)};
 function snapshot(name){if(!process.env.MODU_UI_QA_DIR)return;mkdirSync(process.env.MODU_UI_QA_DIR,{recursive:true});writeFileSync(process.env.MODU_UI_QA_DIR+'/'+name+'.html',dom.serialize().replace(/<script\b[^>]*>[\s\S]*?<\/script>/g,''));}
 run(`state.user={id:'qa',displayName:'검증 회원',email:'qa@test.invalid',emailVerified:false,verification:{identity:false}};state.config={environment:'production',moneyEnabled:false};state.loading=false;state.authLoading=false;loadRouteData=async()=>{};render();bindGlobalEvents();`);
 snapshot('unverified');
+assert.equal(doc.querySelectorAll('[data-email-status-slot]').length,1);
+assert.equal(doc.querySelector('#member-email-status'),null);
 const originalForm=doc.querySelector('#challenge-create-form');originalForm.elements.title.value='인증 완료 후에도 보존되는 작성 내용';
 let resolveStatus,statusCalls=0;win.statusRequest=()=>{statusCalls++;return new Promise(resolve=>{resolveStatus=resolve})};run('apiClient.emailVerification=statusRequest');
 const verifyButton=doc.querySelector('[data-action=email-verification]');verifyButton.click();verifyButton.click();
@@ -32,6 +34,13 @@ doc.querySelector('[name=code]').value='123456';await run("confirmEmailCode(docu
 assert.equal(doc.querySelectorAll('[data-email-status-slot].needs-verification').length,0);assert.equal(doc.querySelectorAll('[data-action=email-verification]').length,0);
 await run('returnFromIdentity()');assert.equal(doc.querySelector('[name=title]').value,'인증 완료 후에도 보존되는 작성 내용');assert.match(doc.querySelector('#challenge-create-form').textContent,/등록 신청 가능/);snapshot('verified');
 pass('confirmation updates PC/mobile shared status immediately and restores draft without another account request');
+assert.equal(doc.querySelectorAll('[data-email-status-slot]').length,1);
+run(`state.route='how';main.innerHTML=renderHow();syncEmailStatusUi();`);
+assert.equal(doc.querySelectorAll('[data-email-status-slot]').length,0);
+assert.equal(doc.querySelector('#member-email-status'),null);
+run(`state.route='create';main.innerHTML=renderCreate();`);
+assert.equal(doc.querySelectorAll('[data-email-status-slot]').length,1);
+pass('verification appears once on the relevant form and never as a global page banner');
 run(`state.user.emailVerified=false;state.selectedChallenge={challenge:{id:'qa-mission',title:'티저 화면 검증'}};openTeaserForm('qa-mission');let teaserWrites=0;apiClient.submitTeaser=async()=>{teaserWrites++};`);
 const teaser=doc.querySelector('#teaser-form');teaser.elements.headline.value='인증 전 입력한 제안';
 assert.ok(teaser.querySelector('[data-action=email-verification]'));snapshot('teaser');teaser.querySelector('button[type=submit]').click();

@@ -33,6 +33,9 @@ assert.doesNotMatch(win.document.querySelector('#challenge-create-form').textCon
 pass('verified members can submit and customer form has no risk score thresholds');
 run(`const saved={id:'saved-one',title:'보존한 미션',status:'DRAFT',visibility:'public',publicationVisibility:'private',moderationAction:'CHANGES_REQUIRED',moderationReasons:[{code:'POSSIBLE_DUPLICATE',label:'동일·유사 미션 중복 등록 가능성',score:30},{code:'HIGH_REWARD',label:'고액 보상금(50만원 이상)',score:25}]};showChallengeSubmissionResult({challenge:saved,duplicatePrevented:true});`);
 let dialog=win.document.querySelector('[role=dialog]');
+assert.equal(dialog.querySelector('[data-email-status-slot]'),null);
+assert.match(dialog.querySelector('.submission-feedback li').textContent,/동일·유사/);
+assert.doesNotMatch(dialog.querySelector('.submission-feedback ul').textContent,/고액 보상금/);
 assert.match(dialog.textContent,/비공개 저장/);assert.match(dialog.textContent,/이미 등록한 미션/);assert.match(dialog.textContent,/이메일 인증과는 별도/);assert.match(dialog.textContent,/이 금액만으로 비공개 처리되지는/);
 assert.doesNotMatch(dialog.textContent,/위험도/);assert.equal(dialog.querySelector('[data-action=edit-saved-challenge]').dataset.challengeId,'saved-one');
 pass('idempotent replay reads nested moderation status and shows persistent specific reasons and existing-record edit');

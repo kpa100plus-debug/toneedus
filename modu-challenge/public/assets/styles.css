@@ -401,10 +401,10 @@ strong { font-weight: 700; }
 .funding-tag.funded { color: var(--success); }
 
 .how-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-.step-card { position: relative; min-height: 245px; padding: 23px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+.step-card { position: relative; min-width: 0; padding: 28px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; word-break: keep-all; overflow-wrap: anywhere; }
 .step-number { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 14px; color: #fff; background: var(--navy); font-weight: 700; }
-.step-card h3 { margin: 23px 0 8px; font-size: 1.1rem; }
-.step-card p { margin: 0; color: var(--muted); font-size: .88rem; }
+.step-card h3 { margin: 23px 0 12px; font-size: 1.2rem; }
+.step-card p { margin: 0; color: var(--muted); font-size: 1rem; line-height: 1.75; }
 .step-card::after { content: "→"; position: absolute; top: 31px; right: -15px; z-index: 2; color: #aab1c0; font-size: 1.25rem; font-weight: 700; }
 .step-card:last-child::after { display: none; }
 
@@ -755,7 +755,7 @@ strong { font-weight: 700; }
   .hero-visual { min-height: 430px; max-width: 620px; width: 100%; margin: 0 auto; }
   .challenge-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .how-grid { grid-template-columns: 1fr 1fr; }
-  .step-card:nth-child(2)::after { display: none; }
+  .how-grid .step-card:nth-child(2)::after { display: none; }
   .trust-layout { grid-template-columns: 1fr; }
   .form-layout, .detail-layout { grid-template-columns: 1fr; }
   .side-card { position: static; }
@@ -1024,6 +1024,9 @@ p, li, label, input, select, textarea, button, td, th, small, span {
 .page-hero.compact { padding: 48px 0 34px; }
 .page-hero h1 { margin: 6px 0 8px; font-size: clamp(2rem, 4vw, 3.15rem); line-height: 1.12; letter-spacing: -.055em; }
 .page-hero p { max-width: 720px; margin: 0; color: rgba(255,255,255,.7); }
+.page-hero.how-hero p { max-width: 100%; font-size: 1.05rem; line-height: 1.8; word-break: keep-all; overflow-wrap: anywhere; }
+.how-content .section-head p { font-size: 1.05rem; line-height: 1.7; }
+.how-content .notice-box { margin: 28px 0 44px; padding: 20px; font-size: .95rem; line-height: 1.7; }
 .page-hero .btn-outline { color:#fff; border-color:rgba(255,255,255,.38); background:rgba(255,255,255,.11); }
 .page-hero .btn-outline:hover, .page-hero .btn-outline:focus-visible { color:#11182c; border-color:#fff; background:#fff; }
 .page-hero-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; margin-top:18px; }
@@ -1109,7 +1112,7 @@ p, li, label, input, select, textarea, button, td, th, small, span {
 .impact-footnote > span { flex: 0 0 auto; padding: 7px 10px; border-radius: 999px; color: var(--lime); background: rgba(167,240,106,.1); font-weight: 700; }
 .impact-footnote p { max-width: 760px; margin: 0; text-align: right; }
 
-.step-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+.step-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
 .trust-section-grid { display: grid; grid-template-columns: .9fr 1.1fr; gap: 48px; align-items: center; }
 .trust-feature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
 .trust-feature { display: flex; gap: 13px; min-height: 132px; padding: 19px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
@@ -2357,8 +2360,8 @@ body[data-home-theme]:not([data-home-theme="original"]) .page-section.admin-them
 body.modal-open .app-install-banner { display: none !important; }
 
 /* v67: one clearly visible email state shared by desktop and mobile. */
-.member-email-status{padding-top:12px;padding-bottom:0}.member-email-status[hidden]{display:none}
-.email-status-card{display:flex;align-items:center;gap:14px;width:100%;padding:18px 20px;margin:12px 0 20px;border:2px solid #6550dc;border-radius:16px;background:#f2efff;color:#21194c;box-sizing:border-box}
-.email-status-card>div{flex:1;min-width:0}.email-status-card strong{font-size:18px;line-height:1.4}.email-status-card p{margin:5px 0;font-size:15px;font-weight:700;color:inherit}.email-status-card small{display:block;line-height:1.6;color:#524775}
-.email-status-icon{display:grid;place-items:center;flex:0 0 38px;height:38px;border-radius:50%;background:#6550dc;color:#fff;font-size:22px;font-weight:700}.email-status-card .btn{min-height:48px;font-size:16px;white-space:nowrap}.email-status-card.is-verified{border-color:#198269;background:#edf9f3;color:#125b48}.email-status-card.is-verified small{color:#375f53}.is-verified .email-status-icon{background:#198269}.email-status-done{display:inline-block;color:#125b48;background:#d4f0e3;border-radius:20px;padding:8px 12px;font-size:14px;font-weight:700;white-space:nowrap}.email-status-card.is-compact{box-shadow:none;padding:14px 16px}.email-status-loading{text-align:center;padding:28px 16px;display:grid;justify-items:center;gap:14px}.email-status-loading p{margin:0;color:#535c70}
-@media(max-width:640px){.email-status-card{flex-wrap:wrap;padding:15px;gap:10px}.email-status-card strong{font-size:17px}.email-status-card .btn{width:100%;white-space:normal}.email-status-card .email-status-done{margin-left:48px}.member-email-status{padding-top:8px}.email-status-card small{font-size:13px}}
+.email-status-card{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;padding:16px 18px;margin:0 0 20px;border:2px solid #6550dc;border-radius:14px;background:#f2efff;color:#21194c;box-sizing:border-box}
+.email-status-copy{min-width:0;word-break:keep-all;overflow-wrap:anywhere}.email-status-card strong{display:block;font-size:17px;line-height:1.5}.email-status-card p{margin:3px 0 0;font-size:15px;line-height:1.6;color:inherit}.email-status-card small{display:block;margin-top:4px;line-height:1.6;color:#524775}
+.email-status-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:#6550dc;color:#fff;font-size:21px;font-weight:700}.email-status-card .btn{min-height:48px;font-size:16px;white-space:nowrap}.email-status-card.is-verified{grid-template-columns:36px minmax(0,1fr);border:1px solid #b4ddcd;background:#edf9f3;color:#125b48}.is-verified .email-status-icon{background:#198269}.email-status-done{display:inline-block;color:#125b48;background:#d4f0e3;border-radius:20px;padding:6px 10px;font-size:14px;font-weight:700;white-space:nowrap}.email-status-card.is-compact{box-shadow:none;padding:14px 16px}.email-status-loading{text-align:center;padding:28px 16px;display:grid;justify-items:center;gap:14px}.email-status-loading p{margin:0;color:#535c70}
+.verification-status-list{display:grid;gap:12px;margin:18px 0}.verification-status-list>div{display:flex;align-items:center;justify-content:space-between;gap:12px}.verification-status-list dt{color:#616779}.verification-status-list dd{margin:0;font-weight:700}.verification-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:18px}.verification-actions .btn{width:100%;min-height:46px;white-space:normal;word-break:keep-all}.verification-grid .preview-row{flex-wrap:wrap;gap:10px}.verification-grid .preview-row .btn{margin-left:auto}
+@media(max-width:640px){.email-status-card,.email-status-card.is-verified{grid-template-columns:30px minmax(0,1fr);padding:14px;gap:10px}.email-status-icon{width:30px;height:30px;font-size:18px}.email-status-card strong{font-size:16px}.email-status-card .btn{grid-column:1/-1;width:100%;white-space:normal}.email-status-card small{font-size:13px}.verification-actions{grid-template-columns:1fr}.verification-grid .preview-row .btn{flex-basis:100%;margin-left:0}}

@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=68';
-import { legacyNotificationText } from './brand.js?v=68';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=68';
-import { calculateSettlement } from './business-rules.js?v=68';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=68';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=69';
+import { legacyNotificationText } from './brand.js?v=69';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=69';
+import { calculateSettlement } from './business-rules.js?v=69';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=69';
 
 /**
  * 모두의클리어 live frontend
@@ -137,26 +137,10 @@ async function init() {
   }
 
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
-    let hadController = Boolean(navigator.serviceWorker.controller);
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (!hadController) { hadController = true; return; }
-      if (!document.querySelector('.pwa-update-button')) {
-        const button = document.createElement('button');
-        button.className = 'pwa-update-button';
-        button.textContent = '모두의클리어 업데이트 · 입력을 마친 뒤 적용';
-        button.addEventListener('click', () => { if(state.user && (state.route==='create' || modalRoot.querySelector('#teaser-form, #challenge-edit-form, #teaser-edit-form')))rememberIdentityReturn(); modalRoot.querySelectorAll('form').forEach(saveTransientModalDraft); location.reload(); });
-        document.body.append(button);
-      }
-    });
-    navigator.serviceWorker.register('/sw.js?v=68').then((registration) => {
+    // Cache updates in the background. The open document and in-progress forms
+    // stay untouched; the next navigation or manual reload loads the new app.
+    navigator.serviceWorker.register('/sw.js?v=69').then((registration) => {
       registration.update().catch(() => undefined);
-      registration.addEventListener('updatefound', () => {
-        registration.installing?.addEventListener('statechange', () => {
-          if (registration.waiting && navigator.serviceWorker.controller) {
-            registration.waiting.postMessage({ type: 'SKIP_WAITING' });
-          }
-        });
-      });
     }).catch(() => undefined);
   }
 }

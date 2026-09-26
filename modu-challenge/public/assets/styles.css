@@ -1732,7 +1732,6 @@ input:autofill,select:autofill {box-shadow:0 0 0 1000px #fff inset;}
 input:-webkit-autofill,select:-webkit-autofill {-webkit-box-shadow:0 0 0 1000px #fff inset;}
 :focus-visible {outline:3px solid #6858ef;outline-offset:3px;}
 
-.pwa-update-button {position:fixed;z-index:10000;bottom:calc(82px + env(safe-area-inset-bottom));left:12px;right:12px;min-height:44px;padding:12px;border:1px solid var(--primary);border-radius:12px;background:white;color:var(--ink);}
 #how-section, #trust-section {scroll-margin-top:calc(var(--header-h) + 48px);}
 
 /* v38: readable submissions and direct activity navigation */

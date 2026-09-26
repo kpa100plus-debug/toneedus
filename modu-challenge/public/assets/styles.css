@@ -2345,3 +2345,14 @@ body[data-home-theme]:not([data-home-theme="original"]) .page-section.admin-them
 .email-otp-panel input[name="code"] { font-size:24px; letter-spacing:5px; text-align:center; }
 .email-otp-panel .btn { min-height:46px; white-space:normal; }
 .email-verification-summary p { overflow-wrap:anywhere; }
+
+/* Persistent submission feedback remains readable above the mobile navigation. */
+.submission-email-status { padding: 14px 16px; margin: 16px 0 10px; border-radius: 12px; background: #eef5ff; color: #173b66; font-weight: 700; line-height: 1.7; overflow-wrap: anywhere; }
+.submission-feedback { border: 1px solid #eacb84; border-radius: 14px; padding: 18px; margin: 0 0 20px; background: #fff9ed; color: #49380f; line-height: 1.7; overflow-wrap: anywhere; }
+.submission-feedback h3 { font-size: 18px; margin: 0 0 10px; }
+.submission-feedback ul { padding-left: 20px; }
+.submission-feedback li + li { margin-top: 14px; }
+.submission-feedback p { margin: 8px 0; }
+.submission-result .btn, .submission-email-prompt .btn { margin-top: 12px; min-height: 48px; white-space: normal; }
+.submission-result-title { font-weight: 700; line-height: 1.6; overflow-wrap: anywhere; }
+body.modal-open .app-install-banner { display: none !important; }

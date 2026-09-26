@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=65';
-import { legacyNotificationText } from './brand.js?v=65';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=65';
-import { calculateSettlement } from './business-rules.js?v=65';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=65';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=66';
+import { legacyNotificationText } from './brand.js?v=66';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=66';
+import { calculateSettlement } from './business-rules.js?v=66';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=66';
 
 /**
  * 모두의클리어 live frontend
@@ -144,7 +144,7 @@ async function init() {
         document.body.append(button);
       }
     });
-    navigator.serviceWorker.register('/sw.js?v=65').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=66').then((registration) => {
       registration.update().catch(() => undefined);
       registration.addEventListener('updatefound', () => {
         registration.installing?.addEventListener('statechange', () => {
@@ -272,6 +272,12 @@ function syncActivityPolling() {
 
 function bindGlobalEvents() {
   document.addEventListener('click', async (event) => {
+    const submitButton = event.target.closest('button[type="submit"]');
+    if (needsSubmissionEmail(submitButton?.form)) {
+      event.preventDefault();
+      try { openSubmissionEmailPrompt(); } catch (error) { showError(error); }
+      return;
+    }
     const routeButton = event.target.closest('[data-route]');
     if (routeButton) {
       event.preventDefault();
@@ -476,6 +482,11 @@ async function handleAction(action, data, button) {
     if (action === 'create-mode') { saveCreateDraft(); state.createMode = data.mode === 'direct' ? 'direct' : 'easy'; render(); restoreCreateDraft(); return; }
     if (action === 'generate-challenge-draft') return await generateChallengeDraft(button);
     if (action === 'cancel-challenge') return await requireLogin(() => openCancelForm(data.challengeId));
+    if (action === 'edit-saved-challenge') {
+      await openChallenge(data.challengeId);
+      if (state.selectedChallenge?.challenge?.id === data.challengeId) openChallengeEditForm(data.challengeId);
+      return;
+    }
     if (action === 'edit-challenge') return await requireLogin(() => openChallengeEditForm(data.challengeId));
     if (action === 'open-dispute') return await requireLogin(() => openDisputeForm(data.challengeId));
     if (action === 'open-admin') { closeModal(); return await navigate('admin'); }
@@ -493,6 +504,7 @@ async function handleAction(action, data, button) {
 async function handleForm(form) {
   const submit = form.querySelector('[type="submit"]');
   try {
+    if (needsSubmissionEmail(form)) return openSubmissionEmailPrompt();
     if (form.id.startsWith('entity-')) return await withBusy(submit,()=>entityForm(form));
     if (form.id === 'login-form') return await withBusy(submit, () => submitLogin(form));
     if (['signup-form', 'oauth-signup-form'].includes(form.id)) return await withBusy(submit, () => submitSignup(form));
@@ -1009,8 +1021,9 @@ function renderCreate() {
             <div class="field"><label>공개범위</label><select name="visibility"><option value="public">전체 공개</option><option value="unlisted">링크 공개</option><option value="private">비공개</option></select></div>
           </div>
         </div>
-        <div class="notice-box"><span>!</span><div><strong>등록 즉시 자동 검수합니다</strong><p>위험도 0~29는 자동 공개, 30~59는 구체적인 자동 수정요청, 60~100 또는 금지항목은 자동 거절·비공개 보관됩니다. 수정하면 즉시 다시 검수합니다.</p></div></div>
+        <div class="notice-box"><span>!</span><div><strong>등록 전 확인해주세요</strong><p>이메일 인증과 미션 내용 검수는 별도입니다. 중복 등록·개인정보·금지 내용을 확인하며, 수정이 필요하면 비공개로 보관하고 이유와 수정 방법을 바로 안내합니다. 통과하면 선택한 공개범위로 등록됩니다.</p></div></div>
         <label class="check-row"><input type="checkbox" name="rulesAccepted" required /><span>성공조건·보상금·운영정책과 10% 플랫폼 이용수수료를 확인했습니다.</span></label>
+        <div class="submission-email-status" role="status">${state.user?.emailVerified ? '✓ 이메일 인증 완료 · 등록 시 미션 내용을 확인합니다.' : '✉ 등록하려면 이메일 인증이 필요합니다. 아래 버튼을 누르면 안내가 열립니다.'}</div>
         <button class="btn btn-primary btn-lg btn-block" type="submit">미션 등록하기</button>
       </form>
       <aside class="preview-card"><span class="eyebrow">LIVE PREVIEW</span><h3 id="preview-title">새 미션</h3><div class="preview-list"><div class="preview-row"><span>카테고리</span><strong id="preview-category">연결</strong></div><div class="preview-row"><span>표시 보상금</span><strong id="preview-reward">100,000원</strong></div><div class="preview-row"><span>성공자 예상 지급</span><strong id="preview-payout">90,000원</strong></div><div class="preview-row"><span>현재 상태</span><strong>POSTED · 미확보</strong></div></div></aside>
@@ -1149,7 +1162,7 @@ function teaserStatusBadge(status) {
 }
 
 function renderActivityChallenge(challenge) {
-  const status = challenge.moderationPending ? { label: '관리자 검토 대기' } : (STATUS_META[challenge.status] || { label: challenge.status });
+  const status = challenge.moderationAction === 'CHANGES_REQUIRED' ? { label: '내용 수정 필요 · 비공개' } : challenge.moderationAction === 'AUTO_REJECTED' ? { label: '게시 제한 · 비공개' } : (STATUS_META[challenge.status] || { label: challenge.status });
   const funding = fundingDisplay(challenge);
   const category = CATEGORY_META[challenge.category] || CATEGORY_META.ALL;
   return `<button class="activity-item" type="button" data-challenge-id="${escapeAttribute(challenge.id)}" style="--activity-color:${category.color}"><span class="activity-icon">${category.icon}</span><span class="activity-copy"><strong>${escapeHTML(challenge.title)}</strong></span><span class="activity-badges"><span class="activity-badge">${escapeHTML(status.label)}</span><span class="activity-badge ${funding.funded ? 'funding-ready' : 'funding-pending'}">${escapeHTML(funding.label)}</span><span class="activity-badge">티저 ${Number(challenge.teaserCount || 0)}건</span></span><span class="application-headline activity-progress">현재 진행: ${escapeHTML(workflowStageLabel(challenge))}</span><span class="activity-money"><strong>${formatWon(challenge.rewardAmount)}</strong><small>${daysLeft(challenge.deadline) < 0 ? '마감' : `D-${daysLeft(challenge.deadline)}`}</small></span></button>`;
@@ -1491,7 +1504,7 @@ function renderChallengeModal(result) {
         <div class="criteria-item"><i>₩</i><div><strong>Funding 시점</strong><span>${nl2br(challenge.paymentTrigger)}</span></div></div>
         <div class="criteria-item"><i>▤</i><div><strong>필수 증빙</strong><span>${nl2br(challenge.evidenceRequirements)}</span></div></div>
       </div></section>
-      ${['CHANGES_REQUIRED','AUTO_REJECTED'].includes(challenge.moderationAction) && (context.isOwner || context.isAdmin) ? `<section class="detail-section"><h3>자동 검수 결과</h3><div class="notice-box warning"><span>!</span><div><strong>${challenge.moderationAction === 'CHANGES_REQUIRED' ? '내용 수정 후 즉시 자동 재검수됩니다' : '금지·고위험 항목으로 자동 거절되었습니다'}</strong><p>위험도 ${challenge.moderationRiskScore}/100 · 정책 ${escapeHTML(challenge.moderationPolicyVersion || '-')}</p><p>${challenge.moderationReasons.map((item) => escapeHTML(item.label)).join(' · ') || '검수 사유 확인 필요'}</p>${challenge.moderationGuidance?.length ? `<ul>${challenge.moderationGuidance.map((item) => `<li>${escapeHTML(item.message)}</li>`).join('')}</ul>` : ''}</div></div></section>` : ''}
+      ${(context.isOwner || context.isAdmin) ? renderModerationFeedback(challenge, { admin: context.isAdmin }) : ''}
       ${context.latestProof ? `<section class="detail-section"><h3>최근 결과 증빙</h3><div class="proof-box"><p>${nl2br(context.latestProof.description)}</p>${context.latestProof.evidence_url ? `<a href="${escapeAttribute(context.latestProof.evidence_url)}" target="_blank" rel="noopener">증빙 링크 열기</a>` : ''}<small>해시 ${escapeHTML(context.latestProof.evidence_hash || '-')} · ${formatDateTime(context.latestProof.submitted_at)}</small></div></section>` : ''}
       ${result.ownerReviews?.length ? `<section class="detail-section"><h3>의뢰자 최근 리뷰</h3>${result.ownerReviews.map((review) => `<article class="review-item"><div class="review-item-head"><strong>${escapeHTML(review.reviewer_name)}</strong><span class="stars">${stars(Number(review.rating))}</span></div><p>${escapeHTML(review.comment || '')}</p></article>`).join('')}</section>` : ''}
     </article>
@@ -1967,6 +1980,40 @@ async function logout() {
   toast('로그아웃했습니다', '안전하게 로그아웃되었습니다.', 'success');
 }
 
+
+function needsSubmissionEmail(form) {
+  return Boolean(form && ['challenge-create-form', 'challenge-edit-form', 'teaser-form', 'teaser-edit-form'].includes(form.id) && state.user && !state.user.emailVerified);
+}
+function openSubmissionEmailPrompt() {
+  rememberIdentityReturn();
+  openModal(`<section class="submission-email-prompt"><div class="notice-box warning"><span>✉</span><div><strong>등록·신청 전에 이메일 인증이 필요합니다</strong><p>아직 제출되지 않았습니다. 작성 내용은 보관되며, 인증 후 돌아와 등록·신청 버튼을 다시 눌러주세요.</p></div></div><button class="btn btn-primary btn-lg btn-block" type="button" data-action="email-verification">이메일 인증하기</button><button class="btn btn-outline btn-block" type="button" data-action="identity-return">작성 화면으로 돌아가기</button></section>`, { title: '이메일 인증이 필요합니다' });
+}
+function moderationReasonHelp(reason) {
+  return ({
+    POSSIBLE_DUPLICATE: '이미 등록한 미션과 제목이 같거나 비슷합니다. 내 클리어에서 기존 미션을 확인하고 수정하세요. 별개의 의뢰라면 제목과 본문에 대상·범위·회차의 차이를 명확히 적어주세요.',
+    HIGH_REWARD: '보상금이 50만 원 이상입니다. 이 금액만으로 비공개 처리되지는 않으며 다른 검수 사유와 함께 확인합니다.',
+    PERSONAL_INFORMATION: '제목·요약·상세 설명·성공조건에서 개인 연락처나 식별정보를 요청하는 표현을 확인해주세요. 공개 게시물에는 민감한 정보를 적지 마세요.',
+    AMBIGUOUS_SUCCESS: '성공조건을 수량·규격·제출물처럼 확인 가능한 기준으로 구체화해주세요.',
+    DATING_RELATIONSHIP: '만남·소개 관련 목적과 성인 대상 여부, 당사자 동의 및 안전 기준을 구체적으로 적어주세요.',
+  })[reason.code] || (reason.prohibited ? '금지될 수 있는 요청이 감지되었습니다. 게시할 수 없는 내용을 확인하고, 잘못된 판정이라면 미션 상세에서 이의신청해주세요.' : '의뢰 목적과 성공조건을 확인해주세요. 잘못된 판정이라면 미션 상세에서 이의신청할 수 있습니다.');
+}
+function renderModerationFeedback(challenge, { admin = false } = {}) {
+  if (!['CHANGES_REQUIRED', 'AUTO_REJECTED'].includes(challenge.moderationAction)) return '';
+  const rejected = challenge.moderationAction === 'AUTO_REJECTED';
+  const reasons = challenge.moderationReasons || [];
+  return `<section class="submission-feedback" aria-label="미션 검수 사유"><h3>${rejected ? '게시가 제한되어 비공개로 보관했습니다' : '내용 수정이 필요해 비공개로 보관했습니다'}</h3><p>이메일 인증과는 별도의 내용 검수 결과입니다. 작성 내용은 삭제되지 않았습니다.</p>${reasons.length ? `<ul>${reasons.map(reason => `<li><strong>${escapeHTML(reason.label)}</strong><p>${escapeHTML(moderationReasonHelp(reason))}</p></li>`).join('')}</ul>` : '<p>자세한 검수 사유는 미션 상세에서 확인해주세요.</p>'}<p>기존 미션을 수정·저장하면 다시 검수합니다. 새 미션을 반복 등록할 필요가 없습니다.</p>${admin ? `<details><summary>관리자 검수 정보</summary><p>위험도 ${Number(challenge.moderationRiskScore || 0)}/100 · 정책 ${escapeHTML(challenge.moderationPolicyVersion || '-')}</p></details>` : ''}</section>`;
+}
+function showChallengeSubmissionResult(result) {
+  const challenge = { ...result.challenge };
+  challenge.moderationAction ||= result.moderationAction;
+  challenge.moderationReasons ||= result.moderationReasons || [];
+  const blocked = ['CHANGES_REQUIRED', 'AUTO_REJECTED'].includes(challenge.moderationAction) || challenge.status === 'DRAFT';
+  const visibility = challenge.publicationVisibility || challenge.visibility;
+  const message = blocked ? '비공개 저장 · 사유를 확인해주세요' : visibility === 'private' ? '비공개로 등록했습니다' : visibility === 'unlisted' ? '링크 공개로 등록했습니다' : '미션이 공개되었습니다';
+  const id = escapeAttribute(challenge.id);
+  openModal(`<section class="submission-result"><p class="submission-result-title">${escapeHTML(challenge.title)}</p>${blocked ? renderModerationFeedback(challenge) : `<p>내용 검수를 통과했습니다. ${visibility === 'private' ? '선택한 비공개 설정이 유지됩니다.' : visibility === 'unlisted' ? '링크를 아는 사람에게 공개됩니다.' : '미션 목록에서 확인할 수 있습니다.'}</p>`}${blocked ? `<button class="btn btn-primary btn-lg btn-block" type="button" data-action="edit-saved-challenge" data-challenge-id="${id}">이 미션 수정하기</button>` : ''}<button class="btn btn-outline btn-block" type="button" data-challenge-id="${id}">저장한 미션 상세 보기</button><button class="btn btn-outline btn-block" type="button" data-route="dashboard">내 클리어에서 기존 미션 확인</button><p class="form-hint">실제 결제·지급은 아직 제공하지 않습니다.</p></section>`, { title: message });
+}
+
 async function submitChallenge(form) {
   if (!form.dataset.idempotencyKey) form.dataset.idempotencyKey = crypto.randomUUID();
   const data = Object.fromEntries(new FormData(form));
@@ -1989,10 +2036,9 @@ async function submitChallenge(form) {
   state.activity = null;
   state.createDraft = null;
   sessionStorage.removeItem('modu-challenge-create-draft');
-  if (result.moderationAction === 'CHANGES_REQUIRED') toast('자동 수정요청으로 비공개 저장했습니다', '표시된 문장을 고쳐 저장하면 즉시 다시 자동 검수합니다.', 'warning');
-  else if (result.moderationAction === 'AUTO_REJECTED') toast('금지·고위험 항목으로 자동 거절했습니다', '원본은 비공개 보관되며 오탐이면 이의신청할 수 있습니다.', 'warning');
-  else toast('자동 검수 후 미션이 공개되었습니다', '판정·위험도·정책 버전·감사 기록이 저장되었습니다.', 'success');
+  sessionStorage.removeItem('modu-identity-return');
   navigate('dashboard');
+  showChallengeSubmissionResult(result);
 }
 
 function openTeaserForm(challengeId) {
@@ -2235,10 +2281,10 @@ function openChallengeEditForm(challengeId) {
   const context = state.selectedChallenge?.context;
   if (!challenge || challenge.id !== challengeId || !context?.canEdit) return toast('현재 수정할 수 없습니다', context?.editBlockedReason || '미션 상태를 다시 확인해주세요.', 'warning');
   const categoryOptions = Object.entries(CATEGORY_META).filter(([key]) => key !== 'ALL').map(([key, meta]) => `<option value="${key}" ${key === challenge.category ? 'selected' : ''}>${meta.label}</option>`).join('');
-  openModal(`<form id="challenge-edit-form" data-challenge-id="${challengeId}"><div class="notice-box"><span>✎</span><div><strong>아직 참여가 시작되지 않아 수정할 수 있습니다</strong><p>수정 후 위험·고액 항목은 다시 관리자 검토 대기가 될 수 있습니다.</p></div></div><div class="form-grid" style="margin-top:18px"><div class="field full"><label>제목</label><input name="title" required minlength="5" maxlength="90" value="${escapeAttribute(challenge.title)}" /></div><div class="field full"><label>한 줄 요약</label><input name="summary" required minlength="10" maxlength="180" value="${escapeAttribute(challenge.summary)}" /></div><div class="field full"><label>상세 설명</label><textarea name="description" required minlength="20" maxlength="4000" rows="7">${escapeHTML(challenge.description)}</textarea></div><div class="field"><label>카테고리</label><select name="category" required>${categoryOptions}</select></div><div class="field"><label>지역</label><input name="region" maxlength="80" value="${escapeAttribute(challenge.region || '')}" /></div><div class="field"><label>보상금</label><input name="rewardAmount" type="number" min="${rewardBoundsForUser().min}" max="${rewardBoundsForUser().max}" step="1" required value="${challenge.rewardAmount}" /><small>최소 ${formatWon(rewardBoundsForUser().min)} · 최대 ${formatWon(rewardBoundsForUser().max)}</small></div><div class="field"><label>마감일</label><input name="deadline" type="date" required value="${escapeAttribute(String(challenge.deadline || '').slice(0, 10))}" /></div><div class="field full"><label>성공조건</label><textarea name="successCriteria" required minlength="10" maxlength="1600" rows="4">${escapeHTML(challenge.successCriteria)}</textarea></div><div class="field full"><label>보상금 준비 시점</label><textarea name="paymentTrigger" required minlength="10" maxlength="800" rows="3">${escapeHTML(challenge.paymentTrigger)}</textarea></div><div class="field full"><label>필수 증빙</label><textarea name="evidenceRequirements" required minlength="5" maxlength="800" rows="3">${escapeHTML(challenge.evidenceRequirements)}</textarea></div><div class="field full"><label>공개범위</label><select name="visibility"><option value="public" ${challenge.visibility === 'public' ? 'selected' : ''}>전체 공개</option><option value="unlisted" ${challenge.visibility === 'unlisted' ? 'selected' : ''}>링크 공개</option><option value="private" ${challenge.visibility === 'private' ? 'selected' : ''}>비공개</option></select></div></div><button class="btn btn-primary btn-lg btn-block" type="submit">수정 내용 저장</button></form>`, { title: '미션 수정', wide: true });
+  openModal(`<form id="challenge-edit-form" data-challenge-id="${challengeId}">${renderModerationFeedback(challenge)}<div class="notice-box"><span>✎</span><div><strong>아직 참여가 시작되지 않아 수정할 수 있습니다</strong><p>수정 후 위험·고액 항목은 다시 관리자 검토 대기가 될 수 있습니다.</p></div></div><div class="form-grid" style="margin-top:18px"><div class="field full"><label>제목</label><input name="title" required minlength="5" maxlength="90" value="${escapeAttribute(challenge.title)}" /></div><div class="field full"><label>한 줄 요약</label><input name="summary" required minlength="10" maxlength="180" value="${escapeAttribute(challenge.summary)}" /></div><div class="field full"><label>상세 설명</label><textarea name="description" required minlength="20" maxlength="4000" rows="7">${escapeHTML(challenge.description)}</textarea></div><div class="field"><label>카테고리</label><select name="category" required>${categoryOptions}</select></div><div class="field"><label>지역</label><input name="region" maxlength="80" value="${escapeAttribute(challenge.region || '')}" /></div><div class="field"><label>보상금</label><input name="rewardAmount" type="number" min="${rewardBoundsForUser().min}" max="${rewardBoundsForUser().max}" step="1" required value="${challenge.rewardAmount}" /><small>최소 ${formatWon(rewardBoundsForUser().min)} · 최대 ${formatWon(rewardBoundsForUser().max)}</small></div><div class="field"><label>마감일</label><input name="deadline" type="date" required value="${escapeAttribute(String(challenge.deadline || '').slice(0, 10))}" /></div><div class="field full"><label>성공조건</label><textarea name="successCriteria" required minlength="10" maxlength="1600" rows="4">${escapeHTML(challenge.successCriteria)}</textarea></div><div class="field full"><label>보상금 준비 시점</label><textarea name="paymentTrigger" required minlength="10" maxlength="800" rows="3">${escapeHTML(challenge.paymentTrigger)}</textarea></div><div class="field full"><label>필수 증빙</label><textarea name="evidenceRequirements" required minlength="5" maxlength="800" rows="3">${escapeHTML(challenge.evidenceRequirements)}</textarea></div><div class="field full"><label>공개범위</label><select name="visibility"><option value="public" ${challenge.visibility === 'public' ? 'selected' : ''}>전체 공개</option><option value="unlisted" ${challenge.visibility === 'unlisted' ? 'selected' : ''}>링크 공개</option><option value="private" ${challenge.visibility === 'private' ? 'selected' : ''}>비공개</option></select></div></div><button class="btn btn-primary btn-lg btn-block" type="submit">수정 내용 저장</button></form>`, { title: '미션 수정', wide: true });
   restoreTransientModalDraft(document.querySelector('#challenge-edit-form'));
   const editForm = document.querySelector('#challenge-edit-form');
-  editForm?.querySelector('.notice-box p')?.replaceChildren(document.createTextNode('수정 내용을 저장하면 관리자 대기 없이 즉시 자동 재검수됩니다.'));
+  editForm?.querySelector(':scope > .notice-box p')?.replaceChildren(document.createTextNode('수정 내용을 저장하면 관리자 대기 없이 즉시 자동 재검수됩니다.'));
   editForm?.querySelector('.form-grid')?.insertAdjacentHTML('afterbegin', `<div class="field full"><label>의뢰 활동 주체</label><select name="subjectType"><option value="individual" ${challenge.ownerSubjectType === 'individual' ? 'selected' : ''}>개인</option><option value="business" ${challenge.ownerSubjectType === 'business' ? 'selected' : ''}>개인사업자</option><option value="corporation" ${challenge.ownerSubjectType === 'corporation' ? 'selected' : ''}>법인</option><option value="organization" ${challenge.ownerSubjectType === 'organization' ? 'selected' : ''}>단체</option></select></div>`);
 }
 
@@ -2247,10 +2293,11 @@ async function submitChallengeEdit(form) {
   const data = Object.fromEntries(new FormData(form));
   data.rewardAmount = Number(data.rewardAmount);
   const result = await apiClient.updateChallenge(challengeId, data);
-  await loadChallenges();
+  // Saving is complete even when a background list refresh fails.
+  loadChallenges().catch(() => undefined);
   state.activity = null;
-  toast('미션을 수정했습니다', result.moderationAction === 'AUTO_APPROVED' ? '자동 재검수 후 공개되었습니다.' : result.moderationAction === 'CHANGES_REQUIRED' ? '추가 수정이 필요한 항목을 확인해주세요.' : '자동 거절 사유를 확인해주세요.', result.moderationAction === 'AUTO_APPROVED' ? 'success' : 'warning');
-  await openChallenge(challengeId);
+  sessionStorage.removeItem(transientModalDraftKey(form));
+  showChallengeSubmissionResult(result);
 }
 
 async function submitCancel(form) {
@@ -2609,6 +2656,7 @@ function renderProgressNotice(challenge, context = {}) {
 }
 
 function renderFlow(challenge, context = {}) {
+  if (challenge.status === 'DRAFT') return '<p class="form-hint">현재 비공개 초안입니다. 내용 검수를 통과하고 공개한 뒤 수행 신청을 받을 수 있습니다.</p>';
   const steps = [['미션 공개','의뢰자 · 미션과 성공조건 등록'],['티저 도전','도전자 · 제안 제출'],['후보선정','의뢰자 · 후보 비교 후 최종 1명 확정'],['보상금 확보','의뢰자 · 결제 / 서비스 · 입금 확인'],['미션 수행','최종 수행자 · 수행 후 결과 제출'],['결과 검수','의뢰자 · 증빙 확인 후 완료 확정'],['보상 지급','지급 처리 후 정산내역 확인']];
   const current = flowIndex(challenge);
   const stopped = ['CANCELLED','FAILED','DISPUTED'].includes(challenge.status);
@@ -2658,7 +2706,7 @@ function escapeHTML(value) { return String(value ?? '').replace(/[&<>'"]/g, (cha
 function escapeAttribute(value) { return escapeHTML(value).replace(/`/g, '&#96;'); }
 
 const POLICIES = {
-  terms: { title: '이용약관 · 현재 서비스 범위', body: '<h3>단계별 인증</h3><p>이메일 인증은 메일함 이용 확인이며 실명 본인확인과 다릅니다. 이메일 인증 후 등록·신청할 수 있으며 실제 거래 확정·결제·지급 전에는 양측 본인확인이 필요합니다. 사업자 확인은 별도입니다.</p><h3>플랫폼의 역할</h3><p>모두의클리어는 미션 게시·참가·TEASER·후보선정·진행기록·Funding 상태·정산·리뷰 기능을 제공합니다.</p><h3>당사자의 책임</h3><p>미션의 적법성, 필요한 자격·면허·권한과 제공정보의 정확성은 관련 당사자가 확인합니다. 플랫폼은 불법·허위·권리침해를 인지한 경우 게시 제한과 자료보존 등 필요한 조치를 수행합니다.</p><h3>운영자·이용 제한</h3><p>운영·관리 주체는 (주)ISEA GROUP입니다. 회원가입과 이메일·소셜 로그인은 본인확인이 아닙니다. 유효한 본인확인 및 활동 자격이 확인되지 않으면 신규 의뢰·도전·후보선정을 제한합니다.</p><h3>현재 거래 상태</h3><p>실제 결제·자금보관·환불·지급 서비스는 제공하지 않습니다. 예시·가상 거래는 실제 계약 이행이나 입금·송금을 증명하지 않습니다. 외부 계좌로 보상금을 임의 송금하지 마세요.</p><h3>거래 개시 조건</h3><p>인증·결제·지급업체 계약, 사업자 표시사항, 고객지원 연락처, 전체 거래약관과 개인정보 처리방침을 확정·고지한 뒤 별도 동의를 받아야 실거래를 개시할 수 있습니다. 기존 동의를 변경된 거래약관에 대한 동의로 간주하지 않습니다.</p>' },
+  terms: { title: '이용약관 · 현재 서비스 범위', body: '<h3>단계별 인증</h3><p>이메일 인증은 메일함 이용 확인이며 실명 본인확인과 다릅니다. 이메일 인증 후 등록·신청할 수 있으며 실제 거래 확정·결제·지급 전에는 양측 본인확인이 필요합니다. 사업자 확인은 별도입니다.</p><h3>플랫폼의 역할</h3><p>모두의클리어는 미션 게시·참가·TEASER·후보선정·진행기록·Funding 상태·정산·리뷰 기능을 제공합니다.</p><h3>당사자의 책임</h3><p>미션의 적법성, 필요한 자격·면허·권한과 제공정보의 정확성은 관련 당사자가 확인합니다. 플랫폼은 불법·허위·권리침해를 인지한 경우 게시 제한과 자료보존 등 필요한 조치를 수행합니다.</p><h3>운영자·이용 제한</h3><p>운영·관리 주체는 (주)ISEA GROUP입니다. 회원가입과 이메일·소셜 로그인은 본인확인이 아닙니다. 이메일 인증이 없으면 미션 등록·수행 신청을 제한합니다. 최종 후보선정·거래 확정에는 양측 본인확인과 필요한 활동 자격이 별도로 요구됩니다.</p><h3>현재 거래 상태</h3><p>실제 결제·자금보관·환불·지급 서비스는 제공하지 않습니다. 예시·가상 거래는 실제 계약 이행이나 입금·송금을 증명하지 않습니다. 외부 계좌로 보상금을 임의 송금하지 마세요.</p><h3>거래 개시 조건</h3><p>인증·결제·지급업체 계약, 사업자 표시사항, 고객지원 연락처, 전체 거래약관과 개인정보 처리방침을 확정·고지한 뒤 별도 동의를 받아야 실거래를 개시할 수 있습니다. 기존 동의를 변경된 거래약관에 대한 동의로 간주하지 않습니다.</p>' },
   privacy: { title: '개인정보 처리 안내 · 거래 기능 준비 중', body: '<h3>처리 주체</h3><p>개인정보 처리·관리 주체는 ㈜ISEA GROUP입니다.</p><h3>수집 항목과 목적</h3><p>회원가입 시 이름·활동명, 휴대전화, 이메일, 비밀번호 검증값, 활동 지역, 출생연도, 성별, 참여 목적을 수집하여 계정 생성·연락·서비스 운영에 사용하며 입력만으로 본인확인을 완료하지 않습니다. 관심·전문분야, 기관·회사명, 마케팅 수신 동의는 선택 항목입니다.</p><h3>본인확인 정보</h3><p>기관 연동 시 명시적 동의를 받고 인증 결과를 서버에서 조회합니다. 중복확인 식별값은 비밀키 기반 해시로 처리하며 원본 주민등록번호·신분증·CI·DI는 저장하지 않는 구조입니다. 연계정보 해시도 개인정보로 보호합니다. 인증 유효기간은 운영정책상 1년이며 철회·만료 시 재확인합니다.</p><h3>사업자·법인·단체 자격 심사</h3><p>개인 본인확인과 별도로 등록 증빙·대표 또는 위임 권한을 심사합니다. 계약과 처리방침이 확정되기 전에는 접수를 차단합니다. 신청 정보와 가린 이미지 증빙은 암호화하여 신청자와 최고관리자만 열람하며, 접수일부터 30일 후 원문을 파기합니다. 승인 자격은 1년 후 재확인하며 최소 심사·열람 기록은 1년 보유 후 파기합니다. 주민등록번호·신분증·계좌번호는 제출하지 마세요. 원문이 포함된 암호화 배포 백업은 최대 90일 후 삭제하며 복원 시 파기 기한을 다시 적용합니다.</p><h3>거래 개시 전 확정 항목</h3><p>수탁사·보유기간·파기·권리행사 절차는 실제 운영사와 제공사를 확정한 후 전체 방침에 반영합니다.</p>' },
   rules: { title: '운영정책 · TRUST · 3-Strike', body: '<h3>일반 미이행</h3><p>정당한 사유 없는 Funding 미이행·반복 잠수·허위 TEASER는 경고, 한도축소, 기능제한, 장기정지 단계로 처리할 수 있습니다.</p><h3>즉시 제한</h3><p>허위신원·자격위조·증거조작·불법거래·개인정보 악용 등 중대한 행위는 즉시 제한할 수 있습니다.</p><h3>이의신청</h3><p>파산·중대한 사고 등 객관적인 사유가 있으면 예외심사를 신청할 수 있습니다.</p>' },
   fees: { title: '수수료·Funding·정산 정책', body: '<h3>기본 수수료</h3><p>클리어 성공 시 표시 보상금의 10%를 플랫폼 이용수수료로 정산하고 나머지 90%를 성공자에게 지급하는 구조가 기본입니다.</p><h3>취소·환불·분쟁</h3><p>현재 실제 청구는 차단되어 있습니다. 거래 개시 후 결제 전 취소는 청구 없이 종료하고, 결제 후에는 업체의 원거래 취소 결과가 확인되어야 환불 완료로 표시합니다. 수행·검수 중 이견은 분쟁으로 접수하여 지급을 보류하고, 합의 또는 심사 결과를 기록합니다. 지급 요청과 지급 완료를 구분하며 실패·응답 지연 때 재송금하지 않습니다. 이미 송금된 금액은 자동 환불로 처리하지 않습니다.</p><h3>정산 내역</h3><p>10만원 보상 기준 서비스 수수료 1만원, 수행자 예상액 9만원입니다. 적용 세금·원천징수·PG 비용·취소기한·정산일은 계약과 검토 후 개시 전에 확정 고지합니다.</p><h3>고지</h3><p>목록에서는 보상금을 중심으로 표시하되, 참가 확정 전 수수료율과 예상 실수령액을 확인할 수 있도록 고지합니다.</p><h3>후행 Funding</h3><p>등록 시 선결제하지 않고 FINALIST 선정 등 사전에 정한 시점에서 승인된 결제·지급 구조로 자금을 확보합니다.</p>' },
@@ -2746,7 +2794,7 @@ function renderEmailSummary() {
 }
 async function openEmailVerification({change=false}={}) {
   if(!state.user)return openAuthModal('login');
-  if(!modalRoot.querySelector('.email-otp-panel'))rememberIdentityReturn();
+  if(!modalRoot.querySelector('.email-otp-panel, .submission-email-prompt'))rememberIdentityReturn();
   const memberId=state.user.id;
   const data=await apiClient.emailVerification();
   if(state.user?.id!==memberId)return;

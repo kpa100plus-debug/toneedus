@@ -1641,7 +1641,7 @@ async function getChallenge(challengeId, request, env) {
       canEdit: isOwner && ['OPEN', 'REVIEW', 'DRAFT'].includes(challenge.status) && Number(challenge.teaser_count || 0) === 0 && challenge.funding_status === 'POSTED',
       editBlockedReason: isOwner && !(['OPEN', 'REVIEW'].includes(challenge.status) && Number(challenge.teaser_count || 0) === 0 && challenge.funding_status === 'POSTED')
         ? 'TEASER 접수 또는 진행 단계가 시작된 미션은 기존 약속 보호를 위해 수정할 수 없습니다.' : '',
-      canApply: !isOwner && (!viewerTeaser || viewerTeaser.status === 'WITHDRAWN') && !safeJsonParse(challenge.moderation_reasons_json, []).length && ['OPEN', 'REVIEW'].includes(challenge.status),
+      canApply: !isOwner && (!viewerTeaser || viewerTeaser.status === 'WITHDRAWN') && !['CHANGES_REQUIRED', 'AUTO_REJECTED'].includes(publicChallenge(challenge).moderationAction) && ['OPEN', 'REVIEW'].includes(challenge.status),
       viewerTeaser: viewerTeaser ? {
         id: viewerTeaser.id, status: viewerTeaser.status, headline: viewerTeaser.headline,
         capability: viewerTeaser.capability, approach: viewerTeaser.approach,
@@ -1674,7 +1674,11 @@ async function createChallenge(request, env) {
   ).bind(user.id, idempotencyKey).first();
   if (existingRequest?.challenge_id) {
     const existingChallenge = await fetchChallenge(existingRequest.challenge_id, env);
-    if (existingChallenge) return json({ challenge: publicChallenge(existingChallenge), duplicatePrevented: true }, 200);
+    if (existingChallenge) {
+      const challenge = publicChallenge(existingChallenge);
+      return json({ challenge, duplicatePrevented: true, moderationAction: challenge.moderationAction,
+        moderationReasons: challenge.moderationReasons, moderationGuidance: challenge.moderationGuidance }, 200);
+    }
   }
 
   const title = cleanText(body.title, 5, 90);
@@ -3237,6 +3241,7 @@ function publicChallenge(c) {
     fundingStatus: c.funding_status,
     isExample: String(c.id || '').startsWith('demo_') || String(c.title || '').startsWith('[예시]'),
     visibility: c.submitted_visibility || c.visibility,
+    publicationVisibility: c.visibility,
     selectedSolverId: c.selected_solver_id,
     paymentDueAt: c.payment_due_at,
     ownerSubjectType: c.owner_subject_type || 'individual',

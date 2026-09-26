@@ -15,7 +15,7 @@ for(let attempt=1;attempt<=3;attempt++) {
     assert.equal(health.commit,process.env.GITHUB_SHA);assert.equal(health.version,config.vars.APP_VERSION);assert.equal(health.pwaVersion,config.vars.PWA_VERSION);
     assert.equal(health.moneyEnabled,false);assert.equal(health.moneyMode,'disabled');assert.equal(health.liveTransactionsAvailable,false);
     assert.equal(publicConfig.moneyEnabled,false);assert.equal(publicConfig.moneyMode,'disabled');assert.equal(publicConfig.activityVerification,'email');assert.equal(publicConfig.emailVerificationRequired,true);
-    assert.ok(index.includes(`live-app.js?v=${health.pwaVersion.slice(1)}`));assert.ok(index.includes('미션 내용은 별도 검수'));
+    assert.ok(index.includes(`live-app.js?v=${health.pwaVersion.slice(1)}`));assert.ok(!index.includes('class="transaction-launch-notice"'));
     assert.ok(sw.includes(`modu-challenge-${health.pwaVersion}`));
     console.log(JSON.stringify({productionVerified:true,version:health.version,pwaVersion:health.pwaVersion,commit:health.commit,moneyEnabled:health.moneyEnabled,moneyMode:health.moneyMode,identityAvailable:publicConfig.identityAvailable,emailVerificationAvailable:publicConfig.emailVerificationAvailable,activityVerification:publicConfig.activityVerification,checkedAt:new Date().toISOString()}));
     error=null;break;

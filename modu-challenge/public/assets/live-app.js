@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=66';
-import { legacyNotificationText } from './brand.js?v=66';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=66';
-import { calculateSettlement } from './business-rules.js?v=66';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=66';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=67';
+import { legacyNotificationText } from './brand.js?v=67';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=67';
+import { calculateSettlement } from './business-rules.js?v=67';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=67';
 
 /**
  * 모두의클리어 live frontend
@@ -45,6 +45,7 @@ const state = {
   simulation: null,
   simulationRole: 'owner',
   loading: true,
+  authLoading: true,
   apiAvailable: true,
 };
 
@@ -89,20 +90,24 @@ async function init() {
   window.addEventListener('popstate', () => {
     if (modalRoot.innerHTML && modalHistoryEntry) closeModal({ fromHistory: true });
   });
-  window.addEventListener('focus', () => refreshDashboardActivity());
+  window.addEventListener('focus', () => { refreshDashboardActivity(); refreshEmailStatus(); });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) refreshDashboardActivity();
+    if (!document.hidden) { refreshDashboardActivity(); refreshEmailStatus(); }
   });
 
   try {
-    const [bootstrap, currentUser] = await Promise.all([
-      loadBootstrapData(),
-      loadCurrentUser(),
-    ]);
+    const userRequest = loadCurrentUser();
+    userRequest.catch(() => undefined);
+    const bootstrap = await loadBootstrapData();
     state.config = bootstrap.config;
     state.health = bootstrap.health;
     state.challenges = bootstrap.challenges || [];
-    state.user = currentUser;
+    if (['home','explore','how','trust'].includes(state.route)) {
+      state.loading = false;
+      render();
+    }
+    state.user = await userRequest;
+    state.authLoading = false;
     const pendingDraft=identityReturnContext();
     if(pendingDraft?.createDraft){state.createDraft=pendingDraft.createDraft;state.createMode=pendingDraft.createMode||'easy';}
   } catch (error) {
@@ -135,16 +140,15 @@ async function init() {
     let hadController = Boolean(navigator.serviceWorker.controller);
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!hadController) { hadController = true; return; }
-      if (!modalRoot.innerHTML && state.route !== 'create') location.reload();
-      else {
+      if (!document.querySelector('.pwa-update-button')) {
         const button = document.createElement('button');
         button.className = 'pwa-update-button';
         button.textContent = '모두의클리어 업데이트 · 입력을 마친 뒤 적용';
-        button.addEventListener('click', () => { modalRoot.querySelectorAll('form').forEach(saveTransientModalDraft); location.reload(); });
+        button.addEventListener('click', () => { if(state.user && (state.route==='create' || modalRoot.querySelector('#teaser-form, #challenge-edit-form, #teaser-edit-form')))rememberIdentityReturn(); modalRoot.querySelectorAll('form').forEach(saveTransientModalDraft); location.reload(); });
         document.body.append(button);
       }
     });
-    navigator.serviceWorker.register('/sw.js?v=66').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=67').then((registration) => {
       registration.update().catch(() => undefined);
       registration.addEventListener('updatefound', () => {
         registration.installing?.addEventListener('statechange', () => {
@@ -473,8 +477,8 @@ async function handleAction(action, data, button) {
     if (action.startsWith('entity-')) return await withBusy(button,()=>entityAction(button));
     if (action === 'admin-verifications') return await openAdminVerifications();
     if (action === 'review-verification') return openVerificationReview(button.dataset.verificationId);
-    if (action === 'email-verification') return await openEmailVerification();
-    if (action === 'email-change') return await openEmailVerification({ change: true });
+    if (action === 'email-verification') return await withBusy(button, () => openEmailVerification());
+    if (action === 'email-change') return await withBusy(button, () => openEmailVerification({ change: true }));
     if (action === 'manage-verifications') return await openVerificationManager();
     if (action === 'identity-return') return await returnFromIdentity();
     if (action === 'identity-recheck') return await withBusy(button, () => retryIdentityResult());
@@ -693,10 +697,12 @@ function dismissWebAppInstall() {
 }
 
 function renderHeader() {
+  syncEmailStatusUi();
   const avatar = document.querySelector('#header-avatar');
   const name = document.querySelector('#header-user-name');
   const role = document.querySelector('#header-user-role');
   if (!avatar || !name || !role) return;
+  if (state.authLoading) { name.textContent='계정 확인 중'; role.textContent='잠시만 기다려주세요'; return; }
   if (!state.user) {
     avatar.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.25"></circle><path d="M5.5 20c.75-3.35 3.12-5.2 6.5-5.2S17.75 16.65 18.5 20"></path></svg>';
     avatar.className = 'avatar avatar-sm avatar-guest';
@@ -820,9 +826,7 @@ function renderHome() {
       <div class="step-grid">
         ${renderStep('01', '미션 등록', '필요한 일과 완료 기준, 보상금 또는 포상금을 등록합니다.')}
         ${renderStep('02', '도전하기', '재능·기술·경험·정보·인맥·시간·실행력을 담은 티저로 제안합니다.')}
-        ${renderStep('03', '해결자 선택', '의뢰자가 제안과 신뢰 이력을 비교해 해결자를 선택합니다.')}
-        ${renderStep('04', '해결·결과 제출', '보상금 확보 후 미션을 수행하고 결과와 증빙을 제출합니다.')}
-        ${renderStep('05', '검수·클리어', '의뢰자가 결과를 검수하고 완료를 확정하면 보상 지급과 리뷰로 이어집니다.')}
+        ${renderStep('03', '수행자 후보 선택', '의뢰자가 제안과 신뢰 이력을 비교해 수행자 후보를 선택합니다. 후보 선택은 최종 거래 확정과 구분됩니다.')}
       </div>
     </div></section>
 
@@ -892,16 +896,15 @@ function renderImpactCounter(code, value, format, label, sub, icon) {
 }
 
 function renderHow() {
-  return `<section class="page-hero compact"><div class="container"><span class="eyebrow">HOW IT WORKS</span><h1>이용방법</h1><p>이메일 인증 → 미션 등록·수행 신청 → 양측 본인확인 → 거래 확정 순서입니다. 실제 결제·지급은 현재 준비 중입니다.</p><p>문제 등록부터 TEASER, 후보선정, 수행과 정산까지 단계별로 확인하세요.</p></div></section>
+  return `<section class="page-hero compact"><div class="container"><span class="eyebrow">HOW IT WORKS</span><h1>이용방법</h1><p>이메일을 인증하고 미션을 등록하거나 티저를 제출하세요. 의뢰자는 제안을 비교해 수행자 후보를 선택할 수 있습니다.</p><p>등록부터 티저 제출·후보 선택까지 단계별로 확인하세요. 현재 이용 범위는 아래 안내에서 확인할 수 있습니다.</p></div></section>
     <section class="page-section"><div class="container">
       <div class="section-head centered"><div><span class="eyebrow">미션 해결 과정</span><h2>가능성을 먼저 보고, 선택한 뒤 진행합니다</h2><p>성공조건과 증빙기준을 먼저 공개해 분쟁 가능성을 줄입니다.</p></div></div>
       <div class="step-grid">
         ${renderStep('01', '미션 등록', '필요한 일과 완료 기준, 보상금 또는 포상금을 등록합니다.')}
         ${renderStep('02', '도전하기', '재능·기술·경험·정보·인맥·시간·실행력을 담은 티저로 제안합니다.')}
-        ${renderStep('03', '해결자 선택', '의뢰자가 제안과 신뢰 이력을 비교해 해결자를 선택합니다.')}
-        ${renderStep('04', '해결·결과 제출', '보상금 확보 후 미션을 수행하고 결과와 증빙을 제출합니다.')}
-        ${renderStep('05', '검수·클리어', '의뢰자가 결과를 검수하고 완료를 확정하면 보상 지급과 리뷰로 이어집니다.')}
+        ${renderStep('03', '수행자 후보 선택', '의뢰자가 제안과 신뢰 이력을 비교해 수행자 후보를 선택합니다. 후보 선택은 최종 거래 확정과 구분됩니다.')}
       </div>
+      <div class="notice-box"><span>i</span><div><strong>현재 이용 가능한 서비스</strong><p>이메일 인증 후 미션 등록·수정, 티저 제출·수정, 수행자 후보 선택을 이용할 수 있습니다. 최종 거래 확정과 실제 결제·지급은 현재 제공하지 않습니다.</p></div></div>
       <div class="cta-inner"><div><span class="eyebrow">START</span><h2>원하는 방식으로 시작하세요</h2><p>문제를 올리거나 공개된 미션에 TEASER로 도전할 수 있습니다.</p></div><div class="cta-actions"><button class="btn btn-primary btn-lg" data-route="create">미션 등록</button><button class="btn btn-outline btn-lg" data-route="explore">미션 찾기</button></div></div>
     </div></section>`;
 }
@@ -997,7 +1000,7 @@ function renderCreate() {
       <form class="form-card" id="challenge-create-form">
         ${renderIdentityNotice()}
         <div class="notice-box"><span>✓</span><div><strong>이번 의뢰의 활동 주체를 선택하세요</strong><p>회원 계정 종류가 아니라 이 미션에서의 자격입니다. 보유한 유효 인증은 수행자 활동에서도 다시 사용됩니다.</p></div></div>
-        <div class="field full activity-subject-field"><label>의뢰 활동 주체 <span class="required">*</span></label><select name="subjectType" required><option value="individual">개인</option><option value="business">개인사업자</option><option value="corporation">법인</option><option value="organization">단체</option></select><small>부족한 인증만 안내하며, 외부 인증기관 연결 전에는 인증 완료로 표시하지 않습니다.</small></div>
+        <div class="field full activity-subject-field"><label>의뢰 활동 주체 <span class="required">*</span></label><select name="subjectType" required><option value="individual">개인</option><option value="business">개인사업자</option><option value="corporation">법인</option><option value="organization">단체</option></select><small>활동 유형을 선택하세요. 등록·티저 제출·후보 선택은 이메일 인증 후 가능합니다. 본인확인과 사업자 자격 확인은 거래 전에 별도로 진행합니다.</small></div>
         <div class="create-mode-label"><strong>작성 방법을 선택하세요</strong><span>글쓰기가 어렵다면 간편 만들기를 이용하세요</span></div><div class="create-mode-switch" role="tablist" aria-label="작성 방식"><button type="button" role="tab" aria-selected="${easy}" class="${easy ? 'active' : ''}" data-action="create-mode" data-mode="easy"><b>추천</b><strong>간편 만들기</strong><span>몇 가지만 고르면 전체 글 자동 완성</span></button><button type="button" role="tab" aria-selected="${!easy}" class="${!easy ? 'active' : ''}" data-action="create-mode" data-mode="direct"><strong>직접 작성</strong><span>모든 내용을 직접 입력</span></button></div>
         ${easy ? renderEasyCreateWizard(max) : ''}
         <div class="form-section"><div class="form-section-head"><span>1</span><div><h2>문제와 목표</h2><p>사람들이 바로 이해할 수 있게 작성해주세요.</p></div></div>
@@ -1023,7 +1026,7 @@ function renderCreate() {
         </div>
         <div class="notice-box"><span>!</span><div><strong>등록 전 확인해주세요</strong><p>이메일 인증과 미션 내용 검수는 별도입니다. 중복 등록·개인정보·금지 내용을 확인하며, 수정이 필요하면 비공개로 보관하고 이유와 수정 방법을 바로 안내합니다. 통과하면 선택한 공개범위로 등록됩니다.</p></div></div>
         <label class="check-row"><input type="checkbox" name="rulesAccepted" required /><span>성공조건·보상금·운영정책과 10% 플랫폼 이용수수료를 확인했습니다.</span></label>
-        <div class="submission-email-status" role="status">${state.user?.emailVerified ? '✓ 이메일 인증 완료 · 등록 시 미션 내용을 확인합니다.' : '✉ 등록하려면 이메일 인증이 필요합니다. 아래 버튼을 누르면 안내가 열립니다.'}</div>
+        ${renderEmailStatusCard('등록 신청', true)}
         <button class="btn btn-primary btn-lg btn-block" type="submit">미션 등록하기</button>
       </form>
       <aside class="preview-card"><span class="eyebrow">LIVE PREVIEW</span><h3 id="preview-title">새 미션</h3><div class="preview-list"><div class="preview-row"><span>카테고리</span><strong id="preview-category">연결</strong></div><div class="preview-row"><span>표시 보상금</span><strong id="preview-reward">100,000원</strong></div><div class="preview-row"><span>성공자 예상 지급</span><strong id="preview-payout">90,000원</strong></div><div class="preview-row"><span>현재 상태</span><strong>POSTED · 미확보</strong></div></div></aside>
@@ -1240,11 +1243,11 @@ async function openVerificationManager({ remember = true } = {}) {
     const panels = types.map((subjectType) => `<section class="dashboard-card"><div class="dashboard-card-head"><h3>${accountTypeLabel(subjectType)} 활동</h3><strong>의뢰·수행 공통</strong></div><div class="preview-list">${(data.requirementsBySubjectType?.[subjectType] || []).map((type) => {
       const item = statusByKey.get(`${subjectType}:${type}`) || [...statusByKey.values()].find((value) => type === 'IDENTITY' && value.type === 'IDENTITY');
       const status = type === 'IDENTITY' && !data.identityAvailable ? 'PROVIDER_REQUIRED' : item?.status || 'UNVERIFIED';
-      return `<div class="preview-row"><span>${VERIFICATION_LABELS[type] || type}</span><strong>${({ VERIFIED:'인증 완료·재사용 가능', PROVIDER_REQUIRED:'기관 연결 대기', UNVERIFIED:'미인증', PENDING:'확인 대기', EXPIRED:'인증 만료', REJECTED:'인증 거절', REVOKED:'인증 철회', RECONFIRM_REQUIRED:'재확인 필요' })[status] || '확인 필요'}</strong>${status !== 'VERIFIED' && type !== 'IDENTITY' ? `<button class="btn btn-outline btn-small" type="button" data-action="request-verification" data-verification-type="${type}" data-subject-type="${subjectType}">인증 안내</button>` : ''}</div>`;
+      return `<div class="preview-row"><span>${VERIFICATION_LABELS[type] || type}</span><strong>${({ VERIFIED:'인증 완료·재사용 가능', PROVIDER_REQUIRED:'기관 연결 대기', UNVERIFIED:'미인증', PENDING:'확인 대기', EXPIRED:'인증 만료', REJECTED:'인증 거절', REVOKED:'인증 철회', RECONFIRM_REQUIRED:'재확인 필요' })[status] || '확인 필요'}</strong>${status !== 'VERIFIED' && type !== 'IDENTITY' ? `<button class="btn btn-outline btn-small" type="button" data-action="entity-cases">자격 확인 안내</button>` : ''}</div>`;
     }).join('')}</div></section>`).join('');
-    openModal(`<div class="verification-manager">${renderEmailSummary()}<div class="notice-box ${data.providerConnectionRequired ? 'warning' : ''}"><span>i</span><div><strong>회원 기준으로 인증을 한 번만 관리합니다</strong><p>의뢰자용·수행자용 인증을 중복 생성하지 않습니다. 외부 인증기관 계약·API가 연결되지 않은 인증은 완료로 표시하지 않습니다.</p></div></div>${data.identityAvailable ? `<form id="identity-start-form" class="auth-form"><p>본인확인 결과의 이름·휴대전화·성인 여부를 대조하고 중복확인 식별값을 해시로 처리합니다. 인증 유효기간은 1년입니다.</p><label><input type="checkbox" name="consent" required> 본인확인 결과 조회·처리에 동의합니다.</label><button class="btn btn-primary" type="submit">본인확인 시작</button></form>` : ''}<div class="verification-grid">${panels}</div><button class="btn btn-outline" data-action="entity-cases">사업자·법인·단체 자격 신청</button><p class="privacy-note">원본 신분증·주민등록번호·통장 사본을 이 화면이나 미션에 올리지 마세요. 이메일 인증으로 등록·신청할 수 있으며, 거래 확정·결제·지급 전에는 양측 본인확인이 필요합니다.</p></div>`, { title: '인증·공개정보 관리', wide: true });
+    openModal(`<div class="verification-manager">${renderEmailSummary()}<div class="notice-box ${data.providerConnectionRequired ? 'warning' : ''}"><span>i</span><div><strong>회원 기준으로 인증을 한 번만 관리합니다</strong><p>의뢰자용·수행자용 인증을 중복 생성하지 않습니다. 이메일 인증과 본인·사업자 확인은 별개이며, 의뢰와 수행 활동에 같은 인증 정보를 사용합니다.</p></div></div>${data.identityAvailable ? `<form id="identity-start-form" class="auth-form"><p>본인확인 결과의 이름·휴대전화·성인 여부를 대조하고 중복확인 식별값을 해시로 처리합니다. 인증 유효기간은 1년입니다.</p><label><input type="checkbox" name="consent" required> 본인확인 결과 조회·처리에 동의합니다.</label><button class="btn btn-primary" type="submit">본인확인 시작</button></form>` : ''}<div class="verification-grid">${panels}</div><button class="btn btn-outline" data-action="entity-cases">사업자·법인·단체 자격 확인 안내</button><p class="privacy-note">원본 신분증·주민등록번호·통장 사본을 이 화면이나 미션에 올리지 마세요. 이메일 인증으로 등록·신청할 수 있으며, 거래 확정·결제·지급 전에는 양측 본인확인이 필요합니다.</p></div>`, { title: '인증·공개정보 관리', wide: true });
     const manager = modalRoot.querySelector('.verification-manager');
-    if (!data.identityAvailable) manager?.insertAdjacentHTML('afterbegin', '<div class="notice-box warning"><span>!</span><div><strong>휴대전화 본인확인 서비스 연결 대기</strong><p>운영팀의 인증기관 계약·연동 설정이 필요합니다. 현재는 회원이 인증을 시도해도 완료할 수 없습니다. 이메일 인증을 완료하면 미션 등록·수행 신청이 가능합니다. 실제 거래에는 추가 본인확인이 필요합니다.</p></div></div>');
+    if (!data.identityAvailable) manager?.insertAdjacentHTML('afterbegin', '<div class="notice-box warning"><span>!</span><div><strong>휴대전화 본인확인 · 현재 이용 불가</strong><p>현재 휴대전화 본인확인을 이용할 수 없습니다. 이메일 인증 후 미션 등록·티저 제출·후보 선택은 가능합니다. 최종 거래 확정은 본인확인 서비스가 제공된 후 진행할 수 있습니다.</p></div></div>');
     const pending = identityReturnContext();
     if (pending?.attempt) manager?.insertAdjacentHTML('afterbegin', '<div class="notice-box"><span>i</span><div><strong>인증 결과 확인 대기</strong><p>인증창을 완료했다면 결과를 다시 확인하세요. 기관 결과 확인 전에는 인증 완료로 처리하지 않습니다.</p><button type="button" class="btn btn-outline" data-action="identity-recheck">인증 결과 다시 확인</button></div></div>');
     if (pending) manager?.insertAdjacentHTML('beforeend', '<button type="button" class="btn btn-primary btn-block" data-action="identity-return">이전 작성 화면으로 돌아가기</button>');
@@ -1551,7 +1554,7 @@ function renderLiveActions(challenge, context) {
     if (!challenge.moderationPending && ['OPEN', 'REVIEW', 'SHORTLISTED'].includes(challenge.status)) buttons.push(`<button class="btn btn-primary btn-block" data-action="review-candidates" data-challenge-id="${challenge.id}">TEASER 후보 심사</button>`);
     if (challenge.status === 'FUNDING_REQUIRED') buttons.push(isMoneyFlowAvailable()
       ? `<button class="btn btn-primary btn-block" data-action="fund-challenge" data-challenge-id="${challenge.id}">보상금 Funding 진행</button>`
-      : '<button class="btn btn-primary btn-block" disabled title="PG·지급대행 연결 후 활성화됩니다">보상금 Funding 준비중</button>');
+      : '<button class="btn btn-primary btn-block" disabled title="현재 최종 거래 확정을 이용할 수 없습니다">보상금 Funding 준비중</button>');
     if (challenge.status === 'PROOF_SUBMITTED') buttons.push(`<button class="btn btn-success btn-block" data-action="confirm-success" data-challenge-id="${challenge.id}" ${isMoneyFlowAvailable() ? '' : 'disabled'}>결과 검수·완료 확정</button>`);
     if (challenge.status === 'SUCCESS') buttons.push(`<button class="btn btn-soft btn-block" data-action="view-settlement" data-challenge-id="${challenge.id}">정산내역 보기</button><button class="btn btn-outline btn-block" data-action="write-review" data-challenge-id="${challenge.id}">도전자 평가하기</button>`);
     if (!['SUCCESS', 'CANCELLED', 'DISPUTED'].includes(challenge.status) && !['FUNDED', 'PAID'].includes(challenge.fundingStatus)) buttons.push(`<button class="btn btn-ghost btn-block" data-action="cancel-challenge" data-challenge-id="${challenge.id}">미션 취소</button>`);
@@ -2001,7 +2004,7 @@ function renderModerationFeedback(challenge, { admin = false } = {}) {
   if (!['CHANGES_REQUIRED', 'AUTO_REJECTED'].includes(challenge.moderationAction)) return '';
   const rejected = challenge.moderationAction === 'AUTO_REJECTED';
   const reasons = challenge.moderationReasons || [];
-  return `<section class="submission-feedback" aria-label="미션 검수 사유"><h3>${rejected ? '게시가 제한되어 비공개로 보관했습니다' : '내용 수정이 필요해 비공개로 보관했습니다'}</h3><p>이메일 인증과는 별도의 내용 검수 결과입니다. 작성 내용은 삭제되지 않았습니다.</p>${reasons.length ? `<ul>${reasons.map(reason => `<li><strong>${escapeHTML(reason.label)}</strong><p>${escapeHTML(moderationReasonHelp(reason))}</p></li>`).join('')}</ul>` : '<p>자세한 검수 사유는 미션 상세에서 확인해주세요.</p>'}<p>기존 미션을 수정·저장하면 다시 검수합니다. 새 미션을 반복 등록할 필요가 없습니다.</p>${admin ? `<details><summary>관리자 검수 정보</summary><p>위험도 ${Number(challenge.moderationRiskScore || 0)}/100 · 정책 ${escapeHTML(challenge.moderationPolicyVersion || '-')}</p></details>` : ''}</section>`;
+  return `<section class="submission-feedback" aria-label="미션 검수 사유"><h3>${rejected ? '게시가 제한되어 비공개로 보관했습니다' : '내용 수정이 필요해 비공개로 보관했습니다'}</h3><p>이메일 인증과는 별도의 내용 검수 결과입니다. 인증을 다시 받을 필요 없이 아래 내용을 확인해주세요. 작성 내용은 삭제되지 않았습니다.</p>${reasons.length ? `<ul>${reasons.map(reason => `<li><strong>${escapeHTML(reason.label)}</strong><p>${escapeHTML(moderationReasonHelp(reason))}</p></li>`).join('')}</ul>` : '<p>자세한 검수 사유는 미션 상세에서 확인해주세요.</p>'}<p>기존 미션을 수정·저장하면 다시 검수합니다. 새 미션을 반복 등록할 필요가 없습니다.</p>${admin ? `<details><summary>관리자 검수 정보</summary><p>위험도 ${Number(challenge.moderationRiskScore || 0)}/100 · 정책 ${escapeHTML(challenge.moderationPolicyVersion || '-')}</p></details>` : ''}</section>`;
 }
 function showChallengeSubmissionResult(result) {
   const challenge = { ...result.challenge };
@@ -2011,7 +2014,7 @@ function showChallengeSubmissionResult(result) {
   const visibility = challenge.publicationVisibility || challenge.visibility;
   const message = blocked ? '비공개 저장 · 사유를 확인해주세요' : visibility === 'private' ? '비공개로 등록했습니다' : visibility === 'unlisted' ? '링크 공개로 등록했습니다' : '미션이 공개되었습니다';
   const id = escapeAttribute(challenge.id);
-  openModal(`<section class="submission-result"><p class="submission-result-title">${escapeHTML(challenge.title)}</p>${blocked ? renderModerationFeedback(challenge) : `<p>내용 검수를 통과했습니다. ${visibility === 'private' ? '선택한 비공개 설정이 유지됩니다.' : visibility === 'unlisted' ? '링크를 아는 사람에게 공개됩니다.' : '미션 목록에서 확인할 수 있습니다.'}</p>`}${blocked ? `<button class="btn btn-primary btn-lg btn-block" type="button" data-action="edit-saved-challenge" data-challenge-id="${id}">이 미션 수정하기</button>` : ''}<button class="btn btn-outline btn-block" type="button" data-challenge-id="${id}">저장한 미션 상세 보기</button><button class="btn btn-outline btn-block" type="button" data-route="dashboard">내 클리어에서 기존 미션 확인</button><p class="form-hint">실제 결제·지급은 아직 제공하지 않습니다.</p></section>`, { title: message });
+  openModal(`<section class="submission-result">${renderEmailStatusCard('등록 신청', true)}<p class="submission-result-title">${escapeHTML(challenge.title)}</p>${blocked ? renderModerationFeedback(challenge) : `<p>내용 검수를 통과했습니다. ${visibility === 'private' ? '선택한 비공개 설정이 유지됩니다.' : visibility === 'unlisted' ? '링크를 아는 사람에게 공개됩니다.' : '미션 목록에서 확인할 수 있습니다.'}</p>`}${blocked ? `<button class="btn btn-primary btn-lg btn-block" type="button" data-action="edit-saved-challenge" data-challenge-id="${id}">이 미션 수정하기</button>` : ''}<button class="btn btn-outline btn-block" type="button" data-challenge-id="${id}">저장한 미션 상세 보기</button><button class="btn btn-outline btn-block" type="button" data-route="dashboard">내 클리어에서 기존 미션 확인</button><p class="form-hint">실제 결제·지급은 아직 제공하지 않습니다.</p></section>`, { title: message });
 }
 
 async function submitChallenge(form) {
@@ -2080,6 +2083,7 @@ async function openTeaserEditForm(challengeId) {
   const teaser = state.selectedChallenge?.context?.viewerTeaser;
   if (!teaser?.canEdit) return toast('현재 수정할 수 없습니다', '후보 선정 전 TEASER만 수정할 수 있습니다.', 'warning');
   openModal(`<form id="teaser-edit-form" data-challenge-id="${challengeId}" data-teaser-id="${teaser.id}"><div class="notice-box"><span>✎</span><div><strong>제출한 TEASER 수정</strong><p>후보 선정이 시작되기 전까지만 수정할 수 있습니다.</p></div></div><div class="form-grid" style="margin-top:18px"><div class="field full"><label>한 줄 제안 <small>5~100자</small></label><input name="headline" required minlength="5" maxlength="100" value="${escapeAttribute(teaser.headline || '')}" /></div><div class="field full"><label>해결능력·경험 <small>20자 이상</small></label><textarea name="capability" required minlength="20" maxlength="1200" rows="4">${escapeHTML(teaser.capability || '')}</textarea></div><div class="field full"><label>접근방법 <small>20자 이상</small></label><textarea name="approach" required minlength="20" maxlength="1600" rows="4">${escapeHTML(teaser.approach || '')}</textarea></div><div class="field"><label>예상기간(일)</label><input name="expectedDays" type="number" min="1" max="365" required value="${Number(teaser.expectedDays || 7)}" /></div><div class="field"><label>자격 유형</label><input name="qualificationType" maxlength="80" value="${escapeAttribute(teaser.qualificationType || '')}" /></div><div class="field full"><label>마스킹 증빙</label><textarea name="maskedEvidence" maxlength="1000" rows="3">${escapeHTML(teaser.maskedEvidence || '')}</textarea></div><div class="field full"><label>자격 참조정보</label><input name="qualificationRef" maxlength="160" value="${escapeAttribute(teaser.qualificationRef || '')}" /></div></div><button class="btn btn-primary btn-lg btn-block" type="submit">수정 내용 저장</button></form>`, { title: 'TEASER 수정', wide: true });
+  document.querySelector('#teaser-edit-form')?.insertAdjacentHTML('afterbegin', renderEmailStatusCard('티저 수정'));
   restoreTransientModalDraft(document.querySelector('#teaser-edit-form'));
 }
 
@@ -2110,7 +2114,7 @@ async function openCandidateReview(challengeId) {
   try {
     const result = await apiClient.listTeasers(challengeId);
     const teasers = result.teasers || [];
-    openModal(`<div class="candidate-review"><div class="notice-box"><span>✓</span><div><strong>수행자 후보는 한 번에 1명만 선택됩니다</strong><p>다른 제안을 후보로 선택하면 이전 후보는 자동 해제됩니다. 실제 수행 확정과 보상금 확보는 별도 단계입니다.</p>${!isMoneyFlowAvailable() ? '<p class="workflow-blocked">현재 결제·지급 연동 준비 중으로 최종 수행자 확정 이후 단계는 아직 이용할 수 없습니다. 후보선정과 제출 내용 확인은 가능합니다.</p>' : ''}</div></div><div class="candidate-grid">${teasers.length ? teasers.map((teaser) => renderCandidateCard(challengeId, teaser)).join('') : renderEmpty('제출된 TEASER가 없습니다', '참가자가 제출하면 이곳에서 비교할 수 있습니다.')}</div><button type="button" class="btn btn-outline btn-block" data-challenge-id="${escapeAttribute(challengeId)}">미션 진행상황으로 돌아가기</button></div>`, { title: `제안 ${teasers.length}명`, wide: true });
+    openModal(`<div class="candidate-review"><div class="notice-box"><span>✓</span><div><strong>수행자 후보는 한 번에 1명만 선택됩니다</strong><p>다른 제안을 후보로 선택하면 이전 후보는 자동 해제됩니다. 실제 수행 확정과 보상금 확보는 별도 단계입니다.</p>${!isMoneyFlowAvailable() ? '<p class="workflow-blocked">후보 선택은 가능합니다. 현재 최종 거래 확정·결제·지급은 이용할 수 없으며, 후보 선택만으로 계약이나 지급이 확정되지 않습니다.</p>' : ''}</div></div><div class="candidate-grid">${teasers.length ? teasers.map((teaser) => renderCandidateCard(challengeId, teaser)).join('') : renderEmpty('제출된 TEASER가 없습니다', '참가자가 제출하면 이곳에서 비교할 수 있습니다.')}</div><button type="button" class="btn btn-outline btn-block" data-challenge-id="${escapeAttribute(challengeId)}">미션 진행상황으로 돌아가기</button></div>`, { title: `제안 ${teasers.length}명`, wide: true });
   } catch (error) {
     renderModalRequestError('TEASER 후보 심사', error, 'retry-candidate-review', { challengeId });
     showError(error);
@@ -2121,7 +2125,7 @@ function renderCandidateCard(challengeId, teaser) {
   const finalistAvailable = isMoneyFlowAvailable();
   const finalistDisabled = ['SELECTED', 'WITHDRAWN', 'REJECTED'].includes(teaser.status) || !finalistAvailable;
   const finalistLabel = teaser.status === 'SELECTED' ? '최종 수행자 확정 완료' : finalistAvailable ? '최종 수행자 확정' : '최종 확정 · 준비 중';
-  return `<article class="candidate-card ${teaser.status === 'SELECTED' ? 'selected' : ''}"><div class="candidate-head"><button class="profile-trigger" type="button" data-action="view-public-profile" data-user-id="${escapeAttribute(teaser.solverId || '')}"><span class="avatar">${initial(teaser.solver?.displayName)}</span><span><strong>${escapeHTML(teaser.solver?.displayName || '도전자')}</strong><small>도전자 · Strike ${teaser.solver?.strikes ?? 0}/3</small></span></button>${teaserStatusBadge(teaser.status)}</div>${renderTrustGauge(teaser.solver?.trustScore, { detailed: true, userId: teaser.solverId })}<h3>${escapeHTML(teaser.headline)}</h3><div class="candidate-detail"><strong>해결능력</strong><p>${nl2br(teaser.capability)}</p><strong>접근방법</strong><p>${nl2br(teaser.approach)}</p><strong>예상기간</strong><p>${teaser.expectedDays}일</p>${teaser.maskedEvidence ? `<strong>마스킹 증빙</strong><p>${nl2br(teaser.maskedEvidence)}</p>` : ''}</div><div class="verify-row">${verifyBadge('본인', teaser.solver?.identityVerified)}${verifyBadge('사업자', teaser.solver?.businessVerified)}${verifyBadge('전문자격', teaser.solver?.professionalVerified)}</div><div class="candidate-actions"><button class="btn btn-outline" data-action="shortlist" data-challenge-id="${challengeId}" data-teaser-id="${teaser.id}" ${['SHORTLISTED','SELECTED','WITHDRAWN','REJECTED'].includes(teaser.status) ? 'disabled' : ''}>${['SHORTLISTED','SELECTED'].includes(teaser.status) ? '✓ 현재 수행자 후보' : '수행자 후보로 선택'}</button><button class="btn btn-primary" data-action="select-finalist" data-challenge-id="${challengeId}" data-teaser-id="${teaser.id}" ${finalistDisabled ? 'disabled' : ''} title="${finalistAvailable ? '' : 'PG·지급대행 연결 후 활성화됩니다'}">${finalistLabel}</button></div></article>`;
+  return `<article class="candidate-card ${teaser.status === 'SELECTED' ? 'selected' : ''}"><div class="candidate-head"><button class="profile-trigger" type="button" data-action="view-public-profile" data-user-id="${escapeAttribute(teaser.solverId || '')}"><span class="avatar">${initial(teaser.solver?.displayName)}</span><span><strong>${escapeHTML(teaser.solver?.displayName || '도전자')}</strong><small>도전자 · Strike ${teaser.solver?.strikes ?? 0}/3</small></span></button>${teaserStatusBadge(teaser.status)}</div>${renderTrustGauge(teaser.solver?.trustScore, { detailed: true, userId: teaser.solverId })}<h3>${escapeHTML(teaser.headline)}</h3><div class="candidate-detail"><strong>해결능력</strong><p>${nl2br(teaser.capability)}</p><strong>접근방법</strong><p>${nl2br(teaser.approach)}</p><strong>예상기간</strong><p>${teaser.expectedDays}일</p>${teaser.maskedEvidence ? `<strong>마스킹 증빙</strong><p>${nl2br(teaser.maskedEvidence)}</p>` : ''}</div><div class="verify-row">${verifyBadge('본인', teaser.solver?.identityVerified)}${verifyBadge('사업자', teaser.solver?.businessVerified)}${verifyBadge('전문자격', teaser.solver?.professionalVerified)}</div><div class="candidate-actions"><button class="btn btn-outline" data-action="shortlist" data-challenge-id="${challengeId}" data-teaser-id="${teaser.id}" ${['SHORTLISTED','SELECTED','WITHDRAWN','REJECTED'].includes(teaser.status) ? 'disabled' : ''}>${['SHORTLISTED','SELECTED'].includes(teaser.status) ? '✓ 현재 수행자 후보' : '수행자 후보로 선택'}</button><button class="btn btn-primary" data-action="select-finalist" data-challenge-id="${challengeId}" data-teaser-id="${teaser.id}" ${finalistDisabled ? 'disabled' : ''} title="${finalistAvailable ? '' : '현재 최종 거래 확정을 이용할 수 없습니다'}">${finalistLabel}</button></div></article>`;
 }
 
 async function shortlistCandidate(challengeId, teaserId, mode) {
@@ -2465,9 +2469,9 @@ function requireLogin(callback) { if (!state.user) return openAuthModal('login')
 
 async function withBusy(button, callback) {
   if (button?.disabled) return;
-  if (button) { button.disabled = true; button.dataset.originalText = button.textContent; button.textContent = '처리 중…'; }
+  if (button) { button.disabled = true; button.setAttribute('aria-busy','true'); button.dataset.originalText = button.textContent; button.textContent = '처리 중…'; }
   try { return await callback(); }
-  finally { if (button?.isConnected) { button.disabled = false; button.textContent = button.dataset.originalText || '확인'; } }
+  finally { if (button?.isConnected) { button.disabled = false; button.removeAttribute('aria-busy'); button.textContent = button.dataset.originalText || '확인'; } }
 }
 
 function showError(error) {
@@ -2765,13 +2769,43 @@ function rememberIdentityReturn() {
     challengeId: teaser?.dataset.challengeId || (!create&&!edit?previous?.challengeId:null) || null,
   });
 }
-function renderIdentityNotice() {
-  if (state.user?.emailVerified) return '<p class="form-hint">이메일 인증 완료 · 등록·신청 가능. 거래 확정·결제·지급 전에는 양측 본인확인이 필요합니다.</p>';
-  return `<div class="notice-box warning"><span>✉</span><div><strong>제출 전에 이메일 인증이 필요합니다</strong><p>인증 후 작성한 내용으로 돌아와 제출할 수 있습니다. 이메일 인증은 실명 본인확인과 별개입니다.</p><button class="btn btn-outline btn-small" type="button" data-action="email-verification">이메일 인증하기</button></div></div>`;
+function renderEmailStatusCard(activity = '등록·티저 제출', compact = false) {
+  const verified = Boolean(state.user?.emailVerified);
+  return `<section class="email-status-card ${verified ? 'is-verified' : 'needs-verification'} ${compact ? 'is-compact submission-email-status' : ''}" data-email-status-slot data-activity="${escapeAttribute(activity)}" data-compact="${compact}" role="status" aria-live="polite"><span class="email-status-icon" aria-hidden="true">${verified ? '✓' : '✉'}</span><div><strong>${verified ? '이메일 인증 완료' : '이메일 인증이 필요합니다'}</strong><p>${verified ? `${escapeHTML(activity)} 가능` : '인증번호를 받아 이메일 인증을 완료해주세요.'}</p><small>${verified ? '미션 내용은 별도 검수하며 본인·사업자 확인과 구분됩니다.' : '작성한 내용은 유지됩니다. 인증 후 돌아와 제출하세요.'}</small></div>${verified ? '<span class="email-status-done">인증 완료</span>' : '<button class="btn btn-primary" type="button" data-action="email-verification">이메일 인증하기 →</button>'}</section>`;
 }
+function renderIdentityNotice() { return renderEmailStatusCard('등록·티저 제출'); }
+function syncEmailStatusUi() {
+  document.querySelectorAll('[data-email-status-slot]').forEach(slot => {
+    slot.outerHTML = renderEmailStatusCard(slot.dataset.activity, slot.dataset.compact === 'true');
+  });
+  let banner = document.querySelector('#member-email-status');
+  if (!banner) {
+    banner = document.createElement('div'); banner.id='member-email-status'; banner.className='container member-email-status';
+    main.before(banner);
+  }
+  banner.hidden = !state.user || state.authLoading;
+  banner.innerHTML = state.user && !state.authLoading ? renderEmailStatusCard('미션 등록·티저 제출·후보 선택') : '';
+}
+let emailStatusRefresh = null;
+function refreshEmailStatus() {
+  if (state.loading || !state.user || emailStatusRefresh) return emailStatusRefresh;
+  const id=state.user.id;
+  emailStatusRefresh=apiClient.emailVerification().then(data=>{
+    if(state.user?.id!==id)return;
+    state.user.emailVerified=data.verified; state.user.email=data.email;
+    syncEmailStatusUi();
+    if(emailVerificationFlow?.userId===id && emailVerificationFlow.purpose==='verify_email') {
+      Object.assign(emailVerificationFlow,{verified:data.verified,email:data.email,available:data.available,challenge:data.challenge});
+      if(modalRoot.querySelector('.email-otp-panel') && data.verified)renderEmailCodePanel('이메일 인증이 완료되었습니다.');
+    }
+  }).catch(()=>undefined).finally(()=>{emailStatusRefresh=null});
+  return emailStatusRefresh;
+}
+
 async function returnFromIdentity() {
   const pending = identityReturnContext();
   closeModal({ preserveHistory: true });
+  syncEmailStatusUi();
   if (!pending) return;
   const hash = /^#\/(home|explore|create|dashboard|profile)(?:\?|$)/.test(pending.hash) ? pending.hash : '#/dashboard';
   if (pending.createDraft) { state.createDraft = pending.createDraft; state.createMode = pending.createMode || 'easy'; }
@@ -2790,15 +2824,20 @@ async function returnFromIdentity() {
 let emailVerificationFlow = null;
 let emailCountdownTimer;
 function renderEmailSummary() {
-  return `<section class="dashboard-card email-verification-summary"><h3>이메일·본인확인</h3><p>이메일: <strong>${state.user?.emailVerified ? '인증 완료' : '미인증'}</strong><br>본인확인: <strong>${state.user?.verification?.identity ? '완료' : '미확인'}</strong></p><p class="form-hint">등록·신청은 이메일 인증 후 가능합니다. 실제 거래는 양측 본인확인이 필요하며 사업자 확인은 별도입니다.</p><button class="btn btn-outline" type="button" data-action="email-verification">이메일 인증·변경</button> <button class="btn btn-outline" type="button" data-action="manage-verifications">본인·사업자 확인</button></section>`;
+  return `<section class="dashboard-card email-verification-summary"><h3>이메일·본인확인</h3><p>이메일: <strong>${state.user?.emailVerified ? '인증 완료' : '미인증'}</strong><br>본인확인: <strong>${state.user?.verification?.identity ? '완료' : '미확인'}</strong></p><p class="form-hint">등록·신청은 이메일 인증 후 가능합니다. 실제 거래는 양측 본인확인이 필요하며 사업자 확인은 별도입니다.</p>${state.user?.emailVerified ? '<span class="email-status-done">✓ 이메일 인증 완료</span><button class="btn btn-outline" type="button" data-action="email-change">이메일 변경</button>' : '<button class="btn btn-primary" type="button" data-action="email-verification">이메일 인증하기</button>'} <button class="btn btn-outline" type="button" data-action="manage-verifications">본인·사업자 확인</button></section>`;
 }
 async function openEmailVerification({change=false}={}) {
   if(!state.user)return openAuthModal('login');
   if(!modalRoot.querySelector('.email-otp-panel, .submission-email-prompt'))rememberIdentityReturn();
   const memberId=state.user.id;
-  const data=await apiClient.emailVerification();
-  if(state.user?.id!==memberId)return;
+  openModal('<div class="email-status-loading" role="status"><span class="loading-spinner" aria-hidden="true"></span><strong>이메일 인증 상태 확인 중…</strong><p>잠시만 기다려주세요. 다시 누르지 않아도 됩니다.</p></div>', {title:'이메일 인증'});
+  const loadingPanel=modalRoot.querySelector('.email-status-loading');
+  let data;
+  try { data=await apiClient.emailVerification(); }
+  catch(error) { if(loadingPanel?.isConnected)openModal('<p>인증 상태를 불러오지 못했습니다. 작성 내용은 보관되어 있습니다.</p><button class="btn btn-primary" data-action="email-verification">다시 확인</button><button class="btn btn-outline" data-action="identity-return">작성 화면으로 돌아가기</button>',{title:'이메일 인증'}); throw error; }
+  if(state.user?.id!==memberId || !loadingPanel?.isConnected)return;
   state.user.emailVerified=data.verified;
+  syncEmailStatusUi();
   if(!emailVerificationFlow || emailVerificationFlow.userId!==state.user.id || change || emailVerificationFlow.email!==data.email) {
     emailVerificationFlow={...data,userId:state.user.id,purpose:change?'change_authorize':'verify_email',challenge:change?null:data.challenge,proof:null};
   } else Object.assign(emailVerificationFlow,{available:data.available,verified:data.verified});
@@ -2809,13 +2848,13 @@ function renderEmailCodePanel(message='') {
   if(!flow || flow.userId!==state.user?.id)return;
   const changing=flow.purpose!=='verify_email',challenge=flow.challenge;
   const verified=flow.verified&&!changing;
-  openModal(`<section class="email-otp-panel"><p class="email-otp-address">현재 이메일: <strong>${escapeHTML(flow.email)}</strong></p><p>이메일 인증은 메일함 이용 확인입니다. 실명·나이·동일인 확인은 별도입니다.</p>${message?`<p role="status" class="form-feedback">${escapeHTML(message)}</p>`:''}${!flow.available?'<div class="notice-box warning"><span>!</span><p>이메일 발송 설정을 준비하고 있습니다. 아직 인증번호가 발송되지 않았습니다. 운영팀에 문의해주세요.</p></div>':verified?'<p role="status">이메일 인증 완료 · 미션 등록·수행 신청 가능</p>':`<p>${flow.purpose==='change_authorize'?'1단계: 기존 이메일로 인증번호를 보내 변경 권한을 확인합니다.':flow.purpose==='change_email'?'2단계: 새 이메일을 인증하면 주소가 변경됩니다. 다른 기기는 로그아웃됩니다.':'인증번호 받기를 누른 뒤 이메일에 도착한 6자리 번호를 입력해주세요.'}</p><form id="email-code-send-form" class="auth-form">${flow.purpose==='change_email'?`<label>새 이메일<input name="email" type="email" autocomplete="email" maxlength="254" required value="${escapeAttribute(challenge?.email||'')}" /></label>`:''}<button class="btn btn-primary btn-block" type="submit" data-email-resend>${challenge?'인증번호 다시 받기':'인증번호 받기'}</button></form>${challenge?`<p class="email-otp-address">발송 요청 수락: ${escapeHTML(challenge.email)}<br><small>메일 도착까지 잠시 걸릴 수 있습니다. 스팸함도 확인해주세요.</small></p><form id="email-code-confirm-form" class="auth-form"><label>6자리 인증번호<input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required aria-describedby="email-code-expiry" /></label><p id="email-code-expiry" class="form-hint"></p><button class="btn btn-primary btn-block" type="submit">${flow.purpose==='change_email'?'새 이메일 인증·변경 완료':'인증번호 확인'}</button></form>`:''}`}${!changing?'<button class="btn btn-outline btn-block" type="button" data-action="email-change">이메일 주소 변경</button>':''}<button class="btn btn-outline btn-block" type="button" data-action="identity-return">이전 작성 화면으로 돌아가기</button></section>`,{title:changing?'이메일 주소 변경':'이메일 인증'});
+  openModal(`<section class="email-otp-panel"><p class="email-otp-address">현재 이메일: <strong>${escapeHTML(flow.email)}</strong></p><p>이메일 인증은 메일함 이용 확인입니다. 실명·나이·동일인 확인은 별도입니다.</p>${message?`<p role="status" class="form-feedback">${escapeHTML(message)}</p>`:''}${!flow.available&&!verified?'<div class="notice-box warning"><span>!</span><p>이메일 발송 설정을 준비하고 있습니다. 아직 인증번호가 발송되지 않았습니다. 운영팀에 문의해주세요.</p></div>':verified?renderEmailStatusCard('미션 등록·티저 제출'):`<p>${flow.purpose==='change_authorize'?'1단계: 기존 이메일로 인증번호를 보내 변경 권한을 확인합니다.':flow.purpose==='change_email'?'2단계: 새 이메일을 인증하면 주소가 변경됩니다. 다른 기기는 로그아웃됩니다.':'인증번호 받기를 누른 뒤 이메일에 도착한 6자리 번호를 입력해주세요.'}</p><form id="email-code-send-form" class="auth-form">${flow.purpose==='change_email'?`<label>새 이메일<input name="email" type="email" autocomplete="email" maxlength="254" required value="${escapeAttribute(challenge?.email||'')}" /></label>`:''}<button class="btn btn-primary btn-block" type="submit" data-email-resend>${challenge?'인증번호 다시 받기':'인증번호 받기'}</button></form>${challenge?`<p class="email-otp-address">발송 요청 수락: ${escapeHTML(challenge.email)}<br><small>메일 도착까지 잠시 걸릴 수 있습니다. 스팸함도 확인해주세요.</small></p><form id="email-code-confirm-form" class="auth-form"><label>6자리 인증번호<input name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required aria-describedby="email-code-expiry" /></label><p id="email-code-expiry" class="form-hint"></p><button class="btn btn-primary btn-block" type="submit">${flow.purpose==='change_email'?'새 이메일 인증·변경 완료':'인증번호 확인'}</button></form>`:''}`}${!changing?'<button class="btn btn-outline btn-block" type="button" data-action="email-change">이메일 주소 변경</button>':''}<button class="btn btn-outline btn-block" type="button" data-action="identity-return">이전 작성 화면으로 돌아가기</button></section>`,{title:changing?'이메일 주소 변경':'이메일 인증'});
   clearInterval(emailCountdownTimer);
   const tick=()=>{
     const panel=modalRoot.querySelector('.email-otp-panel');if(!panel){clearInterval(emailCountdownTimer);return;}
     const left=Math.max(0,Math.ceil(((challenge?.resendAt||flow.retryAt||0)-Date.now())/1000));
     const button=panel.querySelector('[data-email-resend]');
-    if(button&&button.textContent!=='처리 중…'){button.disabled=left>0;button.textContent=left?`${left}초 후 다시 받기`:challenge?'인증번호 다시 받기':'인증번호 받기';}
+    if(button&&button.getAttribute('aria-busy')!=='true'){button.disabled=left>0;button.textContent=left?`${Math.floor(left/60)}분 ${String(left%60).padStart(2,'0')}초 후 다시 받기`:challenge?'인증번호 다시 받기':'인증번호 받기';}
     const expiry=panel.querySelector('#email-code-expiry');
     if(expiry){const remaining=Math.max(0,Math.ceil((challenge.expiresAt-Date.now())/1000));expiry.textContent=remaining?`남은 시간 ${Math.floor(remaining/60)}분 ${remaining%60}초 · 오입력 최대 5회`:'인증번호가 만료되었습니다. 새 번호를 요청해주세요.';}
   };tick();emailCountdownTimer=setInterval(tick,1000);
@@ -2826,11 +2865,11 @@ async function sendEmailCode(form) {
   try {
     const result=await apiClient.sendEmailCode(payload);
     if(state.user?.id!==flow.userId)return;
-    if(result.verified){flow.verified=true;state.user=await loadCurrentUser();}
+    if(result.verified){flow.verified=true;state.user.emailVerified=true;syncEmailStatusUi();}
     if(result.challenge)flow.challenge=result.challenge;
     flow.retryAt=0;renderEmailCodePanel(result.sent?'인증메일 발송 요청이 수락되었습니다. 도착한 번호를 입력해주세요.':'인증 상태를 확인했습니다.');
   } catch(error) {
-    if(['EMAIL_DELIVERY_FAILED','EMAIL_RESEND_WAIT'].includes(error.code)){flow.retryAt=Date.now()+60000;if(error.code==='EMAIL_DELIVERY_FAILED')flow.challenge=null;renderEmailCodePanel(error.message);return;}
+    if(['EMAIL_DELIVERY_FAILED','EMAIL_RESEND_WAIT'].includes(error.code)){flow.retryAt=Date.now()+180000;if(error.code==='EMAIL_DELIVERY_FAILED')flow.challenge=null;renderEmailCodePanel(error.message);return;}
     throw error;
   }
 }
@@ -2840,7 +2879,7 @@ async function confirmEmailCode(form) {
   if(state.user?.id!==flow.userId)return;
   form.reset();
   if(result.reauthenticated){flow.purpose='change_email';flow.proof=result.proof;flow.challenge=null;renderEmailCodePanel('기존 이메일 확인 완료. 새 이메일을 입력해주세요.');return;}
-  state.user=await loadCurrentUser();
+  state.user={...state.user,email:result.email||state.user.email,emailVerified:result.verified===true};
   emailVerificationFlow={userId:state.user.id,email:state.user.email,verified:state.user.emailVerified,available:flow.available,purpose:'verify_email',challenge:null,proof:null};
   renderHeader();renderEmailCodePanel(result.changed?'새 이메일 인증과 주소 변경을 완료했습니다.':'이메일 인증을 완료했습니다. 이전 화면으로 돌아가 내용을 확인하고 제출해주세요.');
 }

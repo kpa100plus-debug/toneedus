@@ -24,7 +24,7 @@ main.innerHTML=renderCreate();`);
 assert.match(win.document.querySelector('#challenge-create-form').textContent,/이메일 인증이 필요합니다/);
 win.document.querySelector('[name=title]').value='인증 중 보존해야 할 미션 제목';
 await run('openVerificationManager()');
-assert.match(win.document.querySelector('.verification-manager').textContent,/회원이 인증을 시도해도 완료할 수 없습니다/);
+assert.match(win.document.querySelector('.verification-manager').textContent,/휴대전화 본인확인 · 현재 이용 불가/);
 assert.equal(win.document.querySelector('#identity-start-form'),null);
 await run('returnFromIdentity()');
 assert.equal(win.document.querySelector('[name=title]').value,'인증 중 보존해야 할 미션 제목');
@@ -99,7 +99,7 @@ assert.ok(win.document.querySelector('#email-code-send-form'));assert.equal(win.
 await run('returnFromIdentity()');assert.equal(win.document.querySelector('[name=title]').value,'이메일 인증 중 보관할 작성 내용');
 pass('email verification opens without sending and restores the mission draft');
 await run('openEmailVerification()');
-run(`apiClient.sendEmailCode=async()=>({sent:true,challenge:{id:'code-1',email:state.user.email,purpose:'verify_email',expiresAt:Date.now()+600000,resendAt:Date.now()+60000}});`);
+run(`apiClient.sendEmailCode=async()=>({sent:true,challenge:{id:'code-1',email:state.user.email,purpose:'verify_email',expiresAt:Date.now()+600000,resendAt:Date.now()+180000}});`);
 await run("sendEmailCode(document.querySelector('#email-code-send-form'))");
 assert.equal(win.document.querySelector('[name=code]').getAttribute('inputmode'),'numeric');
 assert.equal(win.document.querySelector('[name=code]').getAttribute('autocomplete'),'one-time-code');

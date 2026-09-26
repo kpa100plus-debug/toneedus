@@ -2286,10 +2286,14 @@ async function shortlistTeaser(challengeId, request, env) {
 
   if (['WITHDRAWN', 'REJECTED'].includes(teaser.status)) return problem(409, 'TEASER_INACTIVE', '철회되거나 거절된 TEASER는 후보로 선정할 수 없습니다.');
 
-  const partyGate = await verifiedPartiesGate(challenge, teaser, env);
-  if (partyGate) return partyGate;
+  const emailGate = emailActivityGate(owner);
+  if (emailGate) return emailGate;
+  const solver = await env.DB.prepare('SELECT email_verified FROM users WHERE id=?').bind(teaser.solver_id).first();
+  if (!solver?.email_verified) return problem(409, 'CANDIDATE_EMAIL_REQUIRED', '수행자가 이메일 인증을 완료한 후 후보로 선택할 수 있습니다.');
 
   if (mode === 'select') {
+    const partyGate = await verifiedPartiesGate(challenge, teaser, env);
+    if (partyGate) return partyGate;
     const moneyError = moneyFlowGuard(env, 'PG·지급대행 연결 전에는 FINALIST를 확정할 수 없습니다. SHORTLIST까지만 진행해주세요.');
     if (moneyError) return moneyError;
     const paymentDueAt = new Date(Date.now() + 72 * 3600_000).toISOString();

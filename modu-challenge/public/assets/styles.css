@@ -2356,3 +2356,10 @@ body[data-home-theme]:not([data-home-theme="original"]) .page-section.admin-them
 .submission-result .btn, .submission-email-prompt .btn { margin-top: 12px; min-height: 48px; white-space: normal; }
 .submission-result-title { font-weight: 700; line-height: 1.6; overflow-wrap: anywhere; }
 body.modal-open .app-install-banner { display: none !important; }
+
+/* v67: one clearly visible email state shared by desktop and mobile. */
+.member-email-status{padding-top:12px;padding-bottom:0}.member-email-status[hidden]{display:none}
+.email-status-card{display:flex;align-items:center;gap:14px;width:100%;padding:18px 20px;margin:12px 0 20px;border:2px solid #6550dc;border-radius:16px;background:#f2efff;color:#21194c;box-sizing:border-box}
+.email-status-card>div{flex:1;min-width:0}.email-status-card strong{font-size:18px;line-height:1.4}.email-status-card p{margin:5px 0;font-size:15px;font-weight:700;color:inherit}.email-status-card small{display:block;line-height:1.6;color:#524775}
+.email-status-icon{display:grid;place-items:center;flex:0 0 38px;height:38px;border-radius:50%;background:#6550dc;color:#fff;font-size:22px;font-weight:700}.email-status-card .btn{min-height:48px;font-size:16px;white-space:nowrap}.email-status-card.is-verified{border-color:#198269;background:#edf9f3;color:#125b48}.email-status-card.is-verified small{color:#375f53}.is-verified .email-status-icon{background:#198269}.email-status-done{display:inline-block;color:#125b48;background:#d4f0e3;border-radius:20px;padding:8px 12px;font-size:14px;font-weight:700;white-space:nowrap}.email-status-card.is-compact{box-shadow:none;padding:14px 16px}.email-status-loading{text-align:center;padding:28px 16px;display:grid;justify-items:center;gap:14px}.email-status-loading p{margin:0;color:#535c70}
+@media(max-width:640px){.email-status-card{flex-wrap:wrap;padding:15px;gap:10px}.email-status-card strong{font-size:17px}.email-status-card .btn{width:100%;white-space:normal}.email-status-card .email-status-done{margin-left:48px}.member-email-status{padding-top:8px}.email-status-card small{font-size:13px}}

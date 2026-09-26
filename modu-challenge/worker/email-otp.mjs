@@ -1,6 +1,6 @@
 import { sha } from './secure-data.mjs';
 const enc = new TextEncoder();
-const TTL = 600000, COOLDOWN = 60000;
+const TTL = 600000, COOLDOWN = 180000;
 const normalize = value => String(value || '').trim().toLowerCase();
 const validEmail = value => value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const secret = env => String(env.EMAIL_OTP_SECRET || env.BREVO_API_KEY || '');
@@ -47,7 +47,7 @@ export async function emailOtpApi({request,env,user,path,method,body,json,proble
    if(exists)return problem(409,'EMAIL_CHANGE_UNAVAILABLE','이 주소로 변경할 수 없습니다. 다른 이메일을 확인해주세요.');
   }
   const lock=await env.DB.prepare('INSERT INTO email_otp_send_locks (user_id,purpose,sent_at) VALUES (?,?,?) ON CONFLICT(user_id,purpose) DO UPDATE SET sent_at=excluded.sent_at WHERE sent_at<=? RETURNING sent_at').bind(user.id,purpose,now,now-COOLDOWN).all();
-  if(!lock.results.length)return problem(429,'EMAIL_RESEND_WAIT','최근 요청 후 60초가 지나면 다시 보낼 수 있습니다.');
+  if(!lock.results.length)return problem(429,'EMAIL_RESEND_WAIT','최근 요청 후 3분이 지나면 다시 보낼 수 있습니다.');
   const id='eotp_'+crypto.randomUUID(), otp=code();
   const hash=await mac(env,JSON.stringify([id,user.id,email,purpose,session,otp]));
   await env.DB.batch([
@@ -63,7 +63,7 @@ export async function emailOtpApi({request,env,user,path,method,body,json,proble
    delivered=result.ok;
   }catch{}finally{clearTimeout(timer)}
   await env.DB.prepare('UPDATE email_otp_challenges SET status=? WHERE id=? AND status=\'PENDING\'').bind(delivered?'SENT':'FAILED',id).run();
-  if(!delivered)return problem(503,'EMAIL_DELIVERY_FAILED','인증메일을 보내지 못했습니다. 60초 후 다시 시도하거나 운영팀에 문의해주세요.');
+  if(!delivered)return problem(503,'EMAIL_DELIVERY_FAILED','인증메일을 보내지 못했습니다. 3분 후 다시 시도하거나 운영팀에 문의해주세요.');
   await env.DB.prepare('UPDATE users SET email_verification_requested_at=CURRENT_TIMESTAMP WHERE id=?').bind(user.id).run();
   return response({sent:true,challenge:{id,email,purpose,expiresAt:now+TTL,resendAt:now+COOLDOWN}});
  }

@@ -1,6 +1,6 @@
 {
   "name": "modu-challenge",
-  "version": "0.13.9",
+  "version": "0.13.10",
   "private": true,
   "type": "module",
   "description": "모두의클리어 - 범용 성과형 미션 마켓플레이스 WEB 운영형 베타",
@@ -13,7 +13,7 @@
     "demo:build": "node scripts/build-demo-catalog.mjs",
     "demo:seed:remote": "npm run demo:build && wrangler d1 execute DB --remote --file=scripts/demo-catalog.sql",
     "demo:clear:remote": "wrangler d1 execute DB --remote --file=scripts/demo-clear.sql",
-    "test": "node scripts/verify.mjs && node scripts/test-regressions.mjs && node scripts/launch-regressions.mjs && node scripts/adapter-regressions.mjs && node scripts/identity-recovery-regressions.mjs && node scripts/email-otp-regressions.mjs && node scripts/submission-feedback-regressions.mjs",
+    "test": "node scripts/verify.mjs && node scripts/test-regressions.mjs && node scripts/launch-regressions.mjs && node scripts/adapter-regressions.mjs && node scripts/identity-recovery-regressions.mjs && node scripts/email-otp-regressions.mjs && node scripts/submission-feedback-regressions.mjs && node scripts/email-ui-regressions.mjs",
     "test:admin-roles": "node scripts/admin-role-e2e.mjs",
     "test:live:e2e": "node scripts/live-e2e.mjs",
     "test:live:clear": "wrangler d1 execute DB --remote --file=scripts/live-e2e-clear.sql",

@@ -62,10 +62,11 @@ const teaser={headline:'원본 로고 제작 제안',capability:'브랜드 로�
 assert.equal((await req('/api/challenges/'+cid+'/teasers',teaser,c.cookie,connected)).body.error.code,'EMAIL_VERIFICATION_REQUIRED');
 const applied=await req('/api/challenges/'+cid+'/teasers',teaser,b.cookie,connected);assert.equal(applied.status,201,JSON.stringify(applied.body));
 sql.prepare("UPDATE member_verifications SET expires_at='2000-01-01T00:00:00Z' WHERE user_id=?").run(b.body.user.id);
-assert.equal((await req('/api/challenges/'+cid+'/shortlist',{teaserId:applied.body.teaser.id},a.cookie,connected)).body.error.code,'VERIFICATION_REQUIRED');
+assert.equal((await req('/api/challenges/'+cid+'/shortlist',{teaserId:applied.body.teaser.id,mode:'select'},a.cookie,connected)).body.error.code,'VERIFICATION_REQUIRED');
 assert.equal((await req('/api/challenges/'+cid+'/teasers/'+applied.body.teaser.id,teaser,b.cookie,connected,'PUT')).status,200);
 assert.equal((await req('/api/challenges',{...mission,subjectType:'corporation'},a.cookie,connected)).status,201);
-pass('email allows registration and editing; expired identity still blocks candidate confirmation');
+assert.equal((await req('/api/challenges/'+cid+'/shortlist',{teaserId:applied.body.teaser.id},a.cookie,connected)).status,200);
+pass('email allows registration, editing and shortlist; expired identity still blocks final confirmation');
 const adminEnv={...connected,PRIMARY_ADMIN_EMAIL:'owner@test.invalid'};
 const verificationId=sql.prepare("SELECT id FROM member_verifications WHERE user_id=? AND provider='portone-v2'").get(b.body.user.id).id;
 assert.equal((await req('/api/admin/verification-reviews',{verificationId,decision:'VERIFIED',reason:'허위 승인 시도 방지 테스트'},a.cookie,adminEnv)).status,400);

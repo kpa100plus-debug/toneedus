@@ -31,12 +31,12 @@ assert.equal(run("needsSubmissionEmail(document.querySelector('#challenge-create
 assert.match(win.document.querySelector('.submission-email-status').textContent,/인증 완료/);
 assert.doesNotMatch(win.document.querySelector('#challenge-create-form').textContent,/0~29|30~59|60~100/);
 pass('verified members can submit and customer form has no risk score thresholds');
-run(`const saved={id:'saved-one',title:'보존한 미션',status:'DRAFT',visibility:'public',publicationVisibility:'private',moderationAction:'CHANGES_REQUIRED',moderationReasons:[{code:'POSSIBLE_DUPLICATE',label:'동일·유사 미션 중복 등록 가능성',score:30},{code:'HIGH_REWARD',label:'고액 보상금(50만원 이상)',score:25}]};showChallengeSubmissionResult({challenge:saved,duplicatePrevented:true});`);
+run(`const saved={id:'saved-one',title:'보존한 미션',status:'DRAFT',visibility:'public',publicationVisibility:'private',moderationAction:'CHANGES_REQUIRED',moderationReasons:[{code:'POSSIBLE_DUPLICATE',label:'진행 중인 공개 미션과 동일한 의뢰',score:30},{code:'HIGH_REWARD',label:'고액 보상금(50만원 이상)',score:25}]};showChallengeSubmissionResult({challenge:saved,duplicatePrevented:true});`);
 let dialog=win.document.querySelector('[role=dialog]');
 assert.equal(dialog.querySelector('[data-email-status-slot]'),null);
-assert.match(dialog.querySelector('.submission-feedback li').textContent,/동일·유사/);
+assert.match(dialog.querySelector('.submission-feedback li').textContent,/진행 중인 공개 미션과 동일한 의뢰/);
 assert.doesNotMatch(dialog.querySelector('.submission-feedback ul').textContent,/고액 보상금/);
-assert.match(dialog.textContent,/비공개 저장/);assert.match(dialog.textContent,/이미 등록한 미션/);assert.match(dialog.textContent,/이메일 인증과는 별도/);assert.match(dialog.textContent,/이 금액만으로 비공개 처리되지는/);
+assert.match(dialog.textContent,/비공개 저장/);assert.match(dialog.textContent,/내용과 조건이 같은 진행 중 미션/);assert.match(dialog.textContent,/제목이 같다는 이유만으로 중복 처리하지 않습니다/);assert.match(dialog.textContent,/보상금이나 마감일만 바꾼 경우/);assert.match(dialog.textContent,/이메일 인증과는 별도/);assert.match(dialog.textContent,/이 금액만으로 비공개 처리되지는/);
 assert.doesNotMatch(dialog.textContent,/위험도/);assert.equal(dialog.querySelector('[data-action=edit-saved-challenge]').dataset.challengeId,'saved-one');
 pass('idempotent replay reads nested moderation status and shows persistent specific reasons and existing-record edit');
 run(`showChallengeSubmissionResult({challenge:{...saved,moderationAction:'AUTO_REJECTED',moderationReasons:[{label:'<img src=x onerror=alert(1)>',code:'DANGEROUS_ACTIVITY',prohibited:true}]}})`);
@@ -63,4 +63,19 @@ await run("submitChallenge(document.querySelector('#challenge-create-form'))");
 assert.equal(win.location.hash,'#/dashboard');assert.match(win.document.querySelector('[role=dialog]').textContent,/비공개 저장/);assert.equal(run('state.createDraft'),null);assert.equal(run('state.challenges.filter(x=>x.id===saved.id).length'),1);
 await run("submitChallenge(document.querySelector('#challenge-create-form'))");assert.equal(run('state.challenges.filter(x=>x.id===saved.id).length'),1);
 pass('complete create flow navigates once, clears consumed draft, retains feedback and does not duplicate replayed results');
+const submittedScopes=[];
+win.acceptDistinctScope=payload=>{submittedScopes.push(payload);return {challenge:{...payload,id:`scope-${submittedScopes.length}`,status:'OPEN',publicationVisibility:'public',moderationAction:'AUTO_APPROVED',moderationReasons:[]}};};
+run('apiClient.createChallenge=async payload=>acceptDistinctScope(payload);');
+for(const [region,quantity] of [['전국·온라인','3'],['서울·수도권','10']]) {
+ run(`closeModal();state.route='create';history.replaceState(null,'','#/create');main.innerHTML=renderCreate();`);
+ const easyForm=win.document.querySelector('#challenge-create-form');
+ easyForm.elements.wizardSubject.value='보행환경 개선방안';easyForm.elements.wizardRegion.value=region;easyForm.elements.wizardQuantity.value=quantity;
+ run("generateChallengeDraft(document.querySelector('[data-action=generate-challenge-draft]'))");
+ await run("submitChallenge(document.querySelector('#challenge-create-form'))");
+ assert.equal(win.document.querySelector('.modal-header h2').textContent,'미션이 공개되었습니다');
+ assert.equal(win.document.querySelector('.submission-feedback'),null);
+}
+assert.equal(submittedScopes.length,2);assert.equal(submittedScopes[0].title,submittedScopes[1].title);
+assert.notEqual(submittedScopes[0].region,submittedScopes[1].region);assert.notEqual(submittedScopes[0].successCriteria,submittedScopes[1].successCriteria);
+pass('same-title easy missions retain distinct region/quantity payloads and show the server-approved result without a client duplicate warning');
 run('clearInterval(emailCountdownTimer);if(activityPollTimer)clearInterval(activityPollTimer)');win.close();console.log(`${count} submission feedback checks passed`);

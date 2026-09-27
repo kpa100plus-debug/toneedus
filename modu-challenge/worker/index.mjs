@@ -26,7 +26,7 @@ const PASSWORD_SALT_BYTES = 16;
 const PASSWORD_VERIFIER_BYTES = 32;
 const PASSWORD_HASH_PREFIX = 'v3$';
 const HIGH_REWARD_REVIEW_AMOUNT = 500_000;
-const MODERATION_POLICY_VERSION = '2026-09-27-v3';
+const MODERATION_POLICY_VERSION = '2026-09-27-v4';
 const ACTOR_TYPES = new Set(['individual', 'business', 'corporation', 'organization']);
 const REGIONS = new Set(['전국', '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주', '해외']);
 const CHALLENGE_INTENTS = new Set(['owner', 'solver', 'both']);
@@ -1743,7 +1743,7 @@ async function createChallenge(request, env) {
   const id = makeId('chl');
   const requestHash = await sha256(JSON.stringify(body));
   const feeRate = Number(env.PLATFORM_FEE_RATE || 0.1);
-  const moderation = await evaluateChallengeModeration({ title, summary, description, successCriteria, paymentTrigger, evidenceRequirements, rewardAmount }, user.id, null, env);
+  const moderation = await evaluateChallengeModeration({ title, summary, description, successCriteria, paymentTrigger, evidenceRequirements, category, region, rewardAmount }, user.id, null, env);
   const moderationReasons = moderation.reasons;
   const outcome = moderationOutcome(moderation, visibility);
   const moderationPending = false;
@@ -1818,7 +1818,7 @@ async function updateChallenge(challengeId, request, env) {
   const verification = await memberVerificationContext(user, subjectType, env);
   const gate = emailActivityGate(user);
   if (gate) return gate;
-  const moderation = await evaluateChallengeModeration({ title, summary, description, successCriteria, paymentTrigger, evidenceRequirements, rewardAmount }, user.id, challengeId, env);
+  const moderation = await evaluateChallengeModeration({ title, summary, description, successCriteria, paymentTrigger, evidenceRequirements, category, region, rewardAmount }, user.id, challengeId, env);
   const moderationReasons = moderation.reasons;
   const outcome = moderationOutcome(moderation, submittedVisibility);
   const status = outcome.status;
@@ -1866,20 +1866,31 @@ function assessChallengeModeration({ title, summary, description, successCriteri
 
 async function evaluateChallengeModeration(input, ownerId, excludeId, env) {
   let moderation = assessChallengeModeration(input);
-  const duplicate = await findSimilarChallenge(ownerId, input.title, excludeId, env);
-  if (duplicate) moderation = addModerationFinding(moderation, { code: 'POSSIBLE_DUPLICATE', label: '동일·유사 미션 중복 등록 가능성', score: 30, prohibited: false });
+  const duplicate = await findSimilarChallenge(ownerId, input, excludeId, env);
+  if (duplicate) moderation = addModerationFinding(moderation, { code: 'POSSIBLE_DUPLICATE', label: '진행 중인 동일 내용 미션 중복 등록', score: 30, prohibited: false });
   return moderation;
 }
 
-async function findSimilarChallenge(ownerId, title, excludeId, env) {
-  const normalized = String(title || '').replace(/\s+/g, '').toLowerCase();
-  if (normalized.length < 5) return null;
-  const candidates = await env.DB.prepare(`SELECT id, title FROM challenges WHERE owner_id = ? AND id <> COALESCE(?, '') AND status NOT IN ('CANCELLED','FAILED') ORDER BY created_at DESC LIMIT 50`)
+async function findSimilarChallenge(ownerId, input, excludeId, env) {
+  // A recurring title is not a duplicate mission. Compare the actual requested
+  // work and terms, and never let a private draft block its published original.
+  const normalize = (value) => String(value || '').normalize('NFKC').replace(/\s+/gu, '').toLowerCase();
+  const fields = [
+    ['title', 'title'], ['summary', 'summary'], ['description', 'description'],
+    ['successCriteria', 'success_criteria'], ['paymentTrigger', 'payment_trigger'],
+    ['evidenceRequirements', 'evidence_requirements'], ['category', 'category'], ['region', 'region'],
+  ];
+  const normalized = fields.map(([key]) => normalize(input[key]));
+  if (normalized.some((value) => !value)) return null;
+  // Reward or deadline changes alone do not create a different task. Check all
+  // active publications, not only the most recent 50 historical records.
+  const candidates = await env.DB.prepare(`SELECT id, title, summary, description, success_criteria, payment_trigger, evidence_requirements, category, region
+    FROM challenges WHERE owner_id = ? AND id <> COALESCE(?, '')
+      AND visibility IN ('public','unlisted')
+      AND status IN ('OPEN','REVIEW','SHORTLISTED','FUNDING_REQUIRED','FUNDED','EXECUTING','PROOF_SUBMITTED','DISPUTED')
+    ORDER BY created_at DESC`)
     .bind(ownerId, excludeId).all();
-  return (candidates.results || []).find((item) => {
-    const candidate = String(item.title || '').replace(/\s+/g, '').toLowerCase();
-    return candidate === normalized || (candidate.length >= 8 && (candidate.includes(normalized) || normalized.includes(candidate)));
-  }) || null;
+  return (candidates.results || []).find((item) => fields.every(([, column], index) => normalize(item[column]) === normalized[index])) || null;
 }
 
 function addModerationFinding(moderation, finding) {
@@ -2012,7 +2023,7 @@ async function autoReviewModerationQueue(request, env) {
 }
 
 async function autoReviewPendingChallenges(env, actorId = null) {
-  const pending = await env.DB.prepare(`SELECT c.id, c.owner_id, c.title, c.summary, c.description, c.success_criteria, c.payment_trigger, c.evidence_requirements, c.reward_amount, c.submitted_visibility, u.email_verified
+  const pending = await env.DB.prepare(`SELECT c.id, c.owner_id, c.title, c.summary, c.description, c.success_criteria, c.payment_trigger, c.evidence_requirements, c.category, c.region, c.reward_amount, c.submitted_visibility, u.email_verified
     FROM challenges c JOIN users u ON u.id = c.owner_id
     WHERE c.status = 'REVIEW' AND c.moderation_decision = 'ADMIN_REVIEW'
     ORDER BY c.created_at ASC LIMIT 100`).all();
@@ -2027,6 +2038,8 @@ async function autoReviewPendingChallenges(env, actorId = null) {
       successCriteria: challenge.success_criteria,
       paymentTrigger: challenge.payment_trigger,
       evidenceRequirements: challenge.evidence_requirements,
+      category: challenge.category,
+      region: challenge.region,
       rewardAmount: Number(challenge.reward_amount),
     }, challenge.owner_id, challenge.id, env);
     // Older queued records also need today's email gate before publication.
@@ -3322,16 +3335,19 @@ function publicModerationFeedback(c) {
   const storedGuidance = safeJsonParse(c.moderation_guidance_json, []);
   const reasons = Array.isArray(storedReasons) ? storedReasons.filter((reason) => reason && typeof reason === 'object' && reason.code !== 'HIGH_REWARD') : [];
   const guidance = Array.isArray(storedGuidance) ? storedGuidance : [];
+  const legacyDuplicate = c.moderation_policy_version !== MODERATION_POLICY_VERSION;
   const help = {
-    POSSIBLE_DUPLICATE: '이미 등록한 미션과 제목이 같거나 비슷합니다. 내 클리어에서 기존 미션을 수정하세요. 별개의 의뢰라면 대상·범위·회차의 차이를 명확히 적어주세요.',
+    POSSIBLE_DUPLICATE: '내용과 조건이 같은 진행 중 미션이 있습니다. 내 클리어에서 기존 미션을 수정하세요. 별개의 의뢰라면 대상·범위·결과물의 차이를 본문과 성공조건에 구체적으로 적어주세요. 보상금이나 마감일만 바꾼 경우에는 같은 의뢰로 봅니다.',
     PERSONAL_INFORMATION: '공개 게시물에서 개인 연락처나 민감한 식별정보를 요청하는 표현을 확인하고 수집 목적과 동의 절차를 구체적으로 적어주세요.',
     AMBIGUOUS_SUCCESS: '성공조건을 수량·규격·제출물처럼 확인 가능한 기준으로 구체화해주세요.',
     DATING_RELATIONSHIP: '만남·소개 관련 목적과 성인 대상 여부, 당사자 동의 및 안전 기준을 구체적으로 적어주세요.',
     EMAIL_VERIFICATION_REQUIRED: '이메일 인증을 완료한 뒤 저장된 미션의 등록 신청을 다시 눌러주세요. 작성 내용은 유지됩니다.',
   };
   const publicReasons = reasons.map((reason) => ({
-    label: typeof reason.label === 'string' ? reason.label : '미션 내용 확인 필요',
-    message: help[reason.code] || guidance.find((item) => item?.code === reason.code && typeof item.message === 'string')?.message
+    label: reason.code === 'POSSIBLE_DUPLICATE' && legacyDuplicate ? '이전 중복검수 결과 · 재검수 가능' : typeof reason.label === 'string' ? reason.label : '미션 내용 확인 필요',
+    message: reason.code === 'POSSIBLE_DUPLICATE' && legacyDuplicate
+      ? '이전 중복검수 기준으로 보관된 미션입니다. 저장된 미션을 다시 저장하면 개선된 기준으로 재검수합니다. 제목이 같다는 이유만으로 중복 처리하지 않습니다.'
+      : help[reason.code] || guidance.find((item) => item?.code === reason.code && typeof item.message === 'string')?.message
       || '의뢰 목적과 성공조건을 확인하고 수정·저장하면 즉시 다시 검수합니다. 잘못된 판정이라면 이의신청해주세요.',
   }));
   return {

@@ -47,6 +47,22 @@ run(`state.user={id:'member-b',emailVerified:true};state.createDraft=null;main.i
 assert.equal(doc.querySelector('[name=title]').value, '');
 pass('selection-only edits, consent and duplicate-prevention key restore after reload and stay member-scoped');
 
+form = doc.querySelector('#challenge-create-form');
+form.elements.wizardSubject.value = '보행환경 개선방안';
+form.elements.wizardRegion.value = '서울·수도권';
+form.elements.wizardQuantity.value = '10';
+run("generateChallengeDraft(document.querySelector('[data-action=generate-challenge-draft]'))");
+const generatedFields = ['title', 'summary', 'description', 'category', 'region', 'rewardAmount', 'deadline', 'successCriteria', 'paymentTrigger', 'evidenceRequirements'];
+const generatedValues = Object.fromEntries(generatedFields.map(name => [name, form.elements[name].value]));
+assert.equal(generatedValues.title, '보행환경 개선방안 찾아주세요');
+assert.match(generatedValues.successCriteria, /10개의/);
+run('state.createDraft=null;main.innerHTML=renderCreate();hydratePage();');
+form = doc.querySelector('#challenge-create-form');
+for (const name of generatedFields) assert.equal(form.elements[name].value, generatedValues[name], name);
+assert.equal(form.elements.wizardRegion.value, '서울·수도권');
+assert.equal(form.elements.wizardQuantity.value, '10');
+pass('easy-generated mission fields restore from session immediately without another input or submit');
+
 run(`state.user={id:'member-a',emailVerified:true};state.selectedChallenge={challenge:{id:'mission-a',ownerSubjectType:'individual',title:'수정 대상 미션',summary:'기존 요약 정보입니다',description:'기존 상세 설명을 보존합니다',category:'FIND',rewardAmount:100000,deadline:'2026-12-31T14:59:59Z',successCriteria:'수량과 규격 확인',paymentTrigger:'작업 시작 전 보상금 확보',evidenceRequirements:'최종 원본 파일',visibility:'public'},context:{canEdit:true}};openChallengeEditForm('mission-a');`);
 form = doc.querySelector('#challenge-edit-form');
 form.elements.subjectType.value = 'organization';

@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=75';
-import { legacyNotificationText } from './brand.js?v=75';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=75';
-import { calculateSettlement } from './business-rules.js?v=75';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=75';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=76';
+import { legacyNotificationText } from './brand.js?v=76';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=76';
+import { calculateSettlement } from './business-rules.js?v=76';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=76';
 
 /**
  * 모두의클리어 live frontend
@@ -144,7 +144,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=75').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=76').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -1137,6 +1137,7 @@ function generateChallengeDraft(button) {
   form.elements.paymentTrigger.value = '의뢰자가 TEASER를 검토하고 최종 수행자를 선정한 뒤, 실제 수행을 시작하기 전 보상금 준비 절차를 진행합니다.';
   form.elements.evidenceRequirements.value = evidenceText;
   updateCreatePreview();
+  saveCreateDraft();
   form.elements.title.scrollIntoView({ behavior: 'smooth', block: 'center' });
   toast('미션 글을 자동 작성했습니다', '아래 내용을 확인하고 필요한 부분만 수정하세요.', 'success');
 }
@@ -2062,7 +2063,7 @@ function openSubmissionEmailPrompt() {
 function moderationReasonHelp(reason) {
   if (reason.message) return String(reason.message);
   return ({
-    POSSIBLE_DUPLICATE: '이미 등록한 미션과 제목이 같거나 비슷합니다. 내 클리어에서 기존 미션을 확인하고 수정하세요. 별개의 의뢰라면 제목과 본문에 대상·범위·회차의 차이를 명확히 적어주세요.',
+    POSSIBLE_DUPLICATE: '내용과 조건이 같은 진행 중 미션이 있습니다. 내 클리어에서 기존 미션을 수정하세요. 별개의 의뢰라면 대상·범위·결과물의 차이를 본문과 성공조건에 구체적으로 적어주세요. 보상금이나 마감일만 바꾼 경우에는 같은 의뢰로 봅니다. 제목이 같다는 이유만으로 중복 처리하지 않습니다.',
     HIGH_REWARD: '보상금이 50만 원 이상입니다. 이 금액만으로 비공개 처리되지는 않으며 다른 검수 사유와 함께 확인합니다.',
     PERSONAL_INFORMATION: '제목·요약·상세 설명·성공조건에서 개인 연락처나 식별정보를 요청하는 표현을 확인해주세요. 공개 게시물에는 민감한 정보를 적지 마세요.',
     AMBIGUOUS_SUCCESS: '성공조건을 수량·규격·제출물처럼 확인 가능한 기준으로 구체화해주세요.',

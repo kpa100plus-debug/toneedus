@@ -92,10 +92,69 @@ const duplicate = await req('/api/challenges', mission, owner.cookie);
 assert.equal(duplicate.body.moderationAction, 'CHANGES_REQUIRED'); assert.equal(duplicate.body.challenge.publicationVisibility, 'private');
 assert.equal((await req(`/api/challenges/${duplicate.body.challenge.id}`)).status, 404);
 assert.ok(duplicate.body.moderationGuidance.some((item) => /기존 미션을 수정/.test(item.message)));
+const originalEdit = await req(`/api/challenges/${high.body.challenge.id}`, mission, owner.cookie, 'PUT');
+assert.equal(originalEdit.status, 200);
+assert.equal(originalEdit.body.moderationAction, 'AUTO_APPROVED');
+assert.equal(originalEdit.body.challenge.publicationVisibility, 'public');
+pass('self-edit excludes the current row and a blocked private copy cannot demote its published original');
 const edited = await req(`/api/challenges/${duplicate.body.challenge.id}`, { ...mission, title: '박물관 전시 안내 책자 제작' }, owner.cookie, 'PUT');
 assert.equal(edited.body.moderationAction, 'AUTO_APPROVED'); assert.equal(edited.body.challenge.id, duplicate.body.challenge.id);
 assert.equal((await req(`/api/challenges/${duplicate.body.challenge.id}`)).status, 200);
 pass('duplicate stays private, and a substantive correction immediately republishes the preserved record');
+
+for (const [field, value] of [
+  ['title', '부산 공원 안내판 디자인 제안'],
+  ['summary', '이 미션에서는 공원의 입구 위치를 안내할 별도 안내판을 요청합니다.'],
+  ['description', '출입구 전용 안내판을 설계하고 휠체어 접근 경로를 표시한 원본을 납품해주세요.'],
+  ['successCriteria', '대형 안내판 다섯 개의 원본과 최종 인쇄 규격을 제출해주세요.'],
+  ['paymentTrigger', '최종 시안 검토와 수행계획을 확인한 뒤 보상금 준비를 진행합니다.'],
+  ['evidenceRequirements', '실제 설치위치를 표시한 도면과 현장사진 제출'],
+  ['category', 'PUBLIC'], ['region', '부산'],
+]) {
+  const distinct = await req('/api/challenges', { ...mission, [field]: value }, owner.cookie);
+  assert.equal(distinct.status, 201, JSON.stringify(distinct.body));
+  assert.equal(distinct.body.moderationAction, 'AUTO_APPROVED', `distinct ${field} must not be blocked by the title`);
+}
+pass('title prefix, substantive fields, category and region distinguish different missions in real create requests');
+
+const recoveryInput = { ...mission, description: '같은 제목을 사용하지만 이번 의뢰는 공원 동쪽 입구의 점자 안내판 세 개를 설계하는 별도 작업입니다.' };
+enqueue('legacy-title-only', owner.body.user.id, recoveryInput.title);
+sql.prepare(`UPDATE challenges SET description=?,status='DRAFT',moderation_action='CHANGES_REQUIRED',moderation_risk_score=30,
+  moderation_policy_version='2026-09-27-v3',moderation_reasons_json=? WHERE id='legacy-title-only'`)
+  .run(recoveryInput.description, JSON.stringify([{ code: 'POSSIBLE_DUPLICATE', label: '동일·유사 미션 중복 등록 가능성', score: 30 }]));
+const legacyBefore = await req('/api/challenges/legacy-title-only', undefined, owner.cookie);
+assert.match(legacyBefore.body.challenge.moderationReasons[0].message, /이전 중복검수 기준/);
+assert.doesNotMatch(legacyBefore.body.challenge.moderationReasons[0].message, /내용과 조건이 같은 진행 중/);
+assert.equal(sql.prepare("SELECT moderation_risk_score FROM challenges WHERE id='legacy-title-only'").get().moderation_risk_score, 30);
+const legacyRecovered = await req('/api/challenges/legacy-title-only', recoveryInput, owner.cookie, 'PUT');
+assert.equal(legacyRecovered.body.challenge.id, 'legacy-title-only');
+assert.equal(legacyRecovered.body.moderationAction, 'AUTO_APPROVED');
+assert.equal(legacyRecovered.body.challenge.publicationVisibility, 'public');
+assert.equal(sql.prepare("SELECT moderation_policy_version FROM challenges WHERE id='legacy-title-only'").get().moderation_policy_version, '2026-09-27-v4');
+pass('legacy title-only rejection is explained truthfully, preserved on read and reopened on explicit resave using the same mission ID');
+
+const lifecycleInput = { ...mission, title: 'ABC 안내판 제작 범위 검사' };
+enqueue('lifecycle-probe', owner.body.user.id, lifecycleInput.title);
+policy.env = env; policy.ownerId = owner.body.user.id; policy.lifecycleInput = lifecycleInput;
+for (const [status, visibility, expected] of [
+  ['DRAFT', 'private', false], ['DRAFT', 'public', false], ['OPEN', 'private', false],
+  ['SUCCESS', 'public', false], ['FAILED', 'public', false], ['CANCELLED', 'public', false],
+  ['OPEN', 'public', true], ['OPEN', 'unlisted', true], ['EXECUTING', 'public', true],
+]) {
+  sql.prepare("UPDATE challenges SET status=?,visibility=? WHERE id='lifecycle-probe'").run(status, visibility);
+  const decision = await run('evaluateChallengeModeration(lifecycleInput,ownerId,null,env)');
+  assert.equal(decision.reasons.some((reason) => reason.code === 'POSSIBLE_DUPLICATE'), expected, `${status}/${visibility}`);
+}
+assert.equal((await run("evaluateChallengeModeration(lifecycleInput,ownerId,'lifecycle-probe',env)")).action, 'AUTO_APPROVED');
+sql.prepare("UPDATE challenges SET owner_id=? WHERE id='lifecycle-probe'").run(pendingOwner.body.user.id);
+assert.equal((await run('evaluateChallengeModeration(lifecycleInput,ownerId,null,env)')).action, 'AUTO_APPROVED');
+sql.prepare("UPDATE challenges SET owner_id=? WHERE id='lifecycle-probe'").run(owner.body.user.id);
+const changedCommercialTerms = await run("evaluateChallengeModeration({...lifecycleInput,title:'ＡＢＣ 안내판 제작 범위 검사',rewardAmount:90000000,deadline:'2099-12-31'},ownerId,null,env)");
+assert.equal(changedCommercialTerms.action, 'CHANGES_REQUIRED');
+sql.prepare("UPDATE challenges SET title='앱 테스트' WHERE id='lifecycle-probe'").run();
+assert.equal((await run("evaluateChallengeModeration({...lifecycleInput,title:'앱 테스트'},ownerId,null,env)")).action, 'CHANGES_REQUIRED');
+sql.prepare("UPDATE challenges SET status='CANCELLED' WHERE id='lifecycle-probe'").run();
+pass('only same-owner active public/link missions can collide; historical/private/self rows are ignored while formatting, reward and date changes cannot bypass exact-content duplicate detection');
 
 const medium = await req('/api/challenges', { ...mission, title: '고객 연락처 정리 업무 요청', description: '고객 연락처를 동의 절차와 함께 정리하고 결과 문서를 작성해주세요.', rewardAmount: 100000000 }, owner.cookie);
 assert.equal(medium.body.moderationAction, 'CHANGES_REQUIRED'); assert.equal(sql.prepare('SELECT moderation_risk_score FROM challenges WHERE id=?').get(medium.body.challenge.id).moderation_risk_score, 40);
@@ -140,7 +199,7 @@ const adminQueue = await req('/api/admin/moderation-queue', undefined, owner.coo
 assert.equal(adminQueue.status, 200);
 const internalReview = adminQueue.body.challenges.find((item) => item.id === prohibited.body.challenge.id);
 assert.equal(internalReview.moderation_risk_score, 100);
-assert.equal(internalReview.moderation_policy_version, '2026-09-27-v3');
+assert.equal(internalReview.moderation_policy_version, '2026-09-27-v4');
 assert.ok(internalReview.moderationReasons.some((reason) => reason.code === 'DECEPTION_PHISHING' && reason.prohibited));
 pass('only authorized administrator review retains risk, policy and detection evidence');
 const detailPath = `/api/admin/challenges/${prohibited.body.challenge.id}/moderation`;
@@ -150,7 +209,7 @@ assert.equal(sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action='ADMIN_
 const internalDetail = await req(detailPath, undefined, owner.cookie);
 assert.equal(internalDetail.status, 200);
 assert.equal(internalDetail.body.moderation.riskScore, 100);
-assert.equal(internalDetail.body.moderation.policyVersion, '2026-09-27-v3');
+assert.equal(internalDetail.body.moderation.policyVersion, '2026-09-27-v4');
 assert.equal(internalDetail.body.moderation.action, 'AUTO_REJECTED');
 assert.ok(internalDetail.body.moderation.reasons.some((reason) => reason.code === 'DECEPTION_PHISHING'));
 assert.equal(sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action='ADMIN_MODERATION_DETAIL_VIEW' AND resource_id=? AND actor_id=?").get(prohibited.body.challenge.id, owner.body.user.id).n, 1);
@@ -168,13 +227,19 @@ function enqueue(id, ownerId, title) {
 enqueue('cron-duplicate', owner.body.user.id, mission.title);
 enqueue('cron-safe', owner.body.user.id, '공공 정원 식물 이름표 제작');
 enqueue('cron-email', pendingOwner.body.user.id, '주민센터 안내문 표지 디자인');
+enqueue('cron-category', owner.body.user.id, mission.title);
+sql.prepare("UPDATE challenges SET category='LOCAL' WHERE id='cron-category'").run();
+enqueue('cron-region', owner.body.user.id, mission.title);
+sql.prepare("UPDATE challenges SET region='대전' WHERE id='cron-region'").run();
 const reviewed = await req('/api/admin/moderation/auto-review', {}, owner.cookie);
-assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body)); assert.equal(reviewed.body.autoApproved, 1); assert.equal(reviewed.body.changesRequired, 2);
+assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body)); assert.equal(reviewed.body.autoApproved, 3); assert.equal(reviewed.body.changesRequired, 2);
 const result = (id) => sql.prepare('SELECT * FROM challenges WHERE id=?').get(id);
 assert.equal(result('cron-duplicate').moderation_action, 'CHANGES_REQUIRED');
 assert.equal(result('cron-duplicate').visibility, 'private');
 assert.ok(JSON.parse(result('cron-duplicate').moderation_reasons_json).some((item) => item.code === 'POSSIBLE_DUPLICATE'));
 assert.equal(result('cron-safe').moderation_action, 'AUTO_APPROVED'); assert.equal(result('cron-safe').moderation_risk_score, 0);
+assert.equal(result('cron-category').moderation_action, 'AUTO_APPROVED');
+assert.equal(result('cron-region').moderation_action, 'AUTO_APPROVED');
 assert.equal(result('cron-email').status, 'DRAFT'); assert.equal(result('cron-email').visibility, 'private');
 assert.ok(JSON.parse(result('cron-email').moderation_guidance_json).some((item) => /이메일 인증/.test(item.message)));
 const auditCount = sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action LIKE 'CHALLENGE_MODERATION_%'").get().n;
@@ -183,7 +248,7 @@ assert.equal(sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action LIKE 'C
 pass('Cron uses matching content/duplicate policy, enforces email, and does not repeat decisions');
 
 assert.deepEqual(sql.prepare('SELECT id,trust_score FROM users ORDER BY id').all(), trustBefore);
-assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges').get().n, 7);
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges').get().n, 19);
 assert.equal(sql.prepare("SELECT COUNT(*) n FROM trust_policy_items WHERE weight IS NOT NULL").get().n, 0);
 assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(), []);
 assert.equal(sql.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');

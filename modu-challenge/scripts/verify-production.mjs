@@ -66,8 +66,13 @@ async function main() {
       ]);
       assert.ok([401, 403].includes(admin.status), 'Anonymous administrator access must be blocked');
       assert.ok([401, 403].includes(verifications.status), 'Anonymous verification access must be blocked');
+      const missionId = bootstrap.challenges?.[0]?.id;
+      assert.ok(missionId, 'A public mission is required to check the linked virtual workflow access boundary');
+      const virtualWorkflow = await request(`/api/challenges/${encodeURIComponent(missionId)}/mission-simulation`);
+      assert.ok([401, 403].includes(virtualWorkflow.status), 'Anonymous linked virtual workflow access must be blocked');
       result = {...validateProductionSnapshot({health, publicConfig, bootstrap, index, sw}, config, process.env.GITHUB_SHA),
-        anonymousAdminStatus: admin.status, anonymousVerificationStatus: verifications.status};
+        anonymousAdminStatus: admin.status, anonymousVerificationStatus: verifications.status,
+        anonymousMissionSimulationStatus: virtualWorkflow.status};
       error = null; break;
     } catch (e) { error = e; if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 5000)); }
   }

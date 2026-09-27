@@ -5,6 +5,7 @@ import { executeProviderOperation, reconcileProviderOperation, reconcileWebhook,
 import { LIVE_FINANCIAL_ADAPTERS_RELEASED, identityConfigured, identitySetupChecks, launchReadiness } from './launch-readiness.mjs';
 import { identityApi, IDENTITY_CONSENT_VERSION } from './identity.mjs';
 import { simulationApi } from './simulation.mjs';
+import { missionSimulationApi, readMissionSimulationContext, missionSimulationSummaries, missionSimulationLocked } from './mission-simulation.mjs';
 import { legacyNotificationText } from '../public/assets/brand.js';
 import { calculateSettlement, calculateStrikeOutcome } from '../public/assets/business-rules.js';
 
@@ -78,6 +79,7 @@ export default {
     try {
       return await route(request, env, ctx, url);
     } catch (error) {
+      if (String(error).includes('MISSION_SIMULATION_LOCKED')) return problem(409, 'MISSION_SIMULATION_LOCKED', '연결된 가상 진행을 먼저 취소한 뒤 미션이나 후보를 변경해주세요. 실제 결제·지급은 실행되지 않습니다.');
       if (String(error).includes('MODU_PHONE_EXISTS')) return problem(409, 'PHONE_EXISTS', '이미 가입에 사용된 휴대전화 번호입니다.');
       if (String(error).includes('MODU_DISPLAY_NAME_EXISTS')) return problem(409, 'DISPLAY_NAME_EXISTS', '이미 사용 중인 활동명입니다.');
       if (String(error).includes('UNIQUE constraint failed: users.email')) return problem(409, 'EMAIL_EXISTS', '이미 가입된 이메일입니다. 로그인 또는 인증메일 재발송을 이용해주세요.');
@@ -242,6 +244,20 @@ async function route(request, env, ctx, url) {
   match = path.match(/^\/api\/challenges\/([^/]+)$/);
   if (match && method === 'GET') return getChallenge(match[1], request, env);
   if (match && method === 'PUT') return updateChallenge(match[1], request, env);
+
+  match = path.match(/^\/api\/challenges\/([^/]+)\/mission-simulation$/);
+  if (match) {
+    const user = await requireAuth(request, env);
+    if (user instanceof Response) return user;
+    if (method === 'POST') {
+      const limited = await consumeRequestLimit(request, env, 'mission-simulation', user.id, 60);
+      if (limited) return limited;
+    }
+    const body = method === 'POST' ? await readJson(request) : null;
+    if (body instanceof Response) return body;
+    const result = await missionSimulationApi(request, env, user, match[1], body);
+    return json(result.data, result.status, { 'Cache-Control': 'private, no-store' });
+  }
 
   match = path.match(/^\/api\/challenges\/([^/]+)\/cancel$/);
   if (match && method === 'POST') return cancelChallenge(match[1], request, env);
@@ -956,15 +972,17 @@ async function meActivity(request, env) {
     `).bind(user.id),
   ]);
 
+  const missionSimulations = await missionSimulationSummaries(env, user);
+  const activityChallenge = row => ({ ...publicChallenge(row), ...(missionSimulations[row.id] ? { missionSimulation: missionSimulations[row.id] } : {}) });
   return json({
     user: publicUser(user),
-    ownedChallenges: (owned.results || []).map(publicChallenge),
+    ownedChallenges: (owned.results || []).map(activityChallenge),
     applications: (applied.results || []).map((row) => ({
       teaserId: row.teaser_id,
       teaserStatus: row.teaser_status,
       teaserHeadline: row.headline,
       teaserCreatedAt: row.teaser_created_at,
-      challenge: publicChallenge(row),
+      challenge: activityChallenge(row),
     })),
     settlements: settlements.results || [],
     notifications: (notifications.results || []).map((item) => ({ ...item, title: legacyNotificationText(item.title), body: legacyNotificationText(item.body) })),
@@ -1637,8 +1655,10 @@ async function getChallenge(challengeId, request, env) {
     return problem(404, 'CHALLENGE_NOT_FOUND', '미션을 찾을 수 없습니다.');
   }
 
-  env.DB.prepare('UPDATE challenges SET view_count = view_count + 1 WHERE id = ?')
-    .bind(challengeId).run().catch(() => undefined);
+  if (new URL(request.url).searchParams.get('refresh') !== '1') {
+    env.DB.prepare('UPDATE challenges SET view_count = view_count + 1 WHERE id = ?')
+      .bind(challengeId).run().catch(() => undefined);
+  }
 
   const recentReviews = await env.DB.prepare(`
     SELECT r.rating, r.comment, r.created_at, u.display_name AS reviewer_name
@@ -1685,6 +1705,7 @@ async function getChallenge(challengeId, request, env) {
       } : null,
       settlement,
       latestProof,
+      missionSimulation: await readMissionSimulationContext(env, challenge, viewerAuth),
     };
   }
 
@@ -2130,6 +2151,7 @@ async function cancelChallenge(challengeId, request, env) {
   const challenge = await fetchChallenge(challengeId, env);
   if (!challenge) return problem(404, 'CHALLENGE_NOT_FOUND', '미션을 찾을 수 없습니다.');
   if (challenge.owner_id !== actor.id && !actor.is_admin) return problem(403, 'OWNER_REQUIRED', '미션을 취소할 권한이 없습니다.');
+  if (await missionSimulationLocked(env, challengeId)) return problem(409, 'MISSION_SIMULATION_LOCKED', '연결된 가상 진행을 먼저 취소한 뒤 미션을 취소해주세요.');
   if (['FUNDED', 'PAID'].includes(challenge.funding_status) || ['EXECUTING', 'PROOF_SUBMITTED', 'SUCCESS', 'DISPUTED'].includes(challenge.status)) {
     return problem(409, 'CANCELLATION_REQUIRES_REVIEW', 'Funding 또는 수행이 시작된 미션은 일반 취소가 불가능합니다. 분쟁·환불 절차를 이용해주세요.');
   }
@@ -2358,6 +2380,7 @@ async function shortlistTeaser(challengeId, request, env) {
   const challenge = await fetchChallenge(challengeId, env);
   if (!challenge) return problem(404, 'CHALLENGE_NOT_FOUND', '미션을 찾을 수 없습니다.');
   if (challenge.owner_id !== owner.id) return problem(403, 'OWNER_REQUIRED', '미션 등록자만 후보를 선택할 수 있습니다.');
+  if (await missionSimulationLocked(env, challengeId)) return problem(409, 'MISSION_SIMULATION_LOCKED', '연결된 가상 진행을 먼저 취소한 뒤 후보를 변경해주세요.');
 
   const body = await readJson(request);
   if (body instanceof Response) return body;

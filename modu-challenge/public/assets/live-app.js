@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=76';
-import { legacyNotificationText } from './brand.js?v=76';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=76';
-import { calculateSettlement } from './business-rules.js?v=76';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=76';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=77';
+import { legacyNotificationText } from './brand.js?v=77';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=77';
+import { calculateSettlement } from './business-rules.js?v=77';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=77';
 
 /**
  * 모두의클리어 live frontend
@@ -17,6 +17,9 @@ const notice = document.querySelector('#system-notice');
 let heroRotationTimer = null;
 let activityPollTimer = null;
 let activityPollBusy = false;
+let missionDetailPollTimer = null;
+let missionDetailPollBusy = false;
+let systemNoticeTimer = null;
 let modalScrollY = 0;
 let deferredInstallPrompt = null;
 let modalHistoryEntry = false;
@@ -45,6 +48,7 @@ const state = {
   simulations: [],
   simulation: null,
   simulationRole: 'owner',
+  missionSimulationAccess: null,
   loading: true,
   authLoading: true,
   authError: null,
@@ -93,9 +97,9 @@ async function init() {
   window.addEventListener('popstate', () => {
     if (modalRoot.innerHTML && modalHistoryEntry) dismissModal({ fromHistory: true });
   });
-  window.addEventListener('focus', () => { refreshDashboardActivity(); refreshEmailStatus(); });
+  window.addEventListener('focus', () => { refreshDashboardActivity(); refreshEmailStatus(); refreshMissionDetail(); });
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) { refreshDashboardActivity(); refreshEmailStatus(); }
+    if (!document.hidden) { refreshDashboardActivity(); refreshEmailStatus(); refreshMissionDetail(); }
   });
 
   renderBootstrapPending();
@@ -144,7 +148,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=76').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=77').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -234,8 +238,8 @@ async function loadRouteData() {
 }
 
 function activityFingerprint(activity) {
-  const owned = (activity?.ownedChallenges || []).map((item) => [item.id, item.status, item.fundingStatus, item.teaserCount, item.participantCount, item.updatedAt]);
-  const applied = (activity?.applications || []).map((item) => [item.challenge?.id, item.teaserStatus, item.challenge?.status, item.challenge?.fundingStatus, item.challenge?.teaserCount, item.challenge?.updatedAt]);
+  const owned = (activity?.ownedChallenges || []).map((item) => [item.id, item.status, item.fundingStatus, item.teaserCount, item.participantCount, item.updatedAt, item.missionSimulation]);
+  const applied = (activity?.applications || []).map((item) => [item.challenge?.id, item.teaserStatus, item.challenge?.status, item.challenge?.fundingStatus, item.challenge?.teaserCount, item.challenge?.updatedAt, item.challenge?.missionSimulation]);
   const notifications = (activity?.notifications || []).map((item) => [item.id, item.read_at]);
   return JSON.stringify([owned, applied, notifications]);
 }
@@ -346,7 +350,7 @@ function bindGlobalEvents() {
       saveCreateDraft();
       updateCreatePreview();
     }
-    if (event.target.closest?.('#teaser-form, #cancel-form, #teaser-edit-form, #challenge-edit-form')) saveTransientModalDraft(event.target.form);
+    if (event.target.closest?.('#teaser-form, #cancel-form, #teaser-edit-form, #challenge-edit-form, #mission-simulation-proof-form, #mission-simulation-reject-form')) saveTransientModalDraft(event.target.form);
     clearFieldError(event.target);
     updateFieldCounter(event.target);
   });
@@ -373,7 +377,7 @@ function bindGlobalEvents() {
     }
     if (event.target.closest?.('.criteria-check-builder')) updateCriteriaFromChecks();
     if (event.target.closest?.('#challenge-create-form')) { saveCreateDraft(); updateCreatePreview(); }
-    if (event.target.closest?.('#teaser-form, #cancel-form, #teaser-edit-form, #challenge-edit-form')) saveTransientModalDraft(event.target.form);
+    if (event.target.closest?.('#teaser-form, #cancel-form, #teaser-edit-form, #challenge-edit-form, #mission-simulation-proof-form, #mission-simulation-reject-form')) saveTransientModalDraft(event.target.form);
   });
 
   document.querySelector('#account-button')?.addEventListener('click', () => {
@@ -412,6 +416,10 @@ async function handleAction(action, data, button) {
     if (action === 'simulation-check') return await withBusy(button, () => runSimulationAction('SET_SIMULATION_CHECK', { check: data.check, result: data.result }, button));
     if (action === 'simulation-proof-example') { const field = document.querySelector('#simulation-proof'); if (field) field.value = '합의한 규격과 수량에 맞춰 가상 결과물을 제작하고 검수할 자료를 제출했습니다.'; return; }
     if (action === 'simulation-step') return await withBusy(button,()=>runSimulationAction(data.step,{candidateId:data.candidateId},button));
+    if (action === 'open-mission-simulation') return await requireLogin(() => openMissionSimulation(data.challengeId, data.teaserId));
+    if (action === 'mission-simulation-step') return await withBusy(button, () => runMissionSimulationAction(data.challengeId, data.step, {}, button));
+    if (action === 'mission-simulation-proof') return openMissionSimulationProof(data.challengeId);
+    if (action === 'mission-simulation-reject') return openMissionSimulationReject(data.challengeId);
     if (action === 'login') return await openAuthModal('login');
     if (action === 'signup') return await openAuthModal('signup');
     if (action === 'oauth-login') return await startSocialLogin(data.provider);
@@ -520,6 +528,9 @@ async function handleForm(form) {
     if (form.id === 'password-reset-form') return await withBusy(submit, () => submitPasswordReset(form));
     if (form.id === 'simulation-subject-form') return await withBusy(submit, () => runSimulationAction('SET_SUBJECT_TYPE', { subjectType: String(new FormData(form).get('subjectType') || '') }, form));
     if (form.id === 'simulation-create-form') return await withBusy(submit,()=>submitSimulationCreate(form));
+    if (form.id === 'mission-simulation-start-form') return await withBusy(submit, () => runMissionSimulationAction(form.dataset.challengeId, 'START', { teaserId: form.dataset.teaserId, consent: form.elements.consent.checked }, form));
+    if (form.id === 'mission-simulation-proof-form') return await withBusy(submit, () => runMissionSimulationAction(form.dataset.challengeId, 'SUBMIT_PROOF', Object.fromEntries(new FormData(form)), form));
+    if (form.id === 'mission-simulation-reject-form') return await withBusy(submit, () => runMissionSimulationAction(form.dataset.challengeId, 'REVIEW_REJECT', Object.fromEntries(new FormData(form)), form));
     if (form.id === 'simulation-partial-refund-form') return await withBusy(submit, () => runSimulationAction('PARTIAL_REFUND', { refundAmount: Number(new FormData(form).get('refundAmount')), reason: String(new FormData(form).get('reason') || '') }, form));
     if (form.id === 'simulation-proof-form') return await withBusy(submit,()=>runSimulationAction('SUBMIT_PROOF',{proof:new FormData(form).get('proof')},form));
     if (form.id === 'challenge-create-form') return await withBusy(submit, () => submitChallenge(form));
@@ -738,6 +749,8 @@ function renderHeader() {
 
 function renderSystemNotice() {
   if (!notice) return;
+  clearTimeout(systemNoticeTimer);
+  systemNoticeTimer = null;
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
   const error = params.get('oauth_error');
   if (error) {
@@ -748,6 +761,16 @@ function renderSystemNotice() {
     notice.hidden = false;
     document.querySelector('#system-notice-title').textContent = '소셜 로그인 완료';
     document.querySelector('#system-notice-body').textContent = '로그인 상태를 안전하게 확인했습니다.';
+    systemNoticeTimer = setTimeout(() => {
+      notice.hidden = true;
+      const current = new URLSearchParams(location.hash.split('?')[1] || '');
+      if (current.get('oauth') === 'success') {
+        current.delete('oauth');
+        const query = current.toString();
+        history.replaceState(history.state, '', `${location.hash.split('?')[0]}${query ? `?${query}` : ''}`);
+      }
+      systemNoticeTimer = null;
+    }, 5000);
   } else if (params.get('oauth') === 'success') {
     notice.hidden = false;
     document.querySelector('#system-notice-title').textContent = '로그인 상태 확인 필요';
@@ -1197,6 +1220,7 @@ function renderApplicationItem(item) {
 }
 
 function workflowStageLabel(challenge) {
+  if (isMissionSimulation(challenge.missionSimulation)) return `${missionSimulationLabel(challenge.missionSimulation)} · 실제 0원`;
   if (challenge.moderationPending) return '관리자 검토 대기';
   if (challenge.status === 'DRAFT') return '비공개 초안';
   if (['OPEN', 'REVIEW'].includes(challenge.status)) return '티저 접수 중';
@@ -1221,10 +1245,6 @@ async function openNotification(notificationId, challengeId) {
 
 function rewardBoundsForUser() {
   return { min: Number(state.config?.rewardBounds?.min || 10000), max: Math.min(Number(state.config?.rewardBounds?.max || 100000000), Number(state.user?.bountyLimit ?? 100000000)) };
-}
-
-function moderationRewardThreshold() {
-  return Number(state.config?.moderationRewardThreshold || 500000);
 }
 
 function openOwnedChallenges() { return openActivitySection('owned'); }
@@ -1406,7 +1426,7 @@ function renderAdmin() {
   if (overview.role === 'deputy') return renderDeputyAdmin(overview);
   const pushPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card push-notice-card"><div class="dashboard-card-head"><div><span class="admin-kicker">PUSH NOTICE</span><h2>전체 공지 푸시</h2><p class="form-hint">푸시를 켠 활성 회원에게만 발송됩니다.<br />발송 결과는 감사 기록에 남습니다.</p></div><button class="btn btn-primary" type="button" data-action="open-push-announcement">공지 푸시 작성</button></div></section></div></section>`;
   const pushAudit = overview.pushAudit ? `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card push-audit-card"><span class="admin-kicker">PUSH DELIVERY AUDIT</span><h2>푸시 전송 현황</h2><div class="push-audit-summary"><div><strong>${overview.pushAudit.summary.subscribed || 0}</strong><span>수신 기기</span></div><div><strong>${overview.pushAudit.summary.accepted || 0}</strong><span>최근 7일 전송 수락</span></div><div><strong>${overview.pushAudit.summary.failed || 0}</strong><span>최근 7일 실패·만료</span></div></div><p class="form-hint">전송 수락은 푸시 서비스가 받은 상태입니다. 실제 화면 표시와 앱 확인은 기기에서 별도로 확인합니다.</p></section></div></section>` : '';
-  const moderationPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-moderation-card"><div class="dashboard-card-head moderation-card-head"><div><span class="admin-kicker">SAFETY REVIEW</span><h2>관리자 검토 대기</h2><p class="form-hint">저위험 미션은 자동 승인·기록되며, 고액·위험·불명확 항목만 여기에 남습니다.</p></div><div class="moderation-head-actions"><strong>${overview.moderationChallenges?.length || 0}</strong><button class="btn btn-outline btn-small" type="button" data-action="auto-review-moderation">전체 자동 재검수</button></div></div><div class="audit-table">${overview.moderationChallenges?.length ? overview.moderationChallenges.map((item) => `<div class="audit-row moderation-row"><div><strong>${escapeHTML(item.title)}</strong><span>${formatWon(item.reward_amount)} · 위험도 ${Number(item.moderation_risk_score || 0)} · ${item.moderationReasons.map((reason) => escapeHTML(reason.label)).join(' · ')}</span><small>접수 ${formatDateTime(item.created_at)} · 마감 ${formatDateTime(item.deadline)}</small></div><span class="moderation-actions"><button class="btn btn-outline btn-small" type="button" data-challenge-id="${escapeAttribute(item.id)}">내용 보기</button><button class="btn btn-danger btn-small" type="button" data-action="archive-moderation" data-challenge-id="${escapeAttribute(item.id)}">비공개 보관</button><button class="btn btn-primary btn-small" type="button" data-action="approve-moderation" data-challenge-id="${escapeAttribute(item.id)}">승인 후 공개</button></span></div>`).join('') : '<p class="muted">관리자 검토 대기 미션이 없습니다.</p>'}</div></section></div></section>`;
+  const moderationPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-moderation-card"><div class="dashboard-card-head moderation-card-head"><div><span class="admin-kicker">SAFETY REVIEW</span><h2>관리자 검토 대기</h2><p class="form-hint">일상 미션은 자동 검수하며 이의신청·예외와 기존 검토 기록을 확인합니다. 보상금만 높다는 이유로 승인을 기다리지 않습니다.</p></div><div class="moderation-head-actions"><strong>${overview.moderationChallenges?.length || 0}</strong><button class="btn btn-outline btn-small" type="button" data-action="auto-review-moderation">전체 자동 재검수</button></div></div><div class="audit-table">${overview.moderationChallenges?.length ? overview.moderationChallenges.map((item) => `<div class="audit-row moderation-row"><div><strong>${escapeHTML(item.title)}</strong><span>${formatWon(item.reward_amount)} · 위험도 ${Number(item.moderation_risk_score || 0)} · ${item.moderationReasons.map((reason) => escapeHTML(reason.label)).join(' · ')}</span><small>접수 ${formatDateTime(item.created_at)} · 마감 ${formatDateTime(item.deadline)}</small></div><span class="moderation-actions"><button class="btn btn-outline btn-small" type="button" data-challenge-id="${escapeAttribute(item.id)}">내용 보기</button><button class="btn btn-danger btn-small" type="button" data-action="archive-moderation" data-challenge-id="${escapeAttribute(item.id)}">비공개 보관</button><button class="btn btn-primary btn-small" type="button" data-action="approve-moderation" data-challenge-id="${escapeAttribute(item.id)}">승인 후 공개</button></span></div>`).join('') : '<p class="muted">관리자 검토 대기 미션이 없습니다.</p>'}</div></section></div></section>`;
   const stats = overview.moderationStats || {};
   const automaticPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-moderation-card"><div class="dashboard-card-head"><div><span class="admin-kicker">AUTO MODERATION</span><h2>자동검수 처리 현황</h2><p class="form-hint">일상 승인은 시스템이 처리하며, 관리자는 이의신청·분쟁·특수 예외만 확인합니다.</p></div><strong>${Number(stats.total || 0)}</strong></div><div class="stats-grid"><div><strong>${Number(stats.auto_approved || 0)}</strong><span>자동승인</span></div><div><strong>${Number(stats.changes_required || 0)}</strong><span>자동 수정요청</span></div><div><strong>${Number(stats.auto_rejected || 0)}</strong><span>자동거절</span></div></div><div class="dashboard-card-head"><h3>이의신청·예외</h3><strong>${overview.moderationAppeals?.length || 0}</strong></div><div class="audit-table">${overview.moderationAppeals?.length ? overview.moderationAppeals.map((item) => `<button class="audit-row admin-row-button" type="button" data-challenge-id="${escapeAttribute(item.challenge_id)}"><strong>${escapeHTML(item.title)}</strong><span>${escapeHTML(item.moderation_action)} · 위험도 ${Number(item.moderation_risk_score || 0)}</span><small>${escapeHTML(item.display_name)} · ${formatDateTime(item.created_at)}</small></button>`).join('') : '<p class="muted">확인할 이의신청·예외가 없습니다.</p>'}</div></section></div></section>`;
   const draftPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-draft-card"><div class="dashboard-card-head"><div><span class="admin-kicker">DRAFT CENTER</span><h2>비공개 초안</h2><p class="form-hint">자동 수정요청·자동거절·사용자 초안을 삭제하지 않고 보존합니다.</p></div><strong>${overview.draftChallenges?.length || 0}</strong></div><div class="audit-table">${overview.draftChallenges?.length ? overview.draftChallenges.map((item) => `<button class="audit-row admin-row-button" type="button" data-challenge-id="${escapeAttribute(item.id)}"><strong>${escapeHTML(item.title)}</strong><span>초안 · 비공개 · ${formatWon(item.reward_amount)}</span><small>마감 ${formatDateTime(item.deadline)}</small></button>`).join('') : '<p class="muted">비공개 초안이 없습니다.</p>'}</div></section></div></section>`;
@@ -1545,13 +1565,34 @@ async function openChallenge(challengeId) {
   }
 }
 
+async function refreshMissionDetail() {
+  const current = modalRoot.querySelector('[data-mission-detail]');
+  if (!current || !state.user || document.hidden || missionDetailPollBusy) return;
+  const challengeId = current.dataset.missionDetail;
+  const userId = state.user.id;
+  missionDetailPollBusy = true;
+  try {
+    const result = await apiClient.getChallenge(challengeId, { refresh: true });
+    if (state.user?.id !== userId || modalRoot.querySelector('[data-mission-detail]') !== current) return;
+    if (JSON.stringify(result) === JSON.stringify(state.selectedChallenge)) return;
+    const scrollTop = modalRoot.querySelector('.modal-body')?.scrollTop || 0;
+    state.selectedChallenge = result;
+    renderChallengeModal(result);
+    modalRoot.querySelector('.modal-body').scrollTop = scrollTop;
+  } catch {
+    // Keep the last confirmed state and any separately opened writing form.
+  } finally {
+    missionDetailPollBusy = false;
+  }
+}
+
 function renderChallengeModal(result) {
   const challenge = result.challenge;
   const context = result.context || {};
   const category = CATEGORY_META[challenge.category] || CATEGORY_META.BUSINESS;
   const status = challenge.moderationPending ? { label: '관리자 검토 대기', className: 'status-review' } : (STATUS_META[challenge.status] || { label: challenge.status, className: '' });
   const funding = fundingDisplay(challenge);
-  openModal(`<nav class="detail-read-nav" aria-label="내용 바로 보기"><button type="button" class="btn btn-outline" data-action="view-challenge-content" data-challenge-id="${escapeAttribute(challenge.id)}">미션 전체 내용</button>${context.viewerTeaser ? `<button type="button" class="btn btn-primary" data-action="view-my-teaser" data-challenge-id="${escapeAttribute(challenge.id)}">내 티저 보기</button>` : ''}</nav>${renderProgressNotice(challenge, context)}<div class="detail-layout" style="--category-color:${category.color}">
+  openModal(`<nav class="detail-read-nav" data-mission-detail="${escapeAttribute(challenge.id)}" aria-label="내용 바로 보기"><button type="button" class="btn btn-outline" data-action="view-challenge-content" data-challenge-id="${escapeAttribute(challenge.id)}">미션 전체 내용</button>${context.viewerTeaser ? `<button type="button" class="btn btn-primary" data-action="view-my-teaser" data-challenge-id="${escapeAttribute(challenge.id)}">내 티저 보기</button>` : ''}</nav>${renderProgressNotice(challenge, context)}<div class="detail-layout" style="--category-color:${category.color}">
     <article class="detail-main">
       <div class="detail-kicker"><span class="category-label"><i>${category.icon}</i>${category.label} 미션</span><span class="status-badge ${status.className}">${status.label}</span></div>
       <h2 class="detail-title">${escapeHTML(challenge.title)}</h2><p class="detail-summary">${escapeHTML(challenge.summary)}</p>
@@ -1570,6 +1611,7 @@ function renderChallengeModal(result) {
     <div class="detail-side-card"><h3>진행단계</h3>${renderFlow(challenge, context)}</div>
     <div class="detail-side-card"><h3>의뢰자 신뢰</h3>${renderTrustGauge(challenge.owner?.trustScore, { detailed: true, userId: challenge.ownerId })}<div class="preview-list"><div class="preview-row"><span>Strike</span><strong>${challenge.owner?.strikes ?? 0}/3</strong></div><div class="preview-row"><span>본인확인</span><strong>${challenge.owner?.identityVerified ? '완료' : '미확인'}</strong></div><div class="preview-row"><span>사업자확인</span><strong>${challenge.owner?.businessVerified ? '완료' : '미확인'}</strong></div></div></div></aside>
   </div>`, { title: '미션 상세', wide: true });
+  if (state.user) missionDetailPollTimer = setInterval(refreshMissionDetail, 8000);
 }
 
 function readSection(title, value) {
@@ -1593,6 +1635,101 @@ async function openMyTeaser(challengeId) {
     const t = result.teaser;
     openModal(`<article class="submission-reader"><p class="reader-summary">${escapeHTML(result.challengeTitle)}</p><h2>${escapeHTML(t.headline)}</h2><div class="reader-meta">${teaserStatusBadge(t.status)}<span>제출: ${formatDateTime(t.createdAt)}</span><span>예상기간: ${Number(t.expectedDays)}일</span></div>${readSection('한 줄 제안', t.headline)}${readSection('해결능력·경험', t.capability)}${readSection('접근방법', t.approach)}${readSection('마스킹 증빙', t.maskedEvidence)}${readSection('자격 유형', t.qualificationType)}${readSection('자격 참조정보', t.qualificationRef)}<div class="reader-actions"><button type="button" class="btn btn-primary" data-challenge-id="${escapeAttribute(challengeId)}">진행상황 · 다음 단계</button><button type="button" class="btn btn-outline" data-action="view-challenge-content" data-challenge-id="${escapeAttribute(challengeId)}">미션 전체 내용</button>${t.canEdit ? `<button type="button" class="btn btn-primary" data-action="edit-teaser" data-challenge-id="${escapeAttribute(challengeId)}">TEASER 수정</button>` : '<p class="form-hint">수정이 제한된 상태에서도 제출한 내용은 확인할 수 있습니다.</p>'}<button type="button" class="btn btn-outline" data-action="view-applied-challenges">내 도전 목록</button></div></article>`, { title: '내 티저 보기', wide: true });
   } catch (error) { renderModalRequestError('내 티저 보기', error, 'retry-my-teaser', { challengeId }); }
+}
+
+function isMissionSimulation(simulation) {
+  return simulation?.mode === 'MISSION_SIMULATION' && simulation.actualCharge === 0;
+}
+
+function missionSimulationRole(simulation) {
+  if (!isMissionSimulation(simulation) || !state.user?.id) return null;
+  return state.user.id === simulation.ownerId ? 'owner' : state.user.id === simulation.solverId ? 'solver' : null;
+}
+
+function missionSimulationLabel(simulation) {
+  if (simulation.payoutStatus === 'PAID') return '가상 지급 완료';
+  return ({ FUNDING_REQUIRED:'가상 보상금 확보 대기', EXECUTING:simulation.executionStarted === undefined ? '가상 수행 단계' : simulation.executionStarted ? '가상 수행 중' : '가상 수행 시작 대기', PROOF_SUBMITTED:'가상 결과 검수 대기', SUCCESS:simulation.payoutStatus === 'FAILED' ? '가상 지급 재시도 대기' : '가상 지급 대기', CANCELLED:'가상 진행 취소' })[simulation.stage] || '가상 진행';
+}
+
+function missionSimulationBlockedMessage(reason) {
+  return ({ CANDIDATE_REQUIRED:'먼저 TEASER 후보 심사에서 수행자 후보 한 명을 선택해주세요.', CANDIDATE_CHANGED:'현재 수행자 후보가 변경되었습니다. 기존 가상 진행을 종료한 뒤 현재 후보와 다시 시작해주세요.', MISSION_CHANGED:'원래 미션의 진행상태가 변경되어 가상 진행을 계속할 수 없습니다. 기존 기록은 보존됩니다.', REWARD_CHANGED:'원래 미션의 보상금이 변경되었습니다. 기존 가상 진행을 종료한 뒤 다시 시작해주세요.', PARTICIPANT_UNAVAILABLE:'참여 계정의 활동 상태를 확인해야 합니다. 현재 가상 진행은 중단되며 기록은 보존됩니다.', EMAIL_REQUIRED:'의뢰자와 선정 수행자 모두 이메일 인증을 마친 뒤 다시 확인해주세요.' })[reason] || (reason ? '미션 또는 참여 상태가 변경되었습니다. 의뢰자가 기존 가상 진행을 종료한 뒤 현재 상태를 확인해주세요.' : '');
+}
+
+function missionSimulationZeroNotice() {
+  return '<div class="mission-simulation-zero"><strong>VIRTUAL · 실제 청구 및 송금 0원</strong><p>이 미션의 의뢰자와 선정 수행자가 함께 진행하는 가상 거래입니다. 실제 결제·지급·본인확인 또는 운영 실적으로 반영되지 않습니다.</p></div>';
+}
+
+function renderMissionSimulation(challenge, simulation) {
+  const role = missionSimulationRole(simulation);
+  if (!role) return '';
+  const disabled = simulation.active === false || Boolean(simulation.blockedReason);
+  const button = (action, label, className = 'btn-primary') => `<button type="button" class="btn ${className}" data-action="mission-simulation-step" data-step="${action}" data-challenge-id="${escapeAttribute(challenge.id)}" ${(action === 'CANCEL' ? simulation.stage === 'CANCELLED' || simulation.payoutStatus === 'PAID' : disabled) ? 'disabled' : ''}>${label}</button>`;
+  let message = '', actions = '';
+  if (simulation.stage === 'FUNDING_REQUIRED') {
+    message = role === 'owner' ? '가상 최종 수행자가 확정되었습니다. 가상 보상금을 확보하면 수행자가 시작할 수 있습니다.' : '가상 최종 수행자로 선정되었습니다. 의뢰자의 가상 보상금 확보를 기다려주세요.';
+    if (role === 'owner') actions = button('PAY_APPROVE', ['FAILED','CANCELLED'].includes(simulation.paymentStatus) ? '가상 결제 재시도 · 승인' : '가상 보상금 확보') + button('PAY_FAIL', '가상 결제 실패 체험', 'btn-outline') + button('PAY_CANCEL', '가상 결제 취소 체험', 'btn-outline') + button('CANCEL', '가상 진행 취소', 'btn-ghost');
+  } else if (simulation.stage === 'EXECUTING') {
+    message = simulation.executionStarted ? (role === 'solver' ? '성공조건에 맞춘 가상 결과와 증빙을 제출하세요.' : '선정된 수행자가 결과를 준비하고 있습니다.') : (role === 'solver' ? '가상 보상금이 확보되었습니다. 수행 시작을 누르고 결과를 준비하세요.' : '가상 보상금이 확보되었습니다. 선정 수행자의 시작을 기다리고 있습니다.');
+    if (role === 'solver') actions = simulation.executionStarted ? `<button type="button" class="btn btn-primary" data-action="mission-simulation-proof" data-challenge-id="${escapeAttribute(challenge.id)}" ${disabled ? 'disabled' : ''}>가상 수행 결과 제출</button>` : button('BEGIN', '가상 수행 시작');
+  } else if (simulation.stage === 'PROOF_SUBMITTED') {
+    message = role === 'owner' ? '아래 제출 내용과 성공조건을 확인하고 승인하거나 보완을 요청하세요.' : '결과를 제출했습니다. 의뢰자의 검수를 기다려주세요.';
+    if (role === 'owner') actions = button('REVIEW_ACCEPT', '가상 결과 승인 · 클리어 확정') + `<button type="button" class="btn btn-outline" data-action="mission-simulation-reject" data-challenge-id="${escapeAttribute(challenge.id)}" ${disabled ? 'disabled' : ''}>보완 요청 · 재제출</button>`;
+  } else if (simulation.stage === 'SUCCESS') {
+    message = simulation.payoutStatus === 'PAID' ? '가상 지급까지 마쳤습니다. 실제 계좌 입금과 청구는 발생하지 않았습니다.' : role === 'owner' ? '가상 결과가 승인되었습니다. 가상 지급을 완료하거나 지급 실패 후 재시도를 체험하세요.' : '가상 결과가 승인되었습니다. 의뢰자의 가상 지급 완료를 기다려주세요.';
+    if (role === 'owner' && simulation.payoutStatus !== 'PAID') actions = button('PAYOUT_SUCCESS', simulation.payoutStatus === 'FAILED' ? '가상 지급 재시도 · 완료' : '가상 보상 지급 완료') + button('PAYOUT_FAIL', '가상 지급 실패 체험', 'btn-outline');
+  } else if (simulation.stage === 'CANCELLED') message = '이 가상 진행은 취소되었습니다. 실제 미션과 기존 티저는 보존됩니다.';
+  if (role === 'owner' && !['FUNDING_REQUIRED','CANCELLED'].includes(simulation.stage) && simulation.payoutStatus !== 'PAID') actions += button('CANCEL', '가상 진행 종료 · 가상 확보금 환불', 'btn-ghost');
+  if (role === 'owner' && simulation.stage === 'CANCELLED' && !simulation.blockedReason) actions = `<button type="button" class="btn btn-primary" data-action="open-mission-simulation" data-challenge-id="${escapeAttribute(challenge.id)}" data-teaser-id="${escapeAttribute(simulation.teaserId)}">현재 후보로 새 가상 진행 시작</button>`;
+  const proof = simulation.proof;
+  let evidenceUrl = '';
+  try { if (proof?.evidenceUrl && new URL(proof.evidenceUrl).protocol === 'https:') evidenceUrl = proof.evidenceUrl; } catch { /* Invalid evidence links remain plain text. */ }
+  return `<section class="mission-simulation-panel" data-mission-simulation="${escapeAttribute(simulation.id)}" aria-label="이 미션의 가상 진행">${missionSimulationZeroNotice()}<div class="mission-simulation-heading"><div><span class="activity-badge">${role === 'owner' ? '의뢰자' : '선정 수행자'} 계정</span><h3>${escapeHTML(missionSimulationLabel(simulation))}</h3></div><button type="button" class="btn btn-outline btn-small" data-action="open-mission-simulation" data-challenge-id="${escapeAttribute(challenge.id)}">진행 새로고침</button></div><p>${message}</p>${simulation.blockedReason ? `<p class="workflow-blocked">${escapeHTML(missionSimulationBlockedMessage(simulation.blockedReason))}</p>` : ''}${simulation.reviewReason ? `<div class="notice-box warning"><span>!</span><div><strong>의뢰자의 보완 요청</strong><p>${escapeHTML(simulation.reviewReason)}</p></div></div>` : ''}${proof ? `<div class="mission-simulation-proof"><h4>제출된 가상 수행 결과</h4><p>${nl2br(proof.description)}</p>${evidenceUrl ? `<a href="${escapeAttribute(evidenceUrl)}" target="_blank" rel="noopener noreferrer">증빙 링크 열기</a>` : ''}</div>` : ''}<div class="mission-simulation-actions">${actions}</div><div class="mission-simulation-amounts"><div><span>가상 보상금</span><strong>${formatWon(simulation.rewardAmount)}</strong></div><div><span>가상 수수료 10%</span><strong>${formatWon(simulation.platformFee)}</strong></div><div><span>가상 수행자 수령액 90%</span><strong>${formatWon(simulation.solverPayout)}</strong></div><div><span>실제 청구·송금</span><strong>0원</strong></div></div><details><summary>가상 진행 기록</summary><ol class="mission-simulation-events">${(simulation.events || []).slice(-12).map(event => `<li>${escapeHTML(event.label || event.action || '진행 상태 변경')}${event.at ? ` <small>${escapeHTML(formatDateTime(event.at))}</small>` : ''}</li>`).join('') || '<li>가상 최종 수행자 확정</li>'}</ol></details><p class="form-hint">상세 화면은 8초마다 갱신됩니다. 상대방은 자신의 계정에서 같은 미션의 진행상황을 확인할 수 있습니다.</p></section>`;
+}
+
+async function openMissionSimulation(challengeId, teaserId) {
+  const access = await apiClient.getMissionSimulation(challengeId);
+  state.missionSimulationAccess = { ...access, challengeId };
+  if (access.simulation && !(access.canStart && access.simulation.stage === 'CANCELLED' && teaserId)) return openChallenge(challengeId);
+  if (!access.canStart || access.viewerRole !== 'owner') throw new ApiError(missionSimulationBlockedMessage(access.blockedReason) || '의뢰자가 수행자 후보를 선택한 뒤 가상 진행을 시작할 수 있습니다.');
+  const candidate = teaserId || access.candidateTeaserId;
+  if (!candidate || candidate !== access.candidateTeaserId) throw new ApiError('현재 수행자 후보를 다시 확인해주세요.');
+  openModal(`<form id="mission-simulation-start-form" data-challenge-id="${escapeAttribute(challengeId)}" data-teaser-id="${escapeAttribute(candidate)}">${missionSimulationZeroNotice()}<h3>현재 후보를 가상 최종 수행자로 확정합니다</h3><p>후보선정과 별도로 가상 진행의 수행자 한 명을 정합니다. 의뢰자는 가상 보상금 확보·검수·지급을, 선정 수행자는 자신의 계정에서 수행 시작·결과 제출을 진행합니다.</p><label class="check-row"><input name="consent" type="checkbox" required><span>실제 돈이 오가지 않는 가상 진행이며, 원래 미션·티저와 실명 인증 상태는 바뀌지 않음을 확인했습니다.</span></label><button type="submit" class="btn btn-primary btn-block">가상 최종 수행자 확정 · 시작</button></form>`, { title: '이 미션에서 가상 진행 시작' });
+}
+
+function currentMissionSimulation(challengeId) {
+  if (state.selectedChallenge?.challenge?.id === challengeId && isMissionSimulation(state.selectedChallenge.context?.missionSimulation)) return state.selectedChallenge.context.missionSimulation;
+  return state.missionSimulationAccess?.challengeId === challengeId ? state.missionSimulationAccess.simulation : null;
+}
+
+async function runMissionSimulationAction(challengeId, action, payload = {}, source) {
+  const simulation = currentMissionSimulation(challengeId);
+  if (action !== 'START' && !missionSimulationRole(simulation)) throw new ApiError('이 가상 진행의 의뢰자 또는 선정 수행자 계정이 필요합니다.');
+  const body = { ...payload, action, requestId: source?.dataset?.requestId || crypto.randomUUID() };
+  if (source?.dataset) source.dataset.requestId = body.requestId;
+  if (action !== 'START') body.revision = simulation.revision;
+  if (action === 'START' && payload.consent !== true) throw new ApiError('가상 진행 안내를 확인하고 동의해주세요.');
+  const result = await apiClient.actMissionSimulation(challengeId, body);
+  state.missionSimulationAccess = { ...result, challengeId };
+  if (state.selectedChallenge?.challenge?.id === challengeId && result.simulation) state.selectedChallenge.context = { ...(state.selectedChallenge.context || {}), missionSimulation: result.simulation };
+  if (source instanceof HTMLFormElement) sessionStorage.removeItem(transientModalDraftKey(source));
+  state.activity = null;
+  toast('가상 진행 상태를 저장했습니다', '실제 청구 및 송금은 0원입니다.', 'success');
+  await openChallenge(challengeId);
+  if (state.route === 'dashboard') await refreshDashboardActivity();
+}
+
+function openMissionSimulationProof(challengeId) {
+  const simulation = currentMissionSimulation(challengeId);
+  if (missionSimulationRole(simulation) !== 'solver' || simulation.stage !== 'EXECUTING' || !simulation.executionStarted) throw new ApiError('선정 수행자가 가상 수행을 시작한 뒤 제출할 수 있습니다.');
+  openModal(`<form id="mission-simulation-proof-form" data-challenge-id="${escapeAttribute(challengeId)}">${missionSimulationZeroNotice()}<div class="field"><label>가상 수행 결과</label><textarea name="description" required minlength="20" maxlength="6000" rows="8" placeholder="공개된 성공조건에 맞춰 수행한 내용과 결과를 적어주세요."></textarea></div><div class="field"><label>증빙 링크 <small>선택 · https:// 주소</small></label><input type="url" name="evidenceUrl" maxlength="1000" pattern="https://.*" placeholder="https://"></div><button type="submit" class="btn btn-primary btn-block">가상 결과 제출 · 의뢰자에게 검수 요청</button></form>`, { title: '가상 수행 결과 제출', wide: true });
+  restoreTransientModalDraft(document.querySelector('#mission-simulation-proof-form'));
+}
+
+function openMissionSimulationReject(challengeId) {
+  const simulation = currentMissionSimulation(challengeId);
+  if (missionSimulationRole(simulation) !== 'owner' || simulation.stage !== 'PROOF_SUBMITTED') throw new ApiError('결과 검수 단계의 의뢰자만 보완을 요청할 수 있습니다.');
+  openModal(`<form id="mission-simulation-reject-form" data-challenge-id="${escapeAttribute(challengeId)}">${missionSimulationZeroNotice()}<div class="field"><label>보완 요청 내용</label><textarea name="reason" required minlength="5" maxlength="1000" rows="5" placeholder="성공조건 중 보완할 항목을 구체적으로 적어주세요."></textarea></div><button type="submit" class="btn btn-primary btn-block">보완 요청 · 가상 결과 재제출 받기</button></form>`, { title: '가상 결과 보완 요청' });
+  restoreTransientModalDraft(document.querySelector('#mission-simulation-reject-form'));
 }
 
 function renderLiveActions(challenge, context) {
@@ -2046,7 +2183,7 @@ async function logout() {
   state.trustProfile = null;
   state.adminOverview = null;
   state.selectedChallenge = null;
-  state.simulation = null; state.simulations = []; state.simulationRole = 'owner';
+  state.simulation = null; state.simulations = []; state.simulationRole = 'owner'; state.missionSimulationAccess = null;
   closeModal();
   navigate('home');
   toast('로그아웃했습니다', '안전하게 로그아웃되었습니다.', 'success');
@@ -2198,20 +2335,25 @@ async function submitTeaserWithdraw(form) {
 async function openCandidateReview(challengeId) {
   openModal(renderModalLoading(), { title: 'TEASER 후보 심사', wide: true });
   try {
-    const result = await apiClient.listTeasers(challengeId);
+    const [result, missionAccess] = await Promise.all([apiClient.listTeasers(challengeId), typeof apiClient.getMissionSimulation === 'function' ? apiClient.getMissionSimulation(challengeId).catch(() => null) : Promise.resolve(null)]);
+    if (missionAccess) state.missionSimulationAccess = { ...missionAccess, challengeId };
     const teasers = result.teasers || [];
-    openModal(`<div class="candidate-review"><div class="notice-box"><span>✓</span><div><strong>수행자 후보는 한 번에 1명만 선택됩니다</strong><p>다른 제안을 후보로 선택하면 이전 후보는 자동 해제됩니다. 실제 수행 확정과 보상금 확보는 별도 단계입니다.</p>${!isMoneyFlowAvailable() ? '<p class="workflow-blocked">후보 선택은 가능합니다. 현재 최종 거래 확정·결제·지급은 이용할 수 없으며, 후보 선택만으로 계약이나 지급이 확정되지 않습니다.</p>' : ''}</div></div><div class="candidate-grid">${teasers.length ? teasers.map((teaser) => renderCandidateCard(challengeId, teaser)).join('') : renderEmpty('제출된 TEASER가 없습니다', '참가자가 제출하면 이곳에서 비교할 수 있습니다.')}</div><button type="button" class="btn btn-outline btn-block" data-challenge-id="${escapeAttribute(challengeId)}">미션 진행상황으로 돌아가기</button></div>`, { title: `제안 ${teasers.length}명`, wide: true });
+    openModal(`<div class="candidate-review"><div class="notice-box"><span>✓</span><div><strong>수행자 후보는 한 번에 1명만 선택됩니다</strong><p>다른 제안을 후보로 선택하면 이전 후보는 자동 해제됩니다. 실제 수행 확정과 보상금 확보는 별도 단계입니다.</p>${!isMoneyFlowAvailable() ? '<p class="workflow-blocked">후보 선택만으로 최종 수행자가 확정되지는 않습니다. 선택한 후보와 이 미션에서 가상 진행을 시작할 수 있습니다. 실제 결제·지급은 비활성입니다.</p>' : ''}</div></div>${missionAccess?.blockedReason ? `<p class="workflow-blocked">${escapeHTML(missionSimulationBlockedMessage(missionAccess.blockedReason))}</p>` : ''}<div class="candidate-grid">${teasers.length ? teasers.map((teaser) => renderCandidateCard(challengeId, teaser, missionAccess)).join('') : renderEmpty('제출된 TEASER가 없습니다', '참가자가 제출하면 이곳에서 비교할 수 있습니다.')}</div><button type="button" class="btn btn-outline btn-block" data-challenge-id="${escapeAttribute(challengeId)}">미션 진행상황으로 돌아가기</button></div>`, { title: `제안 ${teasers.length}명`, wide: true });
   } catch (error) {
     renderModalRequestError('TEASER 후보 심사', error, 'retry-candidate-review', { challengeId });
     showError(error);
   }
 }
 
-function renderCandidateCard(challengeId, teaser) {
+function renderCandidateCard(challengeId, teaser, missionAccess = null) {
   const finalistAvailable = isMoneyFlowAvailable();
   const finalistDisabled = ['SELECTED', 'WITHDRAWN', 'REJECTED'].includes(teaser.status) || !finalistAvailable;
-  const finalistLabel = teaser.status === 'SELECTED' ? '최종 수행자 확정 완료' : finalistAvailable ? '최종 수행자 확정' : '최종 확정 · 준비 중';
-  return `<article class="candidate-card ${teaser.status === 'SELECTED' ? 'selected' : ''}"><div class="candidate-head"><button class="profile-trigger" type="button" data-action="view-public-profile" data-user-id="${escapeAttribute(teaser.solverId || '')}"><span class="avatar">${initial(teaser.solver?.displayName)}</span><span><strong>${escapeHTML(teaser.solver?.displayName || '도전자')}</strong><small>도전자 · Strike ${teaser.solver?.strikes ?? 0}/3</small></span></button>${teaserStatusBadge(teaser.status)}</div>${renderTrustGauge(teaser.solver?.trustScore, { detailed: true, userId: teaser.solverId })}<h3>${escapeHTML(teaser.headline)}</h3><div class="candidate-detail"><strong>해결능력</strong><p>${nl2br(teaser.capability)}</p><strong>접근방법</strong><p>${nl2br(teaser.approach)}</p><strong>예상기간</strong><p>${teaser.expectedDays}일</p>${teaser.maskedEvidence ? `<strong>마스킹 증빙</strong><p>${nl2br(teaser.maskedEvidence)}</p>` : ''}</div><div class="verify-row">${verifyBadge('본인', teaser.solver?.identityVerified)}${verifyBadge('사업자', teaser.solver?.businessVerified)}${verifyBadge('전문자격', teaser.solver?.professionalVerified)}</div><div class="candidate-actions"><button class="btn btn-outline" data-action="shortlist" data-challenge-id="${challengeId}" data-teaser-id="${teaser.id}" ${['SHORTLISTED','SELECTED','WITHDRAWN','REJECTED'].includes(teaser.status) ? 'disabled' : ''}>${['SHORTLISTED','SELECTED'].includes(teaser.status) ? '✓ 현재 수행자 후보' : '수행자 후보로 선택'}</button><button class="btn btn-primary" data-action="select-finalist" data-challenge-id="${challengeId}" data-teaser-id="${teaser.id}" ${finalistDisabled ? 'disabled' : ''} title="${finalistAvailable ? '' : '현재 최종 거래 확정을 이용할 수 없습니다'}">${finalistLabel}</button></div></article>`;
+  const finalistLabel = teaser.status === 'SELECTED' ? '최종 수행자 확정 완료' : finalistAvailable ? '최종 수행자 확정' : '실제 거래 최종 확정 · 준비 중';
+  const linked = missionAccess?.simulation;
+  const isLinkedCandidate = isMissionSimulation(linked) && linked.stage !== 'CANCELLED' && linked.teaserId === teaser.id && missionSimulationRole(linked);
+  const canStartLinked = missionAccess?.canStart && missionAccess.viewerRole === 'owner' && missionAccess.candidateTeaserId === teaser.id && ['SHORTLISTED','SELECTED'].includes(teaser.status);
+  const linkedAction = isLinkedCandidate || canStartLinked ? `<button type="button" class="btn btn-soft" data-action="open-mission-simulation" data-challenge-id="${escapeAttribute(challengeId)}" data-teaser-id="${escapeAttribute(teaser.id)}">${isLinkedCandidate ? '가상 최종 수행자 · 진행 보기' : '이 후보로 가상 진행 시작'}</button><small>실제 청구 및 송금 0원</small>` : '';
+  return `<article class="candidate-card ${teaser.status === 'SELECTED' ? 'selected' : ''}"><div class="candidate-head"><button class="profile-trigger" type="button" data-action="view-public-profile" data-user-id="${escapeAttribute(teaser.solverId || '')}"><span class="avatar">${initial(teaser.solver?.displayName)}</span><span><strong>${escapeHTML(teaser.solver?.displayName || '도전자')}</strong><small>도전자 · Strike ${teaser.solver?.strikes ?? 0}/3</small></span></button>${teaserStatusBadge(teaser.status)}</div>${renderTrustGauge(teaser.solver?.trustScore, { detailed: true, userId: teaser.solverId })}<h3>${escapeHTML(teaser.headline)}</h3><div class="candidate-detail"><strong>해결능력</strong><p>${nl2br(teaser.capability)}</p><strong>접근방법</strong><p>${nl2br(teaser.approach)}</p><strong>예상기간</strong><p>${teaser.expectedDays}일</p>${teaser.maskedEvidence ? `<strong>마스킹 증빙</strong><p>${nl2br(teaser.maskedEvidence)}</p>` : ''}</div><div class="verify-row">${verifyBadge('본인', teaser.solver?.identityVerified)}${verifyBadge('사업자', teaser.solver?.businessVerified)}${verifyBadge('전문자격', teaser.solver?.professionalVerified)}</div><div class="candidate-actions"><button class="btn btn-outline" data-action="shortlist" data-challenge-id="${challengeId}" data-teaser-id="${teaser.id}" ${['SHORTLISTED','SELECTED','WITHDRAWN','REJECTED'].includes(teaser.status) ? 'disabled' : ''}>${['SHORTLISTED','SELECTED'].includes(teaser.status) ? '✓ 현재 수행자 후보' : '수행자 후보로 선택'}</button><button class="btn btn-primary" data-action="select-finalist" data-challenge-id="${challengeId}" data-teaser-id="${teaser.id}" ${finalistDisabled ? 'disabled' : ''} title="${finalistAvailable ? '' : '현재 최종 거래 확정을 이용할 수 없습니다'}">${finalistLabel}</button>${linkedAction}</div></article>`;
 }
 
 async function shortlistCandidate(challengeId, teaserId, mode) {
@@ -2411,7 +2553,7 @@ function transientModalDraftKey(form) {
 }
 
 function saveTransientModalDraft(form) {
-  if (!(form instanceof HTMLFormElement) || !['teaser-form', 'cancel-form','teaser-edit-form','challenge-edit-form'].includes(form.id)) return;
+  if (!(form instanceof HTMLFormElement) || !['teaser-form', 'cancel-form','teaser-edit-form','challenge-edit-form','mission-simulation-proof-form','mission-simulation-reject-form'].includes(form.id)) return;
   const values = {};
   new FormData(form).forEach((value, key) => { if (typeof value === 'string') values[key] = value; });
   try { sessionStorage.setItem(transientModalDraftKey(form), JSON.stringify(values)); } catch { /* Keep the active form usable when browser storage is full. */ }
@@ -2456,6 +2598,8 @@ function openPolicy(type) {
 }
 
 function openModal(content, { title = '', footer = '', wide = false } = {}) {
+  clearInterval(missionDetailPollTimer);
+  missionDetailPollTimer = null;
   if (!document.body.classList.contains('modal-open')) modalScrollY = window.scrollY;
   if (!modalRoot.innerHTML && !history.state?.moduModal) {
     history.pushState({ ...(history.state || {}), moduModal: true }, '', location.href);
@@ -2483,6 +2627,8 @@ function dismissModal(options = {}) {
 }
 
 function closeModal({ fromHistory = false, preserveHistory = false } = {}) {
+  clearInterval(missionDetailPollTimer);
+  missionDetailPollTimer = null;
   if (!modalRoot.innerHTML) return;
   modalRoot.innerHTML = '';
   document.body.classList.remove('modal-open');
@@ -2755,6 +2901,7 @@ function renderTrustFeature(icon, title, description) { return `<article class="
 function adminMetric(label, value, sub) { return `<article class="admin-metric"><span>${label}</span><strong>${value ?? 0}</strong><small>${sub}</small></article>`; }
 function renderEmpty(title, description, action = '') { return `<div class="empty-state"><div class="empty-icon">⌁</div><h3>${escapeHTML(title)}</h3><p>${escapeHTML(description)}</p>${action}</div>`; }
 function renderProgressNotice(challenge, context = {}) {
+  if (missionSimulationRole(context.missionSimulation)) return renderMissionSimulation(challenge, context.missionSimulation);
   let title = '티저 접수 중';
   let message = context.isOwner ? '접수된 티저를 검토하고 수행자 후보 1명을 선택하세요.' : '제안한 내용은 내 티저 보기에서 확인할 수 있습니다. 후보선정은 의뢰자가 진행합니다.';
   let action = context.isOwner && !challenge.moderationPending && ['OPEN','REVIEW','SHORTLISTED'].includes(challenge.status) ? 'review-candidates' : '';
@@ -2768,7 +2915,8 @@ function renderProgressNotice(challenge, context = {}) {
     label = '후보 확인 · 최종 확정';
     if (blocked) {
       message += ' 실제 결제·지급 연동은 준비 중입니다.';
-      if (context.isAdmin) message += ' 운영 관리자는 아래 ‘가상 거래로 복제해 테스트’에서 이후 단계를 시험할 수 있습니다.';
+      if (context.isOwner) message += ' 후보 확인 화면에서 선택한 후보와 가상 진행을 시작할 수 있습니다. 실제 청구·송금은 0원입니다.';
+      else if (context.isAdmin) message += ' 운영 관리자는 아래 ‘가상 거래로 복제해 테스트’에서 별도 테스트를 할 수 있습니다.';
     }
   } else if (challenge.status === 'FUNDING_REQUIRED') {
     title = '의뢰자의 보상금 확보 대기';
@@ -2794,6 +2942,11 @@ function renderProgressNotice(challenge, context = {}) {
 }
 
 function renderFlow(challenge, context = {}) {
+  if (missionSimulationRole(context.missionSimulation)) {
+    const simulation = context.missionSimulation;
+    const virtualChallenge = { status: simulation.stage, fundingStatus: simulation.payoutStatus === 'PAID' ? 'PAID' : simulation.paymentStatus === 'APPROVED' ? 'FUNDED' : 'POSTED' };
+    return `<p class="form-hint">가상 진행 단계 · 원래 미션 상태는 보존됩니다.</p>${renderFlow(virtualChallenge).replace(/미션 공개/g, '미션 연결').replace(/티저 도전/g, '티저 연결').replace(/후보선정/g, '가상 최종 선정').replace(/보상금 확보/g, '가상 보상금 확보').replace(/미션 수행/g, '가상 수행').replace(/결과 검수/g, '가상 결과 검수').replace(/보상 지급/g, '가상 보상 지급').replace(/의뢰자 · 결제 \/ 서비스 · 입금 확인/g, '의뢰자 · 가상 결제 확인').replace(/지급 처리 후 정산내역 확인/g, '가상 지급 처리 · 실제 송금 0원')}`;
+  }
   if (challenge.status === 'DRAFT') return '<p class="form-hint">현재 비공개 초안입니다. 내용 검수를 통과하고 공개한 뒤 수행 신청을 받을 수 있습니다.</p>';
   const steps = [['미션 공개','의뢰자 · 미션과 성공조건 등록'],['티저 도전','도전자 · 제안 제출'],['후보선정','의뢰자 · 후보 비교 후 최종 1명 확정'],['보상금 확보','의뢰자 · 결제 / 서비스 · 입금 확인'],['미션 수행','최종 수행자 · 수행 후 결과 제출'],['결과 검수','의뢰자 · 증빙 확인 후 완료 확정'],['보상 지급','지급 처리 후 정산내역 확인']];
   const current = flowIndex(challenge);

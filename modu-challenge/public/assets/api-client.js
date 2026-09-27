@@ -161,7 +161,9 @@ export const apiClient = {
     return api(`/api/challenges${query.size ? `?${query}` : ''}`);
   },
   getMyTeaser: (id) => api(`/api/challenges/${encodeURIComponent(id)}/my-teaser`),
-  getChallenge: (id) => api(`/api/challenges/${encodeURIComponent(id)}`),
+  getChallenge: (id, options = {}) => api(`/api/challenges/${encodeURIComponent(id)}${options.refresh ? '?refresh=1' : ''}`),
+  getMissionSimulation: (id) => api(`/api/challenges/${encodeURIComponent(id)}/mission-simulation`),
+  actMissionSimulation: (id, body) => api(`/api/challenges/${encodeURIComponent(id)}/mission-simulation`, { method: 'POST', body }),
   createChallenge: (data, idempotencyKey) => api('/api/challenges', {
     method: 'POST', body: data, headers: { 'Idempotency-Key': idempotencyKey },
   }),

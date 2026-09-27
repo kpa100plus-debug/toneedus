@@ -30,7 +30,13 @@ test('preservation SQL runs against all current migrations and covers every prot
     assert.equal(queries.length, 35);
     const response = queries.map(query => ({success: true, results: db.prepare(query).all()}));
     assert.equal(compareInventories(inventory(response), inventory(response)).preserved, true);
-    for (const [table, keys, protectedColumns] of preservationTables) {
+    for (const [table, keys, protectedColumns] of [...preservationTables, ...optionalPreservationTables]) {
+      // Optional legacy/runtime-owned tables may not exist in a fresh schema.
+      const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table);
+      if (!exists && optionalPreservationTables.some(([name]) => name === table)) {
+        assert.ok(!['mission_simulations', 'mission_simulation_events'].includes(table), `${table} migration missing`);
+        continue;
+      }
       const columns = new Set(db.prepare(`SELECT * FROM "${table}"`).columns().map(column => column.name));
       for (const column of [...keys, ...(protectedColumns === '*' ? [] : protectedColumns)]) assert.ok(columns.has(column), `${table}.${column}`);
     }
@@ -69,6 +75,32 @@ test('normal activity updates and newly added members are retained without false
   const result = compareInventories(inventory(before), inventory(after));
   assert.deepEqual(result.tables.users, {before: 1, after: 2, retained: 1, added: 1, mutableRowsChanged: 1});
   assert.equal(result.tables.challenges.mutableRowsChanged, 1);
+});
+
+test('linked virtual records join preservation after their first migration and keep immutable party and event evidence', () => {
+  const counts = Object.fromEntries(preservationTables.map(([table]) => [table, 0]));
+  const firstScope = scopeFromRestore({restoreVerified: true, counts});
+  assert.equal(firstScope.some(([table]) => table === 'mission_simulations'), false);
+  counts.mission_simulations = 1; counts.mission_simulation_events = 1;
+  const scope = scopeFromRestore({restoreVerified: true, counts});
+  const before = scope.map(([table, keys, columns]) => ({success: true, results: [{
+    __preservation_table: table,
+    ...Object.fromEntries([...new Set([...keys, ...(columns === '*' ? ['immutable_payload'] : columns)])].map(column => [column, `${table}-${column}`])),
+    revision: 1,
+  }]}));
+  const baseline = buildInventory(before, key, scope);
+  const simulationIndex = scope.findIndex(([table]) => table === 'mission_simulations');
+  const eventIndex = scope.findIndex(([table]) => table === 'mission_simulation_events');
+  const progressed = structuredClone(before); progressed[simulationIndex].results[0].revision = 2;
+  assert.equal(compareInventories(baseline, buildInventory(progressed, key, scope)).preserved, true);
+  for (const [index, column] of [[simulationIndex, 'solver_id'], [simulationIndex, 'source_reward'], [eventIndex, 'immutable_payload']]) {
+    const after = structuredClone(before); after[index].results[0][column] = 'changed';
+    assert.throws(() => compareInventories(baseline, buildInventory(after, key, scope)), /protected values changed/);
+  }
+  for (const index of [simulationIndex, eventIndex]) {
+    const after = structuredClone(before); after[index].results = [];
+    assert.throws(() => compareInventories(baseline, buildInventory(after, key, scope)), /lost an existing record/);
+  }
 });
 
 for (const [index, [table]] of preservationTables.entries()) {

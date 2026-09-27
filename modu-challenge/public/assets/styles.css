@@ -2409,3 +2409,24 @@ body[data-home-theme="command"] .studio-mission-icon { color:color-mix(in srgb,v
 .simulation-check-row p { margin:5px 0 12px; }
 .simulation-check-row small { display:block; margin-top:10px; color:var(--muted); }
 @media(max-width:760px){.simulation-readiness { padding:14px; }.simulation-subject-form { display:grid; grid-template-columns:minmax(0,1fr); }.simulation-subject-form label { min-width:0; }}
+
+/* Private, shared virtual progress for the mission's actual two participants. */
+.mission-simulation-panel { margin:0 0 24px; padding:22px; border:2px solid #6550dc; border-radius:18px; background:#fcfbff; min-width:0; overflow-wrap:anywhere; }
+.mission-simulation-zero { padding:14px 16px; border-radius:12px; background:#f0edff; color:#302459; line-height:1.6; }
+.mission-simulation-zero p { margin:6px 0 0; font-size:.9rem; }
+.mission-simulation-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:18px; }
+.mission-simulation-heading h3 { margin:9px 0; }
+.mission-simulation-panel > p { line-height:1.7; }
+.mission-simulation-actions { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0; }
+.mission-simulation-actions .btn { min-height:46px; white-space:normal; }
+.mission-simulation-amounts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:18px 0; }
+.mission-simulation-amounts > div { padding:12px; border:1px solid #ddd7ef; border-radius:10px; min-width:0; }
+.mission-simulation-amounts span,.mission-simulation-amounts strong { display:block; }
+.mission-simulation-amounts span { font-size:.85rem; color:var(--muted); margin-bottom:7px; }
+.mission-simulation-amounts strong { font-size:clamp(1rem,3vw,1.2rem); }
+.mission-simulation-proof { padding:16px; margin-top:16px; background:#fff; border:1px solid var(--line); border-radius:12px; line-height:1.7; }
+.mission-simulation-proof h4 { margin:0 0 8px; }.mission-simulation-proof p { white-space:normal; }
+.mission-simulation-events { padding-left:22px; line-height:1.8; }.mission-simulation-events small { color:var(--muted); }
+#mission-simulation-start-form,#mission-simulation-proof-form,#mission-simulation-reject-form { display:grid; gap:18px; }
+.candidate-actions > small { flex-basis:100%; color:#514578; }
+@media(max-width:640px){.mission-simulation-panel{padding:14px}.mission-simulation-heading{align-items:flex-start;flex-direction:column}.mission-simulation-actions{display:grid;grid-template-columns:minmax(0,1fr)}.mission-simulation-actions .btn{width:100%}.mission-simulation-amounts{grid-template-columns:minmax(0,1fr)}.mission-simulation-zero{padding:12px}}

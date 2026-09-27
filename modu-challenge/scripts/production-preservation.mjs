@@ -45,6 +45,8 @@ export const preservationTables = [
 ];
 
 export const optionalPreservationTables = [
+  ['mission_simulations', ['id'], ['challenge_id', 'owner_id', 'solver_id', 'teaser_id', 'source_reward', 'create_request_key', 'start_fingerprint']],
+  ['mission_simulation_events', ['id'], '*'],
   ['push_delivery_logs', ['id'], '*'],
   ['push_announcement_logs', ['id'], ['actor_id']],
   ['transaction_refund_receipts', ['event_id'], '*'],

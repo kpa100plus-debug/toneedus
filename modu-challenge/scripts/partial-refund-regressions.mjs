@@ -35,7 +35,7 @@ assert.equal((await step('PARTIAL_REFUND_SUCCEEDED',{requestKey,revision,provide
 assert.equal(sql.prepare('SELECT count(*) n FROM transaction_refund_receipts WHERE order_id=?').get(id).n,1);
 assert.equal(sql.prepare('SELECT SUM(debit)-SUM(credit) n FROM transaction_ledger WHERE order_id=?').get(id).n,0);
 pass('partial refund receipt and remaining 10/90 settlement are durable and idempotent');
-await assert.rejects(executeProviderOperation(env,{orderId:id,kind:'PAYOUT',actorId:'TEST_OPERATOR',requestKey:key()}),/PARTIAL_REFUND_PROVIDER_NOT_RELEASED/);
+await assert.rejects(executeProviderOperation(env,{orderId:id,kind:'PAYOUT',actorId:'TEST_OPERATOR',requestKey:key()}),/INVALID_TRANSITION/);
 await step('SUBMIT_PROOF',{actorId:solverId});await step('ACCEPT_PROOF');await step('QUEUE_PAYOUT',{actorId:'TEST_OPERATOR'});
 await assert.rejects(step('PAYOUT_SUCCEEDED',{actorId:'TEST_PROVIDER',providerReference:key(),amount:90000}),/PROVIDER_RESULT_MISMATCH/);
 await step('PAYOUT_SUCCEEDED',{actorId:'TEST_PROVIDER',providerReference:key(),amount:72000});
@@ -43,7 +43,7 @@ assert.equal(row.state,'PAID');assert.equal(row.amount,100000);assert.equal(row.
 assert.equal(sql.prepare("SELECT SUM(credit)-SUM(debit) n FROM transaction_ledger WHERE order_id=? AND account='CUSTOMER_LIABILITY'").get(id).n,0);
 assert.equal(sql.prepare("SELECT SUM(credit) n FROM transaction_ledger WHERE order_id=? AND account='PLATFORM_FEE'").get(id).n,8000);
 assert.throws(()=>sql.prepare('UPDATE transaction_refund_receipts SET amount=1 WHERE order_id=?').run(id),/IMMUTABLE_REFUND_RECEIPT/);
-pass('partial refund payout clears remaining liability; original price snapshot preserved; provider transport stays closed');
+pass('partial refund payout clears remaining liability; original snapshot preserved; premature provider payout blocked');
 row=await funded();await step('REQUEST_PARTIAL_REFUND',{amount:20000,reason:'검수 범위 변경에 합의하여 일부 금액을 환불합니다.'});
 await assert.rejects(step('PARTIAL_REFUND_SUCCEEDED',{providerReference:receiptKey,amount:20000,actorId:'TEST_PROVIDER'}),/DUPLICATE_PROVIDER_OR_REQUEST/);
 assert.equal(sql.prepare('SELECT state FROM transaction_orders WHERE id=?').get(row.id).state,'PARTIAL_REFUND_PENDING');

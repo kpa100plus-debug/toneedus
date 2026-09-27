@@ -30,6 +30,7 @@ const runtimePaths = [
   'worker/index.mjs',
   'worker/email-otp.mjs',
   'migrations/0023_email_otp.sql',
+  'migrations/0026_provider_partial_refunds.sql',
   'migrations/0025_oauth_identity_restrictions.sql',
   'migrations/0024_partial_refund_readiness.sql',
   'worker/identity.mjs',

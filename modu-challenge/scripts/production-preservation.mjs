@@ -48,6 +48,7 @@ export const optionalPreservationTables = [
   ['push_delivery_logs', ['id'], '*'],
   ['push_announcement_logs', ['id'], ['actor_id']],
   ['transaction_refund_receipts', ['event_id'], '*'],
+  ['provider_operation_intents', ['operation_id'], '*'],
   ['auth_identity_restrictions', ['identity_id'], []],
   ['d1_migrations', ['id'], '*'],
 ];

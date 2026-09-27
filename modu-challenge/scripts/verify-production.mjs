@@ -72,6 +72,24 @@ async function main() {
     } catch (e) { error = e; if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 5000)); }
   }
   if (error) throw error;
+  // Inspect redirects without following them or signing in to external accounts.
+  // Persist only the checks, never OAuth state, cookies or authorization URLs.
+  result.oauthStarts = {};
+  for (const [provider, hostname] of [['google', 'accounts.google.com'], ['naver', 'nid.naver.com']]) {
+    const response = await fetch(`${origin}/api/auth/oauth/${provider}?returnTo=%2Fcreate`, {
+      redirect: 'manual', signal: AbortSignal.timeout(15000), headers: {'Cache-Control': 'no-cache'},
+    });
+    assert.equal(response.status, 302, `${provider} OAuth start unavailable`);
+    const destination = new URL(response.headers.get('Location'));
+    assert.equal(destination.protocol, 'https:'); assert.equal(destination.hostname, hostname);
+    assert.equal(destination.searchParams.get('redirect_uri'), `${origin}/api/auth/oauth/${provider}/callback`);
+    const state = destination.searchParams.get('state');
+    const cookie = response.headers.get('Set-Cookie') || '';
+    assert.ok(state && state.length >= 20 && cookie.includes(`mc_oauth_state=${state};`), `${provider} state binding missing`);
+    assert.ok(/;\s*HttpOnly/i.test(cookie) && /;\s*Secure/i.test(cookie) && /;\s*SameSite=Lax/i.test(cookie), `${provider} state cookie protection missing`);
+    result.oauthStarts[provider] = {status: response.status, destinationHost: hostname, callbackMatches: true,
+      stateCookieProtected: true, externalLoginCompleted: false};
+  }
   result.workerDeployment = await readDeploymentMetadata({accountId: process.env.CLOUDFLARE_ACCOUNT_ID, token: process.env.CLOUDFLARE_API_TOKEN, workerName: config.name});
   result.checkedAt = new Date().toISOString();
   if (process.argv[2]) await writeFile(process.argv[2], JSON.stringify(result, null, 2) + '\n');

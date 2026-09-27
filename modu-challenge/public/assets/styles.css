@@ -2376,3 +2376,10 @@ body[data-home-theme="command"] .studio-mission-icon { color:color-mix(in srgb,v
 .bootstrap-cards p { margin:0; color:var(--muted); line-height:1.6; }
 .bootstrap-card-placeholder { height:90px; border-radius:14px; background:linear-gradient(110deg,#eff1f7,#f8f9fc); }
 #simulation-partial-refund-form { margin-top:22px; padding-top:20px; border-top:1px solid var(--line); }
+
+/* Desktop photo caption uses the clear space to the left of the floating card. */
+@media (min-width: 1041px) {
+  .hero-photo-caption { right: auto; max-width: calc(100% - min(70%, 350px) - 12px); }
+  .hero-photo-caption strong { word-break: keep-all; overflow-wrap: anywhere; line-height: 1.4; }
+  .hero-photo-caption span { flex-wrap: wrap; min-width: 0; }
+}

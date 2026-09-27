@@ -46,6 +46,7 @@ export async function testSimulations({req, sql, ownerCookie, otherCookie, sourc
   await action('SUBMIT_PROOF','solver',{proof:'보상금을 확보하기 전 제출을 요청하는 잘못된 테스트입니다.'},409);
   await action('PAY_FAIL');assert.equal(s.stage,'FUNDING_REQUIRED');assert.equal(s.paymentStatus,'FAILED');
   await action('PAY_CANCEL');assert.equal(s.stage,'FUNDING_REQUIRED');assert.equal(s.paymentStatus,'CANCELLED');
+  await action('SET_SIMULATION_CHECK','owner',{check:'identity',result:'APPROVED'});
   const approvalKey=key();await action('PAY_APPROVE','owner',{requestId:approvalKey});assert.equal(s.stage,'EXECUTING');
   const approved=s;
   const approveReplay=await req('/api/simulations/'+sid,{requestId:approvalKey,revision:0,action:'PAY_APPROVE',role:'owner'},ownerCookie);
@@ -59,6 +60,8 @@ export async function testSimulations({req, sql, ownerCookie, otherCookie, sourc
   await action('PAYOUT_SUCCESS','owner',{},409);
   await action('REVIEW_ACCEPT');assert.equal(s.stage,'SUCCESS');assert.equal(s.payoutStatus,'PROCESSING');
   await action('PAYOUT_FAIL');assert.equal(s.payoutStatus,'FAILED');
+  await action('SET_SIMULATION_CHECK','solver',{check:'identity',result:'APPROVED'});
+  await action('SET_SIMULATION_CHECK','solver',{check:'accountHolder',result:'APPROVED'});
   const payoutKey=key();await action('PAYOUT_SUCCESS','owner',{requestId:payoutKey});assert.equal(s.payoutStatus,'PAID');
   assert.equal(s.transactions.at(-1).amount,90000);assert.equal(s.transactions.at(-1).actualCharge,0);
   const payoutReplay=await req('/api/simulations/'+sid,{requestId:payoutKey,revision:0,action:'PAYOUT_SUCCESS',role:'owner'},ownerCookie);
@@ -67,7 +70,7 @@ export async function testSimulations({req, sql, ownerCookie, otherCookie, sourc
   assert.equal((await req('/api/simulations/'+sid,undefined,ownerCookie)).body.simulation.payoutStatus,'PAID');
   pass('proof revision, owner review, payout failure/retry and receipt survive reload without double payout');
   s=(await create()).body.simulation;
-  await action('SUBMIT_TEASERS','solver');await action('SHORTLIST','owner',{candidateId:s.candidates[0].id});await action('SELECT','owner',{candidateId:s.candidates[0].id});await action('PAY_APPROVE');
+  await action('SUBMIT_TEASERS','solver');await action('SHORTLIST','owner',{candidateId:s.candidates[0].id});await action('SELECT','owner',{candidateId:s.candidates[0].id});await action('SET_SIMULATION_CHECK','owner',{check:'identity',result:'APPROVED'});await action('PAY_APPROVE');
   await action('REFUND');assert.equal(s.paymentStatus,'REFUNDED');assert.equal(s.stage,'CANCELLED');assert.equal(s.transactions.at(-1).amount,100000);
   await action('SUBMIT_PROOF','solver',{proof:'취소된 미션에는 제출할 수 없어야 하는 결과 내용입니다.'},409);await action('REFUND','owner',{},409);
   s=(await create()).body.simulation;await action('CANCEL');assert.equal(s.transactions.length,0);

@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=73';
-import { legacyNotificationText } from './brand.js?v=73';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=73';
-import { calculateSettlement } from './business-rules.js?v=73';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=73';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=74';
+import { legacyNotificationText } from './brand.js?v=74';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=74';
+import { calculateSettlement } from './business-rules.js?v=74';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=74';
 
 /**
  * 모두의클리어 live frontend
@@ -144,7 +144,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=73').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=74').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -399,12 +399,18 @@ async function handleAction(action, data, button) {
   try {
     if (action === 'close-modal') return dismissModal();
     if (action === 'new-simulation') return requireLogin(openSimulationCreate);
+    if (action === 'quick-start-simulation') {
+      if (!state.user?.isAdmin) return toast('관리자 전용 테스트입니다', '관리자 계정으로 로그인해주세요.', 'warning');
+      return await withBusy(button, async () => { button.dataset.requestId ||= crypto.randomUUID(); await createSimulation({ title: '연동 전 테스트 · 10만원 미션', rewardAmount: 100000 }, button.dataset.requestId); });
+    }
     if (action === 'start-simulation') return await withBusy(button, async () => {
       button.dataset.requestId ||= crypto.randomUUID();
       await createSimulation({challengeId:data.challengeId},button.dataset.requestId);
     });
     if (action === 'simulation-role') { state.simulationRole=data.role==='solver'?'solver':'owner';render();return; }
     if (action === 'load-simulation') return navigate(`simulation?id=${encodeURIComponent(data.simulationId)}`);
+    if (action === 'simulation-check') return await withBusy(button, () => runSimulationAction('SET_SIMULATION_CHECK', { check: data.check, result: data.result }, button));
+    if (action === 'simulation-proof-example') { const field = document.querySelector('#simulation-proof'); if (field) field.value = '합의한 규격과 수량에 맞춰 가상 결과물을 제작하고 검수할 자료를 제출했습니다.'; return; }
     if (action === 'simulation-step') return await withBusy(button,()=>runSimulationAction(data.step,{candidateId:data.candidateId},button));
     if (action === 'login') return await openAuthModal('login');
     if (action === 'signup') return await openAuthModal('signup');
@@ -512,6 +518,7 @@ async function handleForm(form) {
     if (form.id === 'email-find-form') return await withBusy(submit, () => submitEmailFinder(form));
     if (form.id === 'password-reset-request-form') return await withBusy(submit, () => submitPasswordResetRequest(form));
     if (form.id === 'password-reset-form') return await withBusy(submit, () => submitPasswordReset(form));
+    if (form.id === 'simulation-subject-form') return await withBusy(submit, () => runSimulationAction('SET_SUBJECT_TYPE', { subjectType: String(new FormData(form).get('subjectType') || '') }, form));
     if (form.id === 'simulation-create-form') return await withBusy(submit,()=>submitSimulationCreate(form));
     if (form.id === 'simulation-partial-refund-form') return await withBusy(submit, () => runSimulationAction('PARTIAL_REFUND', { refundAmount: Number(new FormData(form).get('refundAmount')), reason: String(new FormData(form).get('reason') || '') }, form));
     if (form.id === 'simulation-proof-form') return await withBusy(submit,()=>runSimulationAction('SUBMIT_PROOF',{proof:new FormData(form).get('proof')},form));
@@ -1158,7 +1165,8 @@ function renderDashboard() {
   const owned = activity.ownedChallenges || [];
   const applied = activity.applications || [];
   const notifications = activity.notifications || [];
-  return `<section class="page-hero compact"><div class="container"><span class="eyebrow">내 클리어</span><h1>${escapeHTML(state.user.displayName)}님의 클리어</h1><p>등록한 미션과 도전 현황을 관리합니다.</p><div class="page-hero-actions">${state.user.isAdmin ? '<button class="btn btn-outline" data-route="simulation">가상 결제·지급 테스트 열기</button>' : ''}<small>미션·티저 현황은 8초마다 자동 갱신됩니다.</small></div></div></section>
+  return `<section class="page-hero compact"><div class="container"><span class="eyebrow">내 클리어</span><h1>${escapeHTML(state.user.displayName)}님의 클리어</h1><p>등록한 미션과 도전 현황을 관리합니다.</p><div class="page-hero-actions">${state.user.isAdmin ? '<button class="btn btn-primary" data-route="simulation">연동 전 테스트 열기</button>' : ''}<small>미션·티저 현황은 8초마다 자동 갱신됩니다.</small></div></div></section>
+    ${renderSimulationEntry()}
     <section class="page-section"><div class="container dashboard-layout">
       <div class="dashboard-main">
         <section class="dashboard-card" id="activity-owned" tabindex="-1"><div class="dashboard-card-head"><h2>내가 등록한 미션</h2><strong>${owned.length}건</strong></div><div class="activity-list">${owned.length ? owned.map(renderActivityChallenge).join('') : renderEmpty('등록한 미션이 없습니다', '첫 미션을 만들어보세요.', '<button class="btn btn-primary" data-route="create">미션 등록</button>')}</div></section>
@@ -1270,10 +1278,37 @@ async function requestVerification(type, subjectType) {
   await openVerificationManager();
 }
 
+function renderSimulationEntry() {
+  if (!state.user?.isAdmin) return '';
+  return `<section class="page-section simulation-entry-section"><div class="container"><section class="simulation-entry"><div><span class="eyebrow">관리자 전용 · 실제 결제 0원</span><h2>기관 연결 전에 먼저 체험하세요</h2><p>가상 본인확인부터 후보 선택·결제·환불·지급까지 직접 눌러볼 수 있습니다.</p><small>가입된 회원의 실제 인증·잔액·신뢰도는 바뀌지 않습니다.</small></div><div class="simulation-entry-actions"><button type="button" class="btn btn-primary btn-lg" data-action="quick-start-simulation">10만원 예제로 바로 시작</button><button type="button" class="btn btn-outline" data-route="simulation">연동 전 테스트 · 이어하기</button></div></section></div></section>`;
+}
+
 function simulationRole() { return state.simulationRole || 'owner'; }
 function simulationAction(action, label, extra = '') {
   return `<button type="button" class="btn btn-primary" data-action="simulation-step" data-step="${action}" ${extra}>${label}</button>`;
 }
+function simulationParticipant(simulation, role) {
+  return { subjectType: 'individual', identity: 'UNVERIFIED', qualification: 'NOT_REQUIRED', accountHolder: 'UNVERIFIED', ...(simulation?.readiness?.[role] || {}) };
+}
+function simulationParticipantReady(simulation, role) {
+  const member = simulationParticipant(simulation, role);
+  return member.identity === 'APPROVED' && (member.subjectType === 'individual' || member.qualification === 'APPROVED');
+}
+function renderSimulationReadiness(simulation) {
+  const role = simulationRole();
+  const member = simulationParticipant(simulation, role);
+  const locked = simulation.stage === 'CANCELLED' || simulation.payoutStatus === 'PAID';
+  const label = { UNVERIFIED: '모의 확인 전', APPROVED: '모의 확인 성공', FAILED: '모의 확인 실패 · 재시도 가능', NOT_REQUIRED: '개인은 별도 자격 확인 없음' };
+  const subjects = { individual: '개인', business: '개인사업자', corporation: '법인', organization: '단체' };
+  const summary = ['owner', 'solver'].map(side => { const p = simulationParticipant(simulation, side); return `<section><h3>${side === 'owner' ? '의뢰자' : '수행자'} 모의 상태</h3><p>${subjects[p.subjectType] || '개인'}</p><strong>${label[p.identity] || label.UNVERIFIED}</strong>${p.subjectType !== 'individual' ? `<p>활동 자격: ${label[p.qualification] || label.UNVERIFIED}</p>` : ''}${side === 'solver' ? `<p>예금주: ${label[p.accountHolder] || label.UNVERIFIED}</p>` : ''}</section>`; }).join('');
+  const checkRow = (check, title, prerequisite = true) => `<section class="simulation-check-row"><div><strong>${title}</strong><p>${label[member[check]] || label.UNVERIFIED}</p></div><div class="simulation-actions">${['APPROVED','FAILED','RESET'].map((result,i) => `<button type="button" class="btn ${i === 0 ? 'btn-primary' : 'btn-outline'}" data-action="simulation-check" data-check="${check}" data-result="${result}" ${locked || !prerequisite ? 'disabled' : ''}>${['성공으로 체험','실패로 체험','다시 확인 전으로'][i]}</button>`).join('')}</div>${!prerequisite ? '<small>앞 단계의 모의 확인을 성공으로 바꾼 뒤 체험할 수 있습니다.</small>' : ''}</section>`;
+  return `<section class="simulation-readiness"><h3>모의 본인·활동주체 확인</h3><p>입력할 실명·주민번호·계좌번호가 없습니다. 아래 결과는 이 테스트 안에서만 적용됩니다.</p><div class="simulation-identity-grid">${summary}</div><h4>현재 ${role === 'owner' ? '의뢰자' : '수행자'} 역할로 체험 중</h4><form id="simulation-subject-form" class="simulation-subject-form"><label>활동 주체<select name="subjectType" ${locked ? 'disabled' : ''}>${Object.entries(subjects).map(([value,text]) => `<option value="${value}" ${member.subjectType === value ? 'selected' : ''}>${text}</option>`).join('')}</select></label><button class="btn btn-outline" type="submit" ${locked ? 'disabled' : ''}>유형 적용</button></form>${checkRow('identity', '모의 본인확인')}${member.subjectType !== 'individual' ? checkRow('qualification', `모의 ${subjects[member.subjectType]} 자격 확인`, member.identity === 'APPROVED') : ''}${role === 'solver' ? checkRow('accountHolder', '모의 예금주 확인 · 지급 전 필요', simulationParticipantReady(simulation, 'solver')) : ''}${locked ? '<p>끝난 테스트 기록은 보존됩니다. 다른 결과는 새 테스트에서 확인하세요.</p>' : ''}</section>`;
+}
+function renderSimulationSteps(simulation) {
+  const step = !simulation ? 0 : simulation.stage === 'OPEN' ? (simulationParticipantReady(simulation, 'owner') && simulationParticipantReady(simulation, 'solver') ? 1 : 0) : ['REVIEW','SHORTLISTED'].includes(simulation.stage) ? 1 : simulation.stage === 'FUNDING_REQUIRED' ? 2 : simulation.stage === 'EXECUTING' ? 3 : simulation.stage === 'PROOF_SUBMITTED' ? 4 : 5;
+  return `<ol class="simulation-steps" aria-label="연동 전 테스트 순서">${['모의 본인확인','도전·후보 선택','모의 결제','결과 제출','의뢰자 검수','예금주·모의 지급'].map((label,index) => `<li ${index === step ? 'aria-current="step"' : ''}>${index + 1}. ${label}</li>`).join('')}</ol>`;
+}
+
 function renderSimulation() {
   if (!state.user?.isAdmin) return renderLoginRequired('운영 관리자 권한이 필요합니다', '가상 결제·지급 테스트는 관리자 검수 화면에서만 이용할 수 있습니다.');
   if (state.routeError) return renderRouteError('가상 거래를 불러오지 못했습니다',state.routeError);
@@ -1289,22 +1324,25 @@ function renderSimulation() {
     if (['REVIEW','SHORTLISTED'].includes(s.stage)) { next='의뢰자가 후보를 비교하고 최종 수행자 1명을 확정하세요.';
       actions=`<div class="simulation-candidates">${s.candidates.map(c=>`<article class="candidate-card"><h3>${escapeHTML(c.name)}</h3>${teaserStatusBadge(c.status)}<p>${escapeHTML(c.headline)}</p><div class="candidate-actions">${c.status==='SUBMITTED' ? simulationAction('SHORTLIST','후보로 선정',`data-candidate-id="${c.id}"`) : simulationAction('SELECT','최종 수행자 확정',`data-candidate-id="${c.id}"`)}</div></article>`).join('')}</div>`; }
     if (s.stage === 'FUNDING_REQUIRED') { next='의뢰자가 모의 결제창에서 승인·실패·취소를 시험하세요. 실제 청구는 0원입니다.';
-      actions=`<div class="simulation-checkout"><h3>모의 결제창</h3><div class="preview-row"><span>가상 결제금액</span><strong>${formatWon(s.rewardAmount)}</strong></div><div class="preview-row"><span>실제 청구금액</span><strong>0원</strong></div><p>성과보상 총액의 10%는 서비스 이용 수수료로 공제됩니다. 가상 수행자 수령액은 ${formatWon(s.solverPayout)}입니다.</p><div class="simulation-actions">${simulationAction('PAY_APPROVE','가상 결제 승인')}${simulationAction('PAY_FAIL','결제 실패 테스트')}${simulationAction('PAY_CANCEL','결제창 취소 테스트')}</div></div>`; }
+      actions=`<div class="simulation-checkout"><h3>모의 결제창</h3>${!simulationParticipantReady(s, 'owner') ? '<p class="form-hint">위에서 의뢰자의 모의 본인확인과 필요한 자격 확인을 성공으로 설정해주세요.</p>' : ''}<div class="preview-row"><span>가상 결제금액</span><strong>${formatWon(s.rewardAmount)}</strong></div><div class="preview-row"><span>실제 청구금액</span><strong>0원</strong></div><p>성과보상 총액의 10%는 서비스 이용 수수료로 공제됩니다. 가상 수행자 수령액은 ${formatWon(s.solverPayout)}입니다.</p><div class="simulation-actions">${simulationAction('PAY_APPROVE', s.paymentStatus === 'FAILED' ? '가상 결제 재시도 · 성공' : '가상 결제 승인', simulationParticipantReady(s, 'owner') ? '' : 'disabled')}${simulationAction('PAY_FAIL','결제 실패 테스트')}${simulationAction('PAY_CANCEL','결제창 취소 테스트')}</div></div>`; }
     if (s.stage === 'EXECUTING') { needed='solver'; next='선정된 가상 수행자 역할에서 결과와 증빙 내용을 제출하세요.';
-      actions=`<form id="simulation-proof-form"><div class="field"><label for="simulation-proof">가상 수행 결과·증빙</label><textarea id="simulation-proof" name="proof" minlength="20" maxlength="3000" rows="5" required placeholder="완료한 결과와 성공조건 충족 내용을 20자 이상 적어주세요.">${escapeHTML(s.proof || '')}</textarea></div><button class="btn btn-primary" type="submit">가상 결과 제출</button></form>`; }
+      actions=`<form id="simulation-proof-form"><div class="field"><label for="simulation-proof">가상 수행 결과·증빙</label><textarea id="simulation-proof" name="proof" minlength="20" maxlength="3000" rows="5" required placeholder="완료한 결과와 성공조건 충족 내용을 20자 이상 적어주세요.">${escapeHTML(s.proof || '')}</textarea></div><div class="simulation-actions"><button class="btn btn-outline" type="button" data-action="simulation-proof-example">예시 결과 채우기</button><button class="btn btn-primary" type="submit">가상 결과 제출</button></div></form>`; }
     if (s.stage === 'PROOF_SUBMITTED') { next='의뢰자가 결과를 읽고 완료 확정 또는 보완 요청을 선택하세요.';
       actions=`${readSection('제출된 가상 수행 결과',s.proof)}<div class="simulation-actions">${simulationAction('REVIEW_ACCEPT','검수 완료 · 지급 단계로')}${simulationAction('REVIEW_REJECT','보완 요청')}</div>`; }
     if (s.stage === 'SUCCESS' && s.payoutStatus !== 'PAID') { next='의뢰자 역할에서 가상 지급 성공 또는 실패를 시험하세요. 실패 후 다시 지급할 수 있습니다.';
       actions=`<div class="simulation-actions">${simulationAction('PAYOUT_SUCCESS',s.payoutStatus==='FAILED' ? '가상 지급 재시도 · 성공' : '가상 보상 지급 완료')}${simulationAction('PAYOUT_FAIL','지급 실패 테스트')}</div>`; }
+    if (s.stage === 'OPEN' && !simulationParticipantReady(s, 'owner')) { needed='owner'; next='먼저 아래에서 의뢰자의 모의 본인확인을 성공으로 설정하세요. 개인사업자·법인·단체를 선택하면 자격 확인도 체험합니다.'; actions=''; }
+    else if (s.stage === 'OPEN' && !simulationParticipantReady(s, 'solver')) { needed='solver'; next='수행자 역할로 전환해 모의 본인확인을 체험한 뒤 도전 제안을 제출하세요.'; actions=''; }
+    if (s.stage === 'SUCCESS' && s.payoutStatus !== 'PAID' && (!simulationParticipantReady(s, 'solver') || simulationParticipant(s, 'solver').accountHolder !== 'APPROVED')) { needed='solver'; next='수행자 역할에서 모의 본인·자격·예금주 확인을 성공으로 설정하면 가상 지급을 계속할 수 있습니다.'; actions=''; }
     if (s.payoutStatus === 'PAID') next='가상 거래가 완료되었습니다. 거래 명세와 기록에서 결제·수수료·지급 금액을 확인하세요.';
     if (s.stage === 'CANCELLED') next=s.paymentStatus==='REFUNDED' ? '가상 결제금액이 전액 환불되었습니다. 실제 거래에는 영향이 없습니다.' : '가상 미션이 취소되었습니다. 실제 청구는 없습니다.';
   }
   const flowChallenge = s ? { status:s.stage, fundingStatus:s.payoutStatus==='PAID' ? 'PAID' : ['APPROVED','PARTIALLY_REFUNDED'].includes(s.paymentStatus) ? 'FUNDED' : 'POSTED' } : null;
-  return `<section class="page-hero compact"><div class="container"><span class="eyebrow">가상 거래 전용</span><h1>결제·지급 테스트</h1><p>한 계정에서 의뢰자와 가상 수행자 역할을 바꿔 전체 과정을 시험합니다.</p></div></section><section class="page-section"><div class="container simulation-page"><div class="notice-box warning"><span>ⓘ</span><div><strong>모의 결제 · 실제 청구 및 송금 0원</strong><p>실제 결제대행사나 은행에 연결되지 않습니다. 테스트 기록은 본인에게만 보이며, 기존 미션·회원 신뢰도·매출·보상 내역에 반영되지 않습니다.</p><p>SIMULATION 기록은 실제 매출·매입이 아니므로 세금계산서·현금영수증·지출증빙이 발행되지 않습니다. 실거래 증빙 기능은 PG·회계·세무 검토 후 별도로 구성해야 합니다.</p></div></div>
-    <div class="simulation-toolbar"><button class="btn btn-outline" data-action="new-simulation">새 가상 거래</button><button class="btn btn-outline" data-route="dashboard">내 클리어</button></div>
-    ${s ? `<section class="dashboard-card"><span class="activity-badge candidate-confirmed">가상 거래</span><h2>${escapeHTML(s.title)}</h2><p>${escapeHTML(s.successCriteria)}</p><div class="simulation-role" role="group" aria-label="테스트 역할 선택"><button class="btn ${role==='owner'?'btn-primary':'btn-outline'}" aria-pressed="${role==='owner'}" data-action="simulation-role" data-role="owner">의뢰자 역할</button><button class="btn ${role==='solver'?'btn-primary':'btn-outline'}" aria-pressed="${role==='solver'}" data-action="simulation-role" data-role="solver">수행자 역할</button></div><div class="workflow-notice"><strong>다음 단계</strong><p>${next}</p>${actions && role!==needed ? `<button class="btn btn-primary" data-action="simulation-role" data-role="${needed}">${needed==='owner'?'의뢰자':'수행자'} 역할로 전환</button>` : ''}</div>${role===needed ? actions : ''}${role==='owner' && ['OPEN','REVIEW','SHORTLISTED','FUNDING_REQUIRED'].includes(s.stage) ? `<div class="simulation-secondary">${simulationAction('CANCEL','가상 미션 취소')}</div>` : ''}${role==='owner' && ['EXECUTING','PROOF_SUBMITTED'].includes(s.stage) ? `<div class="simulation-secondary">${simulationAction('REFUND','남은 가상 결제 전액 환불')}${renderSimulationPartialRefund(s)}</div>` : ''}</section>
+  return `<section class="page-hero compact"><div class="container"><span class="eyebrow">관리자 전용 · 기관 연결 없이 체험</span><h1>연동 전 테스트</h1><p>의뢰자와 수행자 역할을 번갈아 선택해 신청부터 지급까지 확인하세요.</p></div></section><section class="page-section"><div class="container simulation-page"><div class="notice-box warning simulation-zero-banner"><span>ⓘ</span><div><strong>가상 테스트 · 실제 청구 및 송금 0원</strong><p>기관·은행에 연결하지 않습니다. 실제 회원의 인증·신뢰도·매출은 바뀌지 않습니다. 세금계산서·현금영수증·지출증빙이 발행되지 않습니다.</p></div></div>
+    ${renderSimulationSteps(s)}<div class="simulation-toolbar"><button class="btn btn-primary" data-action="quick-start-simulation">10만원 예제로 바로 시작</button><button class="btn btn-outline" data-action="new-simulation">금액 정해서 새로 시작</button><button class="btn btn-outline" data-route="dashboard">내 클리어</button></div>
+    ${s ? `<section class="dashboard-card"><span class="activity-badge candidate-confirmed">가상 거래 · 실제 인증 아님</span><h2>${escapeHTML(s.title)}</h2><p>${escapeHTML(s.successCriteria)}</p><div class="simulation-role" role="group" aria-label="테스트 역할 선택"><button class="btn ${role==='owner'?'btn-primary':'btn-outline'}" aria-pressed="${role==='owner'}" data-action="simulation-role" data-role="owner">의뢰자 역할</button><button class="btn ${role==='solver'?'btn-primary':'btn-outline'}" aria-pressed="${role==='solver'}" data-action="simulation-role" data-role="solver">수행자 역할</button></div><div class="workflow-notice"><strong>다음 단계</strong><p>${next}</p>${role!==needed ? `<button class="btn btn-primary" data-action="simulation-role" data-role="${needed}">${needed==='owner'?'의뢰자':'수행자'} 역할로 전환</button>` : ''}</div>${renderSimulationReadiness(s)}${role===needed ? actions : ''}${role==='owner' && ['OPEN','REVIEW','SHORTLISTED','FUNDING_REQUIRED'].includes(s.stage) ? `<div class="simulation-secondary">${simulationAction('CANCEL','가상 미션 취소')}</div>` : ''}${role==='owner' && ['EXECUTING','PROOF_SUBMITTED'].includes(s.stage) ? `<div class="simulation-secondary">${simulationAction('REFUND','남은 가상 결제 전액 환불')}${renderSimulationPartialRefund(s)}</div>` : ''}</section>
     <div class="simulation-summary"><section class="dashboard-card"><h2>가상 거래 명세</h2><div class="preview-list"><div class="preview-row"><span>최초 가상 보상금</span><strong>${formatWon(s.rewardAmount)}</strong></div><div class="preview-row"><span>누적 가상 환불액</span><strong>${formatWon(s.refundedAmount || 0)}</strong></div><div class="preview-row"><span>남은 가상 보상금</span><strong>${formatWon(s.remainingAmount ?? s.rewardAmount)}</strong></div><div class="preview-row"><span>남은 보상금 수수료 10%</span><strong>${formatWon(s.platformFee)}</strong></div><div class="preview-row"><span>가상 수행자 수령액 90%</span><strong>${formatWon(s.solverPayout)}</strong></div><div class="preview-row"><span>모의 결제</span><strong>${statusNames[s.paymentStatus]}</strong></div><div class="preview-row"><span>모의 지급</span><strong>${statusNames[s.payoutStatus]}</strong></div><div class="preview-row"><span>실제 청구·송금</span><strong>0원</strong></div></div><small class="simulation-id">테스트 거래번호 ${escapeHTML(s.id)}</small></section><section class="dashboard-card"><h2>가상 진행 단계</h2>${renderFlow(flowChallenge)}</section></div>
-    <section class="dashboard-card"><h2>모의 승인·지급 기록</h2>${s.transactions.length ? s.transactions.map(t=>`<article class="simulation-receipt"><strong>${({PAYMENT:'가상 결제',PAYOUT:'가상 지급',REFUND:'가상 환불'})[t.kind]} · ${statusNames[t.status]}</strong><span>테스트 금액 ${formatWon(t.amount)} / 실제 거래 0원</span><small>${escapeHTML(t.id)} · ${formatDateTime(t.at)}</small></article>`).join('') : '<p>아직 거래 기록이 없습니다.</p>'}<details><summary>전체 테스트 이력 (${s.events.length}건)</summary><ol class="simulation-events">${s.events.map(e=>`<li><strong>${escapeHTML(e.label)}</strong><small>${formatDateTime(e.at)}</small></li>`).join('')}</ol></details></section>` : `<section class="dashboard-card">${renderEmpty('새 가상 거래를 시작하세요','티저 접수부터 결제·수행·검수·지급까지 직접 시험할 수 있습니다.','<button class="btn btn-primary" data-action="new-simulation">가상 거래 만들기</button>')}</section>`}
+    <section class="dashboard-card"><h2>모의 승인·지급 기록</h2>${s.transactions.length ? s.transactions.map(t=>`<article class="simulation-receipt"><strong>${({PAYMENT:'가상 결제',PAYOUT:'가상 지급',REFUND:'가상 환불'})[t.kind]} · ${statusNames[t.status]}</strong><span>테스트 금액 ${formatWon(t.amount)} / 실제 거래 0원</span><small>${escapeHTML(t.id)} · ${formatDateTime(t.at)}</small></article>`).join('') : '<p>아직 거래 기록이 없습니다.</p>'}<details><summary>전체 테스트 이력 (${s.events.length}건)</summary><ol class="simulation-events">${s.events.map(e=>`<li><strong>${escapeHTML(e.label)}</strong><small>${formatDateTime(e.at)}</small></li>`).join('')}</ol></details></section>` : `<section class="dashboard-card">${renderEmpty('연동 전 테스트를 시작하세요','별도 키나 결제정보 없이 가상 본인확인·도전·결제·지급 순서로 체험합니다.','<button class="btn btn-primary btn-lg" data-action="quick-start-simulation">10만원 예제로 바로 시작</button>')}</section>`}
     <section class="dashboard-card"><h2>내 테스트 거래 ${records.length}건</h2><div class="simulation-history">${records.map(r=>`<button class="btn btn-outline" data-action="load-simulation" data-simulation-id="${r.id}" ${s?.id===r.id ? 'aria-current="true"' : ''}><span>${escapeHTML(r.title)}</span><small>${r.payoutStatus==='PAID'?'가상 지급 완료':r.stage==='CANCELLED'?'취소':STATUS_META[r.stage]?.label || r.stage} · ${formatWon(r.rewardAmount)}</small></button>`).join('') || '<p>저장된 거래가 없습니다.</p>'}</div></section></div></section>`;
 }
 function renderSimulationPartialRefund(simulation) {
@@ -1371,7 +1409,8 @@ function renderAdmin() {
   const stats = overview.moderationStats || {};
   const automaticPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-moderation-card"><div class="dashboard-card-head"><div><span class="admin-kicker">AUTO MODERATION</span><h2>자동검수 처리 현황</h2><p class="form-hint">일상 승인은 시스템이 처리하며, 관리자는 이의신청·분쟁·특수 예외만 확인합니다.</p></div><strong>${Number(stats.total || 0)}</strong></div><div class="stats-grid"><div><strong>${Number(stats.auto_approved || 0)}</strong><span>자동승인</span></div><div><strong>${Number(stats.changes_required || 0)}</strong><span>자동 수정요청</span></div><div><strong>${Number(stats.auto_rejected || 0)}</strong><span>자동거절</span></div></div><div class="dashboard-card-head"><h3>이의신청·예외</h3><strong>${overview.moderationAppeals?.length || 0}</strong></div><div class="audit-table">${overview.moderationAppeals?.length ? overview.moderationAppeals.map((item) => `<button class="audit-row admin-row-button" type="button" data-challenge-id="${escapeAttribute(item.challenge_id)}"><strong>${escapeHTML(item.title)}</strong><span>${escapeHTML(item.moderation_action)} · 위험도 ${Number(item.moderation_risk_score || 0)}</span><small>${escapeHTML(item.display_name)} · ${formatDateTime(item.created_at)}</small></button>`).join('') : '<p class="muted">확인할 이의신청·예외가 없습니다.</p>'}</div></section></div></section>`;
   const draftPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-draft-card"><div class="dashboard-card-head"><div><span class="admin-kicker">DRAFT CENTER</span><h2>비공개 초안</h2><p class="form-hint">자동 수정요청·자동거절·사용자 초안을 삭제하지 않고 보존합니다.</p></div><strong>${overview.draftChallenges?.length || 0}</strong></div><div class="audit-table">${overview.draftChallenges?.length ? overview.draftChallenges.map((item) => `<button class="audit-row admin-row-button" type="button" data-challenge-id="${escapeAttribute(item.id)}"><strong>${escapeHTML(item.title)}</strong><span>초안 · 비공개 · ${formatWon(item.reward_amount)}</span><small>마감 ${formatDateTime(item.deadline)}</small></button>`).join('') : '<p class="muted">비공개 초안이 없습니다.</p>'}</div></section></div></section>`;
-  return `<section class="page-hero compact admin-hero"><div class="container"><span class="eyebrow">ADMIN CONTROL</span><h1>운영 관리자</h1><button class="btn btn-outline" data-route="simulation">가상 결제·지급 테스트</button><p>회원·미션·분쟁·정산·Audit 상태를 확인합니다.</p></div></section>
+  return `<section class="page-hero compact admin-hero"><div class="container"><span class="eyebrow">ADMIN CONTROL</span><h1>운영 관리자</h1><button class="btn btn-primary" data-route="simulation">연동 전 테스트 열기</button><p>회원·미션·분쟁·정산·Audit 상태를 확인합니다.</p></div></section>
+    ${renderSimulationEntry()}
     ${renderHomeThemeControls(overview)}
     ${renderLaunchReadiness(overview)}${renderAdminStaffControls(overview)}
     ${pushPanel}

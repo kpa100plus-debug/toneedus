@@ -58,13 +58,13 @@ pass('receipt cannot be reused across orders; repeated partial refunds plus rema
 const realSnapshot=JSON.stringify(['users','challenges','transaction_orders','transaction_events','transaction_ledger','transaction_refund_receipts'].map(t=>sql.prepare(`SELECT * FROM ${t}`).all()));
 let sim=(await simulationApi({method:'POST',path:'/api/simulations',body:{requestId:key()},user:{id:ownerId},env})).data.simulation;
 async function act(action,role='owner',extra={}){const r=await simulationApi({method:'POST',path:'/api/simulations/'+sim.id,body:{action,role,requestId:key(),revision:sim.revision,...extra},user:{id:ownerId},env});if(r.status===200)sim=r.data.simulation;return r}
-await act('SUBMIT_TEASERS','solver');await act('SHORTLIST','owner',{candidateId:sim.candidates[0].id});await act('SELECT','owner',{candidateId:sim.candidates[0].id});await act('PAY_APPROVE');
+await act('SUBMIT_TEASERS','solver');await act('SHORTLIST','owner',{candidateId:sim.candidates[0].id});await act('SELECT','owner',{candidateId:sim.candidates[0].id});await act('SET_SIMULATION_CHECK','owner',{check:'identity',result:'APPROVED'});await act('PAY_APPROVE');
 assert.equal((await act('PARTIAL_REFUND','owner',{refundAmount:100001,reason:'일부 작업범위 조정에 따른 환불입니다.'})).status,400);
 const simKey=key();await act('PARTIAL_REFUND','owner',{requestId:simKey,refundAmount:20000,reason:'일부 작업범위 조정에 따른 환불입니다.'});
 assert.equal(sim.refundedAmount,20000);assert.equal(sim.solverPayout,72000);assert.equal(sim.platformFee,8000);
 assert.equal((await act('PARTIAL_REFUND','owner',{requestId:simKey,refundAmount:20000,reason:'일부 작업범위 조정에 따른 환불입니다.'})).data.idempotent,true);
 assert.equal((await act('PARTIAL_REFUND','owner',{requestId:simKey,refundAmount:30000,reason:'일부 작업범위 조정에 따른 환불입니다.'})).status,409);
-await act('SUBMIT_PROOF','solver',{proof:'가상 미션 결과물을 제출하며 부분 환불 이후 합의된 조건을 모두 충족했습니다.'});await act('REVIEW_ACCEPT');await act('PAYOUT_SUCCESS');
+await act('SUBMIT_PROOF','solver',{proof:'가상 미션 결과물을 제출하며 부분 환불 이후 합의된 조건을 모두 충족했습니다.'});await act('REVIEW_ACCEPT');await act('SET_SIMULATION_CHECK','solver',{check:'identity',result:'APPROVED'});await act('SET_SIMULATION_CHECK','solver',{check:'accountHolder',result:'APPROVED'});await act('PAYOUT_SUCCESS');
 assert.equal(sim.transactions.at(-1).amount,72000);assert.equal(sim.actualCharge,0);
 assert.equal(JSON.stringify(['users','challenges','transaction_orders','transaction_events','transaction_ledger','transaction_refund_receipts'].map(t=>sql.prepare(`SELECT * FROM ${t}`).all())),realSnapshot);
 pass('admin simulator partial refund, retry conflict and net payout are isolated from all real tables');

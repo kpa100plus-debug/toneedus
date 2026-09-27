@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=70';
-import { legacyNotificationText } from './brand.js?v=70';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=70';
-import { calculateSettlement } from './business-rules.js?v=70';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=70';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=71';
+import { legacyNotificationText } from './brand.js?v=71';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=71';
+import { calculateSettlement } from './business-rules.js?v=71';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=71';
 
 /**
  * 모두의클리어 live frontend
@@ -20,6 +20,7 @@ let activityPollBusy = false;
 let modalScrollY = 0;
 let deferredInstallPrompt = null;
 let modalHistoryEntry = false;
+let emailStateRevision = 0;
 
 const state = {
   activityFocus: null,
@@ -46,6 +47,7 @@ const state = {
   simulationRole: 'owner',
   loading: true,
   authLoading: true,
+  authError: null,
   apiAvailable: true,
 };
 
@@ -76,9 +78,10 @@ async function init() {
   bindGlobalEvents();
   bindWebAppInstall();
   window.addEventListener('hashchange', async () => {
+    if (['privacy', 'terms'].includes(routeFromHash())) { saveCreateDraft(); dismissModal({ preserveHistory: true }); }
     state.route = routeFromHash();
     if (state.route === 'verify-email') await verifyEmailFromLink();
-    normalizeSignedInRoute();
+    normalizeSignedInRoute({ preserveEmailResult: true });
     if (state.route === 'reset-password') state.routeError = null;
     await loadRouteData();
     render();
@@ -95,9 +98,9 @@ async function init() {
     if (!document.hidden) { refreshDashboardActivity(); refreshEmailStatus(); }
   });
 
+  renderBootstrapPending();
   try {
-    const userRequest = loadCurrentUser();
-    userRequest.catch(() => undefined);
+    const userRequest = loadCurrentUser().then(user => ({ user }), error => ({ error }));
     const bootstrap = await loadBootstrapData();
     state.config = bootstrap.config;
     state.health = bootstrap.health;
@@ -106,7 +109,9 @@ async function init() {
       state.loading = false;
       render();
     }
-    state.user = await userRequest;
+    const account = await userRequest;
+    state.user = account.user || null;
+    state.authError = account.error || null;
     state.authLoading = false;
     const pendingDraft=identityReturnContext();
     if(pendingDraft?.createDraft){state.createDraft=pendingDraft.createDraft;state.createMode=pendingDraft.createMode||'easy';}
@@ -120,7 +125,7 @@ async function init() {
   const identityReturn = new URLSearchParams(location.search).has('identityVerificationId');
   if (state.user && identityReturn) await completeIdentityRedirect();
   if (state.route === 'verify-email') await verifyEmailFromLink();
-  normalizeSignedInRoute();
+  normalizeSignedInRoute({ preserveEmailResult: true });
   if (state.route === 'reset-password') state.routeError = null;
 
   await loadRouteData();
@@ -139,7 +144,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=70').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=71').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -367,10 +372,12 @@ function bindGlobalEvents() {
       renderExploreGridOnly();
     }
     if (event.target.closest?.('.criteria-check-builder')) updateCriteriaFromChecks();
-    if (event.target.closest?.('#challenge-create-form')) updateCreatePreview();
+    if (event.target.closest?.('#challenge-create-form')) { saveCreateDraft(); updateCreatePreview(); }
+    if (event.target.closest?.('#teaser-form, #cancel-form, #teaser-edit-form, #challenge-edit-form')) saveTransientModalDraft(event.target.form);
   });
 
   document.querySelector('#account-button')?.addEventListener('click', () => {
+    if (state.authError) { retryAccountStatus().catch(showError); return; }
     if (state.user) openAccountMenu(); else openAuthModal('login');
   });
 
@@ -408,6 +415,7 @@ async function handleAction(action, data, button) {
     if (action === 'dismiss-web-app-install') return await dismissWebAppInstall();
     if (action === 'logout') return await logout();
     if (action === 'retry') return location.reload();
+    if (action === 'retry-account') return await withBusy(button, () => retryAccountStatus());
     if (action === 'open-demo') return location.assign('/demo.html');
     if (action === 'preview-home-theme') {
       if (state.user?.adminRole !== 'primary') return;
@@ -480,6 +488,7 @@ async function handleAction(action, data, button) {
     if (action === 'approve-moderation') return await withBusy(button, () => approveModerationChallenge(data.challengeId));
     if (action === 'auto-review-moderation') return await withBusy(button, () => autoReviewModerationQueue());
     if (action === 'archive-moderation') return await openModerationArchive(data.challengeId);
+    if (action === 'view-moderation-details') return await withBusy(button, () => openModerationDetails(data.challengeId));
     if (action === 'appeal-moderation') return await openModerationAppeal(data.challengeId);
     if (action === 'appoint-deputy') return await withBusy(button, () => updateDeputy(data.userId, true));
     if (action === 'revoke-deputy') return await withBusy(button, () => updateDeputy(data.userId, false));
@@ -504,6 +513,7 @@ async function handleForm(form) {
     if (form.id === 'password-reset-request-form') return await withBusy(submit, () => submitPasswordResetRequest(form));
     if (form.id === 'password-reset-form') return await withBusy(submit, () => submitPasswordReset(form));
     if (form.id === 'simulation-create-form') return await withBusy(submit,()=>submitSimulationCreate(form));
+    if (form.id === 'simulation-partial-refund-form') return await withBusy(submit, () => runSimulationAction('PARTIAL_REFUND', { refundAmount: Number(new FormData(form).get('refundAmount')), reason: String(new FormData(form).get('reason') || '') }, form));
     if (form.id === 'simulation-proof-form') return await withBusy(submit,()=>runSimulationAction('SUBMIT_PROOF',{proof:new FormData(form).get('proof')},form));
     if (form.id === 'challenge-create-form') return await withBusy(submit, () => submitChallenge(form));
     if (form.id === 'challenge-edit-form') return await withBusy(submit, () => submitChallengeEdit(form));
@@ -575,8 +585,19 @@ async function submitPushAnnouncement(form) {
   toast('공지 푸시 발송을 요청했습니다', `대상 ${item.eligibleCount}명 · 전달 ${item.deliveredCount}명${item.administratorIncluded ? ' · 관리자 수신 포함' : ''}`, 'success');
 }
 
+function renderBootstrapPending() {
+  if (['privacy', 'terms'].includes(state.route)) {
+    // Policy constants initialize after the first async yield; no API result is needed.
+    Promise.resolve().then(() => { if (['privacy', 'terms'].includes(state.route)) render(); });
+    return;
+  }
+  if (state.route !== 'home') return;
+  renderHeader();
+  main.innerHTML = `<section class="hero bootstrap-home" aria-busy="true"><div class="container hero-grid"><div class="hero-copy"><span class="hero-badge">재능·경험·인맥이 새로운 기회가 됩니다</span><h1>미션을 올리고,<br><em>해결하고, 보상받다.</em></h1><p class="hero-lead">재능·경험·인맥으로 문제를 해결하고 보상을 받아보세요.</p><div class="hero-actions"><button class="btn btn-primary btn-lg" data-route="explore">미션 찾기</button><button class="btn btn-outline btn-lg" data-route="how">이용방법</button></div></div><div class="bootstrap-cards" role="status" aria-live="polite"><strong>최신 공개 미션을 확인하고 있습니다</strong><p>보상금과 모집 상태를 확인한 뒤 보여드립니다.</p><div class="bootstrap-card-placeholder" aria-hidden="true"></div><div class="bootstrap-card-placeholder" aria-hidden="true"></div></div></div></section>`;
+}
+
 function render() {
-  if (state.loading) return;
+  if (state.loading && !['privacy', 'terms'].includes(state.route)) return;
   document.body.dataset.homeTheme = state.previewHomeTheme && state.user?.adminRole === 'primary'
     ? state.previewHomeTheme : (state.config?.homeTheme || 'original');
   if (heroRotationTimer) {
@@ -585,10 +606,14 @@ function render() {
   }
   renderHeader();
   markActiveNavigation();
-  if (state.route === 'home') main.innerHTML = renderHome();
+  if (state.authError && ['create', 'dashboard', 'simulation', 'profile', 'admin'].includes(state.route)) {
+    main.innerHTML = `<section class="page-section"><div class="container">${renderEmpty('계정 상태를 확인하지 못했습니다', '미션 둘러보기는 계속 이용할 수 있습니다. 로그인 상태를 다시 확인해주세요.', '<button class="btn btn-primary" data-action="retry-account">계정 다시 확인</button><button class="btn btn-outline" data-route="explore">미션 둘러보기</button>')}</div></section>`;
+  }
+  else if (state.route === 'home') main.innerHTML = renderHome();
   else if (state.route === 'explore') main.innerHTML = renderExplore();
   else if (state.route === 'how') main.innerHTML = renderHow();
   else if (state.route === 'trust') main.innerHTML = renderTrustSafety();
+  else if (['privacy', 'terms'].includes(state.route)) main.innerHTML = renderPolicyPage(state.route);
   else if (state.route === 'create') main.innerHTML = renderCreate();
   else if (state.route === 'dashboard') main.innerHTML = renderDashboard();
   else if (state.route === 'simulation') main.innerHTML = renderSimulation();
@@ -685,7 +710,10 @@ function renderHeader() {
   const name = document.querySelector('#header-user-name');
   const role = document.querySelector('#header-user-role');
   if (!avatar || !name || !role) return;
+  const accountButton = document.querySelector('#account-button');
+  if (accountButton) { accountButton.disabled = state.authLoading; accountButton.setAttribute('aria-busy', String(state.authLoading)); }
   if (state.authLoading) { name.textContent='계정 확인 중'; role.textContent='잠시만 기다려주세요'; return; }
+  if (state.authError) { name.textContent='계정 재확인'; role.textContent='눌러서 다시 확인'; return; }
   if (!state.user) {
     avatar.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.25"></circle><path d="M5.5 20c.75-3.35 3.12-5.2 6.5-5.2S17.75 16.65 18.5 20"></path></svg>';
     avatar.className = 'avatar avatar-sm avatar-guest';
@@ -829,7 +857,7 @@ function renderStudioMission(challenge, index = 0) {
   const category = CATEGORY_META[challenge.category] || CATEGORY_META.BUSINESS;
   const title = escapeHTML(challenge.title);
   const reward = formatWon(challenge.rewardAmount);
-  return `<button class="studio-mission" type="button" data-challenge-id="${escapeAttribute(challenge.id)}">
+  return `<button class="studio-mission" style="--category-color:${category.color}" type="button" data-challenge-id="${escapeAttribute(challenge.id)}">
     <span class="studio-mission-top"><b>${String(index + 1).padStart(2, '0')}</b><span class="studio-mission-category"><span class="studio-mission-icon">${category.icon}</span><span>${escapeHTML(category.label)}${challenge.isExample ? ' · 예시 미션' : ''}</span></span></span>
     <strong>${title}</strong><span class="studio-mission-summary">${escapeHTML(challenge.summary)}</span>
     <span class="studio-mission-reward"><small>${challenge.isExample ? '예시 제시금' : '제시 보상금'}</small><b>${reward}</b><i aria-hidden="true">↗</i></span>
@@ -1252,7 +1280,7 @@ function renderSimulation() {
   const s = state.simulation;
   const role = simulationRole();
   const records = state.simulations || [];
-  const statusNames = { NONE:'대기', APPROVED:'승인', FAILED:'실패 · 재시도 가능', CANCELLED:'취소', REFUNDED:'환불 완료', PROCESSING:'지급 대기', PAID:'지급 완료' };
+  const statusNames = { PARTIALLY_REFUNDED:'부분 환불 완료', NONE:'대기', APPROVED:'승인', FAILED:'실패 · 재시도 가능', CANCELLED:'취소', REFUNDED:'환불 완료', PROCESSING:'지급 대기', PAID:'지급 완료' };
   let actions = '';
   let needed = 'owner';
   let next = '의뢰자가 새 테스트 거래를 생성합니다.';
@@ -1271,13 +1299,18 @@ function renderSimulation() {
     if (s.payoutStatus === 'PAID') next='가상 거래가 완료되었습니다. 거래 명세와 기록에서 결제·수수료·지급 금액을 확인하세요.';
     if (s.stage === 'CANCELLED') next=s.paymentStatus==='REFUNDED' ? '가상 결제금액이 전액 환불되었습니다. 실제 거래에는 영향이 없습니다.' : '가상 미션이 취소되었습니다. 실제 청구는 없습니다.';
   }
-  const flowChallenge = s ? { status:s.stage, fundingStatus:s.payoutStatus==='PAID' ? 'PAID' : s.paymentStatus==='APPROVED' ? 'FUNDED' : 'POSTED' } : null;
+  const flowChallenge = s ? { status:s.stage, fundingStatus:s.payoutStatus==='PAID' ? 'PAID' : ['APPROVED','PARTIALLY_REFUNDED'].includes(s.paymentStatus) ? 'FUNDED' : 'POSTED' } : null;
   return `<section class="page-hero compact"><div class="container"><span class="eyebrow">가상 거래 전용</span><h1>결제·지급 테스트</h1><p>한 계정에서 의뢰자와 가상 수행자 역할을 바꿔 전체 과정을 시험합니다.</p></div></section><section class="page-section"><div class="container simulation-page"><div class="notice-box warning"><span>ⓘ</span><div><strong>모의 결제 · 실제 청구 및 송금 0원</strong><p>실제 결제대행사나 은행에 연결되지 않습니다. 테스트 기록은 본인에게만 보이며, 기존 미션·회원 신뢰도·매출·보상 내역에 반영되지 않습니다.</p><p>SIMULATION 기록은 실제 매출·매입이 아니므로 세금계산서·현금영수증·지출증빙이 발행되지 않습니다. 실거래 증빙 기능은 PG·회계·세무 검토 후 별도로 구성해야 합니다.</p></div></div>
     <div class="simulation-toolbar"><button class="btn btn-outline" data-action="new-simulation">새 가상 거래</button><button class="btn btn-outline" data-route="dashboard">내 클리어</button></div>
-    ${s ? `<section class="dashboard-card"><span class="activity-badge candidate-confirmed">가상 거래</span><h2>${escapeHTML(s.title)}</h2><p>${escapeHTML(s.successCriteria)}</p><div class="simulation-role" role="group" aria-label="테스트 역할 선택"><button class="btn ${role==='owner'?'btn-primary':'btn-outline'}" aria-pressed="${role==='owner'}" data-action="simulation-role" data-role="owner">의뢰자 역할</button><button class="btn ${role==='solver'?'btn-primary':'btn-outline'}" aria-pressed="${role==='solver'}" data-action="simulation-role" data-role="solver">수행자 역할</button></div><div class="workflow-notice"><strong>다음 단계</strong><p>${next}</p>${actions && role!==needed ? `<button class="btn btn-primary" data-action="simulation-role" data-role="${needed}">${needed==='owner'?'의뢰자':'수행자'} 역할로 전환</button>` : ''}</div>${role===needed ? actions : ''}${role==='owner' && ['OPEN','REVIEW','SHORTLISTED','FUNDING_REQUIRED'].includes(s.stage) ? `<div class="simulation-secondary">${simulationAction('CANCEL','가상 미션 취소')}</div>` : ''}${role==='owner' && ['EXECUTING','PROOF_SUBMITTED'].includes(s.stage) ? `<div class="simulation-secondary">${simulationAction('REFUND','가상 결제 전액 환불')}</div>` : ''}</section>
-    <div class="simulation-summary"><section class="dashboard-card"><h2>가상 거래 명세</h2><div class="preview-list"><div class="preview-row"><span>가상 보상금 총액</span><strong>${formatWon(s.rewardAmount)}</strong></div><div class="preview-row"><span>서비스 수수료 10%</span><strong>${formatWon(s.platformFee)}</strong></div><div class="preview-row"><span>가상 수행자 수령액</span><strong>${formatWon(s.solverPayout)}</strong></div><div class="preview-row"><span>모의 결제</span><strong>${statusNames[s.paymentStatus]}</strong></div><div class="preview-row"><span>모의 지급</span><strong>${statusNames[s.payoutStatus]}</strong></div><div class="preview-row"><span>실제 청구·송금</span><strong>0원</strong></div></div><small class="simulation-id">테스트 거래번호 ${escapeHTML(s.id)}</small></section><section class="dashboard-card"><h2>가상 진행 단계</h2>${renderFlow(flowChallenge)}</section></div>
+    ${s ? `<section class="dashboard-card"><span class="activity-badge candidate-confirmed">가상 거래</span><h2>${escapeHTML(s.title)}</h2><p>${escapeHTML(s.successCriteria)}</p><div class="simulation-role" role="group" aria-label="테스트 역할 선택"><button class="btn ${role==='owner'?'btn-primary':'btn-outline'}" aria-pressed="${role==='owner'}" data-action="simulation-role" data-role="owner">의뢰자 역할</button><button class="btn ${role==='solver'?'btn-primary':'btn-outline'}" aria-pressed="${role==='solver'}" data-action="simulation-role" data-role="solver">수행자 역할</button></div><div class="workflow-notice"><strong>다음 단계</strong><p>${next}</p>${actions && role!==needed ? `<button class="btn btn-primary" data-action="simulation-role" data-role="${needed}">${needed==='owner'?'의뢰자':'수행자'} 역할로 전환</button>` : ''}</div>${role===needed ? actions : ''}${role==='owner' && ['OPEN','REVIEW','SHORTLISTED','FUNDING_REQUIRED'].includes(s.stage) ? `<div class="simulation-secondary">${simulationAction('CANCEL','가상 미션 취소')}</div>` : ''}${role==='owner' && ['EXECUTING','PROOF_SUBMITTED'].includes(s.stage) ? `<div class="simulation-secondary">${simulationAction('REFUND','남은 가상 결제 전액 환불')}${renderSimulationPartialRefund(s)}</div>` : ''}</section>
+    <div class="simulation-summary"><section class="dashboard-card"><h2>가상 거래 명세</h2><div class="preview-list"><div class="preview-row"><span>최초 가상 보상금</span><strong>${formatWon(s.rewardAmount)}</strong></div><div class="preview-row"><span>누적 가상 환불액</span><strong>${formatWon(s.refundedAmount || 0)}</strong></div><div class="preview-row"><span>남은 가상 보상금</span><strong>${formatWon(s.remainingAmount ?? s.rewardAmount)}</strong></div><div class="preview-row"><span>남은 보상금 수수료 10%</span><strong>${formatWon(s.platformFee)}</strong></div><div class="preview-row"><span>가상 수행자 수령액 90%</span><strong>${formatWon(s.solverPayout)}</strong></div><div class="preview-row"><span>모의 결제</span><strong>${statusNames[s.paymentStatus]}</strong></div><div class="preview-row"><span>모의 지급</span><strong>${statusNames[s.payoutStatus]}</strong></div><div class="preview-row"><span>실제 청구·송금</span><strong>0원</strong></div></div><small class="simulation-id">테스트 거래번호 ${escapeHTML(s.id)}</small></section><section class="dashboard-card"><h2>가상 진행 단계</h2>${renderFlow(flowChallenge)}</section></div>
     <section class="dashboard-card"><h2>모의 승인·지급 기록</h2>${s.transactions.length ? s.transactions.map(t=>`<article class="simulation-receipt"><strong>${({PAYMENT:'가상 결제',PAYOUT:'가상 지급',REFUND:'가상 환불'})[t.kind]} · ${statusNames[t.status]}</strong><span>테스트 금액 ${formatWon(t.amount)} / 실제 거래 0원</span><small>${escapeHTML(t.id)} · ${formatDateTime(t.at)}</small></article>`).join('') : '<p>아직 거래 기록이 없습니다.</p>'}<details><summary>전체 테스트 이력 (${s.events.length}건)</summary><ol class="simulation-events">${s.events.map(e=>`<li><strong>${escapeHTML(e.label)}</strong><small>${formatDateTime(e.at)}</small></li>`).join('')}</ol></details></section>` : `<section class="dashboard-card">${renderEmpty('새 가상 거래를 시작하세요','티저 접수부터 결제·수행·검수·지급까지 직접 시험할 수 있습니다.','<button class="btn btn-primary" data-action="new-simulation">가상 거래 만들기</button>')}</section>`}
     <section class="dashboard-card"><h2>내 테스트 거래 ${records.length}건</h2><div class="simulation-history">${records.map(r=>`<button class="btn btn-outline" data-action="load-simulation" data-simulation-id="${r.id}" ${s?.id===r.id ? 'aria-current="true"' : ''}><span>${escapeHTML(r.title)}</span><small>${r.payoutStatus==='PAID'?'가상 지급 완료':r.stage==='CANCELLED'?'취소':STATUS_META[r.stage]?.label || r.stage} · ${formatWon(r.rewardAmount)}</small></button>`).join('') || '<p>저장된 거래가 없습니다.</p>'}</div></section></div></section>`;
+}
+function renderSimulationPartialRefund(simulation) {
+  const remaining = simulation.remainingAmount ?? simulation.rewardAmount;
+  if (remaining <= 1 || !['APPROVED', 'PARTIALLY_REFUNDED'].includes(simulation.paymentStatus)) return '';
+  return `<form id="simulation-partial-refund-form" class="auth-form"><h3>가상 부분 환불</h3><p>남은 가상 보상금 ${formatWon(remaining)}에서 일부를 환불합니다. 남은 금액을 기준으로 수수료 10%와 수행자 수령액 90%를 다시 계산합니다. 실제 환불·송금은 0원입니다.</p><div class="field"><label for="simulation-refund-amount">가상 환불액 (원)</label><input id="simulation-refund-amount" name="refundAmount" type="number" min="1" max="${remaining - 1}" step="1" required /></div><div class="field"><label for="simulation-refund-reason">환불 사유</label><textarea id="simulation-refund-reason" name="reason" minlength="10" maxlength="500" rows="3" required></textarea></div><button class="btn btn-outline" type="submit">가상 부분 환불 기록</button></form>`;
 }
 function openSimulationCreate() {
   openModal(`<form id="simulation-create-form"><div class="notice-box warning"><span>ⓘ</span><div><strong>실제 돈이 오가지 않는 가상 거래입니다</strong><p>가상 도전자 2명으로 후보선정부터 지급까지 테스트합니다.</p></div></div><div class="field"><label for="sim-title">테스트 미션명</label><input id="sim-title" name="title" maxlength="90" required value="가상 거래 · 결과물 제작 미션"></div><div class="field"><label for="sim-reward">가상 보상금 (원)</label><input id="sim-reward" name="rewardAmount" type="number" min="10000" max="100000000" step="1" required value="100000"></div><button class="btn btn-primary btn-block" type="submit">가상 거래 생성</button></form>`,{title:'새 가상 거래'});
@@ -1478,7 +1511,7 @@ function renderChallengeModal(result) {
   const category = CATEGORY_META[challenge.category] || CATEGORY_META.BUSINESS;
   const status = challenge.moderationPending ? { label: '관리자 검토 대기', className: 'status-review' } : (STATUS_META[challenge.status] || { label: challenge.status, className: '' });
   const funding = fundingDisplay(challenge);
-  openModal(`<nav class="detail-read-nav" aria-label="내용 바로 보기"><button type="button" class="btn btn-outline" data-action="view-challenge-content" data-challenge-id="${escapeAttribute(challenge.id)}">미션 전체 내용</button>${context.viewerTeaser ? `<button type="button" class="btn btn-primary" data-action="view-my-teaser" data-challenge-id="${escapeAttribute(challenge.id)}">내 티저 보기</button>` : ''}</nav>${renderProgressNotice(challenge, context)}<div class="detail-layout">
+  openModal(`<nav class="detail-read-nav" aria-label="내용 바로 보기"><button type="button" class="btn btn-outline" data-action="view-challenge-content" data-challenge-id="${escapeAttribute(challenge.id)}">미션 전체 내용</button>${context.viewerTeaser ? `<button type="button" class="btn btn-primary" data-action="view-my-teaser" data-challenge-id="${escapeAttribute(challenge.id)}">내 티저 보기</button>` : ''}</nav>${renderProgressNotice(challenge, context)}<div class="detail-layout" style="--category-color:${category.color}">
     <article class="detail-main">
       <div class="detail-kicker"><span class="category-label"><i>${category.icon}</i>${category.label} 미션</span><span class="status-badge ${status.className}">${status.label}</span></div>
       <h2 class="detail-title">${escapeHTML(challenge.title)}</h2><p class="detail-summary">${escapeHTML(challenge.summary)}</p>
@@ -1713,7 +1746,8 @@ function openChangePassword() {
   openModal(`<form id="change-password-form" class="auth-form"><div class="auth-intro"><span class="auth-icon">◇</span><h2>비밀번호 변경</h2><p>새 비밀번호는 영문과 숫자를 포함해 10자 이상 입력하세요.</p></div><div class="form-grid"><div class="field full"><label>현재 비밀번호</label><input name="currentPassword" type="password" minlength="10" required autocomplete="current-password" /></div><div class="field full"><label>새 비밀번호</label><input name="newPassword" type="password" minlength="10" required autocomplete="new-password" /></div><div class="field full"><label>새 비밀번호 확인</label><input name="confirmPassword" type="password" minlength="10" required autocomplete="new-password" /></div></div><div class="notice-box"><span>✓</span><div><strong>계정 보호</strong><p>변경이 완료되면 현재 기기를 제외한 다른 기기의 로그인이 해제됩니다.</p></div></div><button class="btn btn-primary btn-lg btn-block" type="submit">안전하게 변경하기</button></form>`, { title: '계정 보안' });
 }
 
-function normalizeSignedInRoute() {
+function normalizeSignedInRoute({ preserveEmailResult = false } = {}) {
+  if (preserveEmailResult && state.route === 'verify-email') return;
   if (state.user && state.route === 'simulation' && !state.user.isAdmin) {
     state.route = 'dashboard';
     history.replaceState({ ...(history.state || {}), moduModal: false }, '', '#/dashboard');
@@ -1726,6 +1760,8 @@ function normalizeSignedInRoute() {
 }
 
 async function completeAuthentication(user) {
+  state.authError = null;
+  state.authLoading = false;
   state.user = user;
   state.activity = null;
   state.trustProfile = null;
@@ -1877,13 +1913,22 @@ async function verifyEmailFromLink() {
   try {
     const result = await apiClient.verifyEmail(token);
     const provider = ['google', 'naver'].includes(result.loginProvider) ? result.loginProvider : 'password';
-    state.emailVerification = { ok: true, provider, message: provider === 'naver' ? '이메일 인증이 완료되었습니다. NAVER로 계속하기를 눌러 로그인해주세요. 별도 비밀번호는 필요하지 않습니다.' : '이메일 인증이 완료되었습니다. 가입한 방법으로 로그인해주세요.' };
+    if (state.user) {
+      const memberId = state.user.id;
+      const revision = ++emailStateRevision;
+      try {
+        const current = await apiClient.emailVerification();
+        if (state.user?.id === memberId && revision === emailStateRevision) { state.user.emailVerified = current.verified; state.user.email = current.email; syncEmailStatusUi(); }
+      } catch { /* Link result remains visible; protected submissions still check the server. */ }
+    }
+    state.emailVerification = { ok: true, provider, message: state.user?.emailVerified ? '이메일 인증이 완료되었습니다. 이전 작성 화면으로 돌아가 등록·신청을 계속할 수 있습니다.' : provider === 'naver' ? '이메일 인증이 완료되었습니다. NAVER로 계속하기를 눌러 로그인해주세요. 별도 비밀번호는 필요하지 않습니다.' : '이메일 인증이 완료되었습니다. 가입한 방법으로 로그인해주세요.' };
   } catch (error) {
     state.emailVerification = { ok: false, message: error instanceof ApiError ? error.message : '이메일 인증을 완료하지 못했습니다.' };
   }
 }
 
 function renderVerificationLogin(provider) {
+  if (state.user) return identityReturnContext() ? '<button type="button" class="btn btn-primary" data-action="identity-return">작성 화면으로 돌아가기</button>' : '<button type="button" class="btn btn-primary" data-route="dashboard">내 클리어로 이동</button>';
   if (['google', 'naver'].includes(provider)) {
     return `<button type="button" class="btn btn-primary" data-action="oauth-login" data-provider="${provider}">${provider === 'naver' ? 'NAVER' : 'Google'}로 계속하기</button>`;
   }
@@ -1951,7 +1996,9 @@ async function logout() {
   try { const registration = await navigator.serviceWorker?.getRegistration(); endpoint = (await registration?.pushManager.getSubscription())?.endpoint || ''; } catch {}
   await apiClient.logout(endpoint);
   sessionStorage.removeItem('modu-identity-return');
+  try { sessionStorage.removeItem(createDraftKey()); } catch {}
   state.createDraft = null;
+  emailStateRevision++;
   state.verifications = null;
   emailVerificationFlow = null;
   state.user = null;
@@ -1974,6 +2021,7 @@ function openSubmissionEmailPrompt() {
   openModal(`<section class="submission-email-prompt"><div class="notice-box warning"><span>✉</span><div><strong>등록·신청 전에 이메일 인증이 필요합니다</strong><p>아직 제출되지 않았습니다. 작성 내용은 보관되며, 인증 후 돌아와 등록·신청 버튼을 다시 눌러주세요.</p></div></div><button class="btn btn-primary btn-lg btn-block" type="button" data-action="email-verification">이메일 인증하기</button><button class="btn btn-outline btn-block" type="button" data-action="identity-return">작성 화면으로 돌아가기</button></section>`, { title: '이메일 인증이 필요합니다' });
 }
 function moderationReasonHelp(reason) {
+  if (reason.message) return String(reason.message);
   return ({
     POSSIBLE_DUPLICATE: '이미 등록한 미션과 제목이 같거나 비슷합니다. 내 클리어에서 기존 미션을 확인하고 수정하세요. 별개의 의뢰라면 제목과 본문에 대상·범위·회차의 차이를 명확히 적어주세요.',
     HIGH_REWARD: '보상금이 50만 원 이상입니다. 이 금액만으로 비공개 처리되지는 않으며 다른 검수 사유와 함께 확인합니다.',
@@ -1986,10 +2034,20 @@ function renderModerationFeedback(challenge, { admin = false } = {}) {
   if (!['CHANGES_REQUIRED', 'AUTO_REJECTED'].includes(challenge.moderationAction)) return '';
   const rejected = challenge.moderationAction === 'AUTO_REJECTED';
   const reasons = challenge.moderationReasons || [];
+  const requiresEmail = challenge.moderationRequiresEmailVerification === true || reasons.some(reason => reason.requiresEmailVerification === true);
+  const emailExplanation = requiresEmail ? (state.user?.emailVerified && !admin ? '이메일 인증이 완료되었습니다. 저장된 미션을 수정·저장하여 다시 검수해주세요.' : '이 미션은 이메일 인증 확인이 필요합니다. 인증을 완료한 뒤 저장된 미션을 다시 검수해주세요.') : '이메일 인증과는 별도의 내용 검수 결과입니다. 인증을 다시 받을 필요 없이 아래 내용을 확인해주세요.';
   const contentReasons = reasons.filter(reason => reason.code !== 'HIGH_REWARD');
   const rewardReason = reasons.find(reason => reason.code === 'HIGH_REWARD');
-  return `<section class="submission-feedback" aria-label="미션 검수 사유"><h3>${rejected ? '게시가 제한되어 비공개로 보관했습니다' : '내용 수정이 필요해 비공개로 보관했습니다'}</h3><p>이메일 인증과는 별도의 내용 검수 결과입니다. 인증을 다시 받을 필요 없이 아래 내용을 확인해주세요. 작성 내용은 삭제되지 않았습니다.</p>${contentReasons.length ? `<ul>${contentReasons.map(reason => `<li><strong>${escapeHTML(reason.label)}</strong><p>${escapeHTML(moderationReasonHelp(reason))}</p></li>`).join('')}</ul>` : '<p>자세한 검수 사유는 미션 상세에서 확인해주세요.</p>'}${rewardReason ? `<p class="form-hint"><strong>보상금 관련 참고</strong><br>${escapeHTML(moderationReasonHelp(rewardReason))} ${contentReasons.length ? '보상금을 낮추기 전에 위 내용 검수 사유를 먼저 확인해주세요.' : ''}</p>` : ''}<p>기존 미션을 수정·저장하면 다시 검수합니다. 새 미션을 반복 등록할 필요가 없습니다.</p>${admin ? `<details><summary>관리자 검수 정보</summary><p>위험도 ${Number(challenge.moderationRiskScore || 0)}/100 · 정책 ${escapeHTML(challenge.moderationPolicyVersion || '-')}</p></details>` : ''}</section>`;
+  return `<section class="submission-feedback" aria-label="미션 검수 사유"><h3>${rejected ? '게시가 제한되어 비공개로 보관했습니다' : '내용 수정이 필요해 비공개로 보관했습니다'}</h3><p>${escapeHTML(emailExplanation)} 작성 내용은 삭제되지 않았습니다.</p>${requiresEmail && !admin ? renderEmailStatusCard('수정·재검수', true) : ''}${contentReasons.length ? `<ul>${contentReasons.map(reason => `<li><strong>${escapeHTML(reason.label)}</strong><p>${escapeHTML(moderationReasonHelp(reason))}</p></li>`).join('')}</ul>` : '<p>자세한 검수 사유는 미션 상세에서 확인해주세요.</p>'}${rewardReason ? `<p class="form-hint"><strong>보상금 관련 참고</strong><br>${escapeHTML(moderationReasonHelp(rewardReason))} ${contentReasons.length ? '보상금을 낮추기 전에 위 내용 검수 사유를 먼저 확인해주세요.' : ''}</p>` : ''}<p>기존 미션을 수정·저장하면 다시 검수합니다. 새 미션을 반복 등록할 필요가 없습니다.</p>${admin ? `<button class="btn btn-outline" type="button" data-action="view-moderation-details" data-challenge-id="${escapeAttribute(challenge.id)}">관리자 검수 정보 확인</button>` : ''}</section>`;
 }
+async function openModerationDetails(challengeId) {
+  const result = await apiClient.moderationDetails(challengeId);
+  const m = result.moderation;
+  if (!m) throw new ApiError('저장된 검수 상세정보가 없습니다.');
+  const score = Number.isFinite(m.riskScore) ? `${m.riskScore}/100` : '기록 없음';
+  openModal(`<section class="submission-feedback"><h3>관리자 검수 정보</h3><p>위험도 ${score} · 정책 ${escapeHTML(m.policyVersion || '기록 없음')}</p><p>판정 ${escapeHTML(m.action || '기록 없음')}</p><ul>${(m.reasons || []).map(reason => `<li><strong>${escapeHTML(reason.label || reason.code || '')}</strong><p>탐지코드 ${escapeHTML(reason.code || '기록 없음')} · ${Number.isFinite(reason.score) ? reason.score : '기록 없음'}점</p>${reason.evidence ? `<p>${escapeHTML(typeof reason.evidence === 'string' ? reason.evidence : JSON.stringify(reason.evidence))}</p>` : ''}</li>`).join('')}</ul>${(m.guidance || []).map(item => `<p>${escapeHTML(item.message || '')}</p>`).join('')}<p>이 조회는 관리자 감사로그에 기록됩니다.</p></section>`, { title: '관리자 검수 상세', wide: true });
+}
+
 function showChallengeSubmissionResult(result) {
   const challenge = { ...result.challenge };
   challenge.moderationAction ||= result.moderationAction;
@@ -2003,6 +2061,7 @@ function showChallengeSubmissionResult(result) {
 
 async function submitChallenge(form) {
   if (!form.dataset.idempotencyKey) form.dataset.idempotencyKey = crypto.randomUUID();
+  saveCreateDraft();
   const data = Object.fromEntries(new FormData(form));
   const deadline = new Date(`${data.deadline}T23:59:59+09:00`).toISOString();
   const result = await apiClient.createChallenge({
@@ -2022,6 +2081,7 @@ async function submitChallenge(form) {
   if (!state.challenges.some((item) => item.id === result.challenge.id)) state.challenges.unshift(result.challenge);
   state.activity = null;
   state.createDraft = null;
+  sessionStorage.removeItem(createDraftKey());
   sessionStorage.removeItem('modu-challenge-create-draft');
   sessionStorage.removeItem('modu-identity-return');
   navigate('dashboard');
@@ -2057,7 +2117,7 @@ async function submitTeaser(form) {
   sessionStorage.removeItem(transientModalDraftKey(form));
   closeModal();
   state.activity = null;
-  await loadChallenges();
+  loadChallenges().catch(() => undefined);
   toast('TEASER를 제출했습니다', '의뢰자가 해결 가능성과 TRUST 이력을 검토합니다.', 'success');
   await openChallenge(challengeId);
 }
@@ -2075,6 +2135,8 @@ async function submitTeaserEdit(form) {
   const data = Object.fromEntries(new FormData(form));
   data.expectedDays = Number(data.expectedDays);
   await apiClient.updateTeaser(form.dataset.challengeId, form.dataset.teaserId, data);
+  sessionStorage.removeItem(transientModalDraftKey(form));
+  state.activity = null;
   toast('TEASER를 수정했습니다', '수정 내용이 정상 반영되었습니다.', 'success');
   await openChallenge(form.dataset.challengeId);
 }
@@ -2269,11 +2331,11 @@ function openChallengeEditForm(challengeId) {
   const context = state.selectedChallenge?.context;
   if (!challenge || challenge.id !== challengeId || !context?.canEdit) return toast('현재 수정할 수 없습니다', context?.editBlockedReason || '미션 상태를 다시 확인해주세요.', 'warning');
   const categoryOptions = Object.entries(CATEGORY_META).filter(([key]) => key !== 'ALL').map(([key, meta]) => `<option value="${key}" ${key === challenge.category ? 'selected' : ''}>${meta.label}</option>`).join('');
-  openModal(`<form id="challenge-edit-form" data-challenge-id="${challengeId}">${renderModerationFeedback(challenge)}<div class="notice-box"><span>✎</span><div><strong>아직 참여가 시작되지 않아 수정할 수 있습니다</strong><p>수정 후 위험·고액 항목은 다시 관리자 검토 대기가 될 수 있습니다.</p></div></div><div class="form-grid" style="margin-top:18px"><div class="field full"><label>제목</label><input name="title" required minlength="5" maxlength="90" value="${escapeAttribute(challenge.title)}" /></div><div class="field full"><label>한 줄 요약</label><input name="summary" required minlength="10" maxlength="180" value="${escapeAttribute(challenge.summary)}" /></div><div class="field full"><label>상세 설명</label><textarea name="description" required minlength="20" maxlength="4000" rows="7">${escapeHTML(challenge.description)}</textarea></div><div class="field"><label>카테고리</label><select name="category" required>${categoryOptions}</select></div><div class="field"><label>지역</label><input name="region" maxlength="80" value="${escapeAttribute(challenge.region || '')}" /></div><div class="field"><label>보상금</label><input name="rewardAmount" type="number" min="${rewardBoundsForUser().min}" max="${rewardBoundsForUser().max}" step="1" required value="${challenge.rewardAmount}" /><small>최소 ${formatWon(rewardBoundsForUser().min)} · 최대 ${formatWon(rewardBoundsForUser().max)}</small></div><div class="field"><label>마감일</label><input name="deadline" type="date" required value="${escapeAttribute(String(challenge.deadline || '').slice(0, 10))}" /></div><div class="field full"><label>성공조건</label><textarea name="successCriteria" required minlength="10" maxlength="1600" rows="4">${escapeHTML(challenge.successCriteria)}</textarea></div><div class="field full"><label>보상금 준비 시점</label><textarea name="paymentTrigger" required minlength="10" maxlength="800" rows="3">${escapeHTML(challenge.paymentTrigger)}</textarea></div><div class="field full"><label>필수 증빙</label><textarea name="evidenceRequirements" required minlength="5" maxlength="800" rows="3">${escapeHTML(challenge.evidenceRequirements)}</textarea></div><div class="field full"><label>공개범위</label><select name="visibility"><option value="public" ${challenge.visibility === 'public' ? 'selected' : ''}>전체 공개</option><option value="unlisted" ${challenge.visibility === 'unlisted' ? 'selected' : ''}>링크 공개</option><option value="private" ${challenge.visibility === 'private' ? 'selected' : ''}>비공개</option></select></div></div><button class="btn btn-primary btn-lg btn-block" type="submit">수정 내용 저장</button></form>`, { title: '미션 수정', wide: true });
-  restoreTransientModalDraft(document.querySelector('#challenge-edit-form'));
+  openModal(`<form id="challenge-edit-form" data-challenge-id="${challengeId}">${renderModerationFeedback(challenge)}<div class="notice-box"><span>✎</span><div><strong>아직 참여가 시작되지 않아 수정할 수 있습니다</strong><p>수정 내용을 저장하면 관리자 대기 없이 즉시 자동 재검수됩니다.</p></div></div><div class="form-grid" style="margin-top:18px"><div class="field full"><label>제목</label><input name="title" required minlength="5" maxlength="90" value="${escapeAttribute(challenge.title)}" /></div><div class="field full"><label>한 줄 요약</label><input name="summary" required minlength="10" maxlength="180" value="${escapeAttribute(challenge.summary)}" /></div><div class="field full"><label>상세 설명</label><textarea name="description" required minlength="20" maxlength="4000" rows="7">${escapeHTML(challenge.description)}</textarea></div><div class="field"><label>카테고리</label><select name="category" required>${categoryOptions}</select></div><div class="field"><label>지역</label><input name="region" maxlength="80" value="${escapeAttribute(challenge.region || '')}" /></div><div class="field"><label>보상금</label><input name="rewardAmount" type="number" min="${rewardBoundsForUser().min}" max="${rewardBoundsForUser().max}" step="1" required value="${challenge.rewardAmount}" /><small>최소 ${formatWon(rewardBoundsForUser().min)} · 최대 ${formatWon(rewardBoundsForUser().max)}</small></div><div class="field"><label>마감일</label><input name="deadline" type="date" required value="${escapeAttribute(String(challenge.deadline || '').slice(0, 10))}" /></div><div class="field full"><label>성공조건</label><textarea name="successCriteria" required minlength="10" maxlength="1600" rows="4">${escapeHTML(challenge.successCriteria)}</textarea></div><div class="field full"><label>보상금 준비 시점</label><textarea name="paymentTrigger" required minlength="10" maxlength="800" rows="3">${escapeHTML(challenge.paymentTrigger)}</textarea></div><div class="field full"><label>필수 증빙</label><textarea name="evidenceRequirements" required minlength="5" maxlength="800" rows="3">${escapeHTML(challenge.evidenceRequirements)}</textarea></div><div class="field full"><label>공개범위</label><select name="visibility"><option value="public" ${challenge.visibility === 'public' ? 'selected' : ''}>전체 공개</option><option value="unlisted" ${challenge.visibility === 'unlisted' ? 'selected' : ''}>링크 공개</option><option value="private" ${challenge.visibility === 'private' ? 'selected' : ''}>비공개</option></select></div></div><button class="btn btn-primary btn-lg btn-block" type="submit">수정 내용 저장</button></form>`, { title: '미션 수정', wide: true });
   const editForm = document.querySelector('#challenge-edit-form');
-  editForm?.querySelector(':scope > .notice-box p')?.replaceChildren(document.createTextNode('수정 내용을 저장하면 관리자 대기 없이 즉시 자동 재검수됩니다.'));
+  editForm?.insertAdjacentHTML('afterbegin', renderEmailStatusCard('등록 신청', true));
   editForm?.querySelector('.form-grid')?.insertAdjacentHTML('afterbegin', `<div class="field full"><label>의뢰 활동 주체</label><select name="subjectType"><option value="individual" ${challenge.ownerSubjectType === 'individual' ? 'selected' : ''}>개인</option><option value="business" ${challenge.ownerSubjectType === 'business' ? 'selected' : ''}>개인사업자</option><option value="corporation" ${challenge.ownerSubjectType === 'corporation' ? 'selected' : ''}>법인</option><option value="organization" ${challenge.ownerSubjectType === 'organization' ? 'selected' : ''}>단체</option></select></div>`);
+  restoreTransientModalDraft(editForm);
 }
 
 async function submitChallengeEdit(form) {
@@ -2312,7 +2374,7 @@ function saveTransientModalDraft(form) {
   if (!(form instanceof HTMLFormElement) || !['teaser-form', 'cancel-form','teaser-edit-form','challenge-edit-form'].includes(form.id)) return;
   const values = {};
   new FormData(form).forEach((value, key) => { if (typeof value === 'string') values[key] = value; });
-  sessionStorage.setItem(transientModalDraftKey(form), JSON.stringify(values));
+  try { sessionStorage.setItem(transientModalDraftKey(form), JSON.stringify(values)); } catch { /* Keep the active form usable when browser storage is full. */ }
 }
 
 function restoreTransientModalDraft(form) {
@@ -2341,6 +2403,11 @@ async function submitDispute(form) {
   state.activity = null;
   await loadChallenges();
   toast('분쟁이 접수되었습니다', '관련 상태와 증빙이 보존되고 운영 검토가 시작됩니다.', 'warning');
+}
+
+function renderPolicyPage(type) {
+  const policy = POLICIES[type];
+  return `<section class="page-hero compact"><div class="container"><span class="eyebrow">모두의클리어 서비스 안내</span><h1>${escapeHTML(policy.title)}</h1></div></section><section class="page-section"><div class="container"><article class="dashboard-card policy-content" data-policy-page="${escapeAttribute(type)}">${policy.body}</article><button class="btn btn-outline" type="button" data-route="home">홈으로</button></div></section>`;
 }
 
 function openPolicy(type) {
@@ -2413,6 +2480,7 @@ function renderModalRequestError(title, error, retryAction, data = {}) {
 }
 
 function renderOffline(error) {
+  if (['privacy', 'terms'].includes(state.route)) { render(); return; }
   renderHeader();
   main.innerHTML = `<section class="page-section"><div class="container"><div class="offline-panel"><div class="offline-icon">!</div><h1>API 연결을 확인하고 있습니다</h1><p>${escapeHTML(error?.message || '현재 배포 API에 연결할 수 없습니다.')}</p><div class="empty-actions"><button class="btn btn-primary" data-action="retry">다시 시도</button><button class="btn btn-outline" data-action="open-demo">기능 프리뷰 보기</button></div></div></div></section>`;
 }
@@ -2429,6 +2497,14 @@ async function openDeepLinkedChallenge() {
   const challengeId = params.get('challenge');
   if (!challengeId || state.selectedChallenge?.challenge?.id === challengeId) return;
   await openChallenge(challengeId);
+}
+
+async function retryAccountStatus() {
+  if (state.authLoading) return;
+  state.authLoading = true; renderHeader();
+  try { await completeAuthentication(await loadCurrentUser()); }
+  catch (error) { state.authError = error; throw error; }
+  finally { state.authLoading = false; renderHeader(); }
 }
 
 async function refreshCurrentRoute() {
@@ -2543,26 +2619,46 @@ function hydratePage() {
   hydrateLiveChallengeRotation();
 }
 
+function createDraftKey() { return `modu-challenge-create-draft-${state.user?.id || 'anonymous'}`; }
 function saveCreateDraft() {
   const form = document.querySelector('#challenge-create-form');
-  if (!form) return;
+  if (!form || !state.user) return;
   state.createDraft = {};
   [...form.elements].forEach((field) => {
     if (!field.name || ['successCheck', 'paymentCheck', 'evidenceCheck'].includes(field.name)) return;
     if (field.type === 'checkbox') state.createDraft[field.name] = field.checked;
     else state.createDraft[field.name] = field.value;
   });
+  state.createDraft.__criteria = {};
+  for (const name of ['successCheck', 'paymentCheck', 'evidenceCheck']) {
+    const fields = [...form.querySelectorAll(`[name="${name}"]`)];
+    if (fields.length) state.createDraft.__criteria[name] = fields.filter(field => field.checked).map(field => field.value);
+  }
+  state.createDraft.__requestKey = form.dataset.idempotencyKey || '';
+  try { sessionStorage.setItem(createDraftKey(), JSON.stringify({ savedAt: Date.now(), mode: state.createMode, values: state.createDraft })); } catch { /* The in-memory draft still survives local navigation. */ }
 }
 
 function restoreCreateDraft() {
   const form = document.querySelector('#challenge-create-form');
-  if (!form || !state.createDraft) return;
+  if (!form || !state.user) return;
+  if (!state.createDraft) {
+    try {
+      const draft = JSON.parse(sessionStorage.getItem(createDraftKey()) || 'null');
+      if (draft && Date.now() - draft.savedAt < 86400000) state.createDraft = draft.values;
+      else sessionStorage.removeItem(createDraftKey());
+    } catch { /* Restricted storage must not prevent writing. */ }
+  }
+  if (!state.createDraft) return;
   Object.entries(state.createDraft).forEach(([name, value]) => {
     const field = form.elements[name];
     if (!field || field instanceof RadioNodeList) return;
     if (field.type === 'checkbox') field.checked = Boolean(value);
     else field.value = value;
   });
+  Object.entries(state.createDraft.__criteria || {}).forEach(([name, checked]) => {
+    form.querySelectorAll(`[name="${name}"]`).forEach(field => { field.checked = checked.includes(field.value); });
+  });
+  if (state.createDraft.__requestKey) form.dataset.idempotencyKey = state.createDraft.__requestKey;
 }
 
 function hydrateLiveChallengeRotation() {
@@ -2782,9 +2878,9 @@ function syncEmailStatusUi() {
 let emailStatusRefresh = null;
 function refreshEmailStatus() {
   if (state.loading || !state.user || emailStatusRefresh) return emailStatusRefresh;
-  const id=state.user.id;
+  const id=state.user.id, revision=emailStateRevision;
   emailStatusRefresh=apiClient.emailVerification().then(data=>{
-    if(state.user?.id!==id)return;
+    if(state.user?.id!==id || revision!==emailStateRevision)return;
     state.user.emailVerified=data.verified; state.user.email=data.email;
     syncEmailStatusUi();
     if(emailVerificationFlow?.userId===id && emailVerificationFlow.purpose==='verify_email') {
@@ -2823,14 +2919,16 @@ function renderEmailSummary({ inManager = false } = {}) {
 async function openEmailVerification({change=false}={}) {
   if(!state.user)return openAuthModal('login');
   if(!modalRoot.querySelector('.email-otp-panel, .submission-email-prompt'))rememberIdentityReturn();
-  const memberId=state.user.id;
+  const memberId=state.user.id, revision=emailStateRevision;
   openModal('<div class="email-status-loading" role="status"><span class="loading-spinner" aria-hidden="true"></span><strong>이메일 인증 상태 확인 중…</strong><p>잠시만 기다려주세요. 다시 누르지 않아도 됩니다.</p></div>', {title:'이메일 인증'});
   const loadingPanel=modalRoot.querySelector('.email-status-loading');
   let data;
   try { data=await apiClient.emailVerification(); }
   catch(error) { if(loadingPanel?.isConnected)openModal('<p>인증 상태를 불러오지 못했습니다. 작성 내용은 보관되어 있습니다.</p><button class="btn btn-primary" data-action="email-verification">다시 확인</button><button class="btn btn-outline" data-action="identity-return">작성 화면으로 돌아가기</button>',{title:'이메일 인증'}); throw error; }
   if(state.user?.id!==memberId || !loadingPanel?.isConnected)return;
+  if (revision !== emailStateRevision) { renderEmailCodePanel(); return; }
   state.user.emailVerified=data.verified;
+  state.user.email=data.email;
   syncEmailStatusUi();
   if(!emailVerificationFlow || emailVerificationFlow.userId!==state.user.id || change || emailVerificationFlow.email!==data.email) {
     emailVerificationFlow={...data,userId:state.user.id,purpose:change?'change_authorize':'verify_email',challenge:change?null:data.challenge,proof:null};
@@ -2859,7 +2957,7 @@ async function sendEmailCode(form) {
   try {
     const result=await apiClient.sendEmailCode(payload);
     if(state.user?.id!==flow.userId)return;
-    if(result.verified){flow.verified=true;state.user.emailVerified=true;syncEmailStatusUi();}
+    if(result.verified){emailStateRevision++;flow.verified=true;state.user.emailVerified=true;syncEmailStatusUi();}
     if(result.challenge)flow.challenge=result.challenge;
     flow.retryAt=0;renderEmailCodePanel(result.sent?'인증메일 발송 요청이 수락되었습니다. 도착한 번호를 입력해주세요.':'인증 상태를 확인했습니다.');
   } catch(error) {
@@ -2873,6 +2971,7 @@ async function confirmEmailCode(form) {
   if(state.user?.id!==flow.userId)return;
   form.reset();
   if(result.reauthenticated){flow.purpose='change_email';flow.proof=result.proof;flow.challenge=null;renderEmailCodePanel('기존 이메일 확인 완료. 새 이메일을 입력해주세요.');return;}
+  emailStateRevision++;
   state.user={...state.user,email:result.email||state.user.email,emailVerified:result.verified===true};
   emailVerificationFlow={userId:state.user.id,email:state.user.email,verified:state.user.emailVerified,available:flow.available,purpose:'verify_email',challenge:null,proof:null};
   renderHeader();renderEmailCodePanel(result.changed?'새 이메일 인증과 주소 변경을 완료했습니다.':'이메일 인증을 완료했습니다. 이전 화면으로 돌아가 내용을 확인하고 제출해주세요.');

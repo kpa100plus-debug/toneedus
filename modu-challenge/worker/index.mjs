@@ -1,7 +1,7 @@
 import { emailOtpApi, emailOtpAvailable, emailOtpSetup } from './email-otp.mjs';
 import { entityApi, entityConfigured, purgeEntityEvidence } from './entity-verification.mjs';
 import { createTestOrder, transitionTestOrder } from './transactions.mjs';
-import { executeProviderOperation, reconcileProviderOperation, reconcileWebhook, reconcilePendingOperations } from './provider-operations.mjs';
+import { executeProviderOperation, reconcileProviderOperation, reconcileWebhook, reconcilePendingOperations, readProviderWebhook } from './provider-operations.mjs';
 import { LIVE_FINANCIAL_ADAPTERS_RELEASED, identityConfigured, identitySetupChecks, launchReadiness } from './launch-readiness.mjs';
 import { identityApi, IDENTITY_CONSENT_VERSION } from './identity.mjs';
 import { simulationApi } from './simulation.mjs';
@@ -26,7 +26,7 @@ const PASSWORD_SALT_BYTES = 16;
 const PASSWORD_VERIFIER_BYTES = 32;
 const PASSWORD_HASH_PREFIX = 'v3$';
 const HIGH_REWARD_REVIEW_AMOUNT = 500_000;
-const MODERATION_POLICY_VERSION = '2026-09-22-v2';
+const MODERATION_POLICY_VERSION = '2026-09-27-v3';
 const ACTOR_TYPES = new Set(['individual', 'business', 'corporation', 'organization']);
 const REGIONS = new Set(['전국', '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주', '해외']);
 const CHALLENGE_INTENTS = new Set(['owner', 'solver', 'both']);
@@ -81,7 +81,7 @@ export default {
       if (String(error).includes('MODU_PHONE_EXISTS')) return problem(409, 'PHONE_EXISTS', '이미 가입에 사용된 휴대전화 번호입니다.');
       if (String(error).includes('MODU_DISPLAY_NAME_EXISTS')) return problem(409, 'DISPLAY_NAME_EXISTS', '이미 사용 중인 활동명입니다.');
       if (String(error).includes('UNIQUE constraint failed: users.email')) return problem(409, 'EMAIL_EXISTS', '이미 가입된 이메일입니다. 로그인 또는 인증메일 재발송을 이용해주세요.');
-      if(error?.code && Number.isInteger(error.status)) return problem(error.status,error.code,({ENTITY_REVIEW_NOT_READY:'자격 심사 보안 설정·정책 승인 전입니다.',IDENTITY_REQUIRED:'기관 본인확인이 먼저 필요합니다.',SELF_REVIEW_DENIED:'본인 신청은 직접 승인할 수 없습니다.',REGISTRY_CHECK_REQUIRED:'최근 사업자 진위 확인이 필요합니다.',STALE_REVISION:'정보가 변경되었습니다. 새로고침 후 다시 확인해주세요.',EVIDENCE_REQUIRED:'필수 증빙을 첨부해주세요.',NTS_PROVIDER_REQUIRED:'국세청 진위확인 API 연결이 필요합니다.',ENTITY_ALREADY_REPRESENTED:'이미 다른 계정에서 확인한 등록 주체입니다. 대표·위임 권한 변경 심사가 필요합니다.',CASE_ALREADY_EXISTS:'진행 중인 신청을 먼저 확인해주세요.',EVIDENCE_SIZE_LIMIT:'증빙 이미지를 512KB 이하로 줄여주세요.',EVIDENCE_EXPIRED:'증빙 보유기간이 끝나 파기되었습니다.',CASE_NOT_REVIEWABLE:'현재 상태에서는 심사를 진행할 수 없습니다.',REGISTRY_UNAVAILABLE:'국세청 조회에 실패했습니다. 잠시 후 다시 확인해주세요.',PROVIDER_SANDBOX_NOT_CONFIGURED:'업체 테스트 환경이 연결되지 않았습니다.',OPERATION_ALREADY_RESERVED:'이미 접수된 거래입니다. 재요청하지 말고 대사 결과를 확인해주세요.'})[error.code] || '요청 조건을 확인하지 못했습니다. 상태를 새로 확인해주세요.');
+      if(error?.code && Number.isInteger(error.status)) return problem(error.status,error.code,({ENTITY_REVIEW_NOT_READY:'자격 심사 보안 설정·정책 승인 전입니다.',IDENTITY_REQUIRED:'기관 본인확인이 먼저 필요합니다.',SELF_REVIEW_DENIED:'본인 신청은 직접 승인할 수 없습니다.',REGISTRY_CHECK_REQUIRED:'최근 사업자 진위 확인이 필요합니다.',STALE_REVISION:'정보가 변경되었습니다. 새로고침 후 다시 확인해주세요.',EVIDENCE_REQUIRED:'필수 증빙을 첨부해주세요.',NTS_PROVIDER_REQUIRED:'국세청 진위확인 API 연결이 필요합니다.',REGISTRY_NOT_ACTIVE:'사업자번호·개업일·대표자명 또는 휴폐업 상태를 확인해주세요. 국세청 진위·계속사업 확인이 완료되지 않았습니다.',PARTIAL_REFUND_PROVIDER_NOT_RELEASED:'부분 환불 후 외부 결제·지급 연결은 검증 전입니다. 실제 청구·지급은 실행하지 않았습니다.',ENTITY_ALREADY_REPRESENTED:'이미 다른 계정에서 확인한 등록 주체입니다. 대표·위임 권한 변경 심사가 필요합니다.',CASE_ALREADY_EXISTS:'진행 중인 신청을 먼저 확인해주세요.',EVIDENCE_SIZE_LIMIT:'증빙 이미지를 512KB 이하로 줄여주세요.',EVIDENCE_EXPIRED:'증빙 보유기간이 끝나 파기되었습니다.',CASE_NOT_REVIEWABLE:'현재 상태에서는 심사를 진행할 수 없습니다.',REGISTRY_UNAVAILABLE:'국세청 조회에 실패했습니다. 잠시 후 다시 확인해주세요.',PROVIDER_SANDBOX_NOT_CONFIGURED:'업체 테스트 환경이 연결되지 않았습니다.',OPERATION_ALREADY_RESERVED:'이미 접수된 거래입니다. 재요청하지 말고 대사 결과를 확인해주세요.'})[error.code] || '요청 조건을 확인하지 못했습니다. 상태를 새로 확인해주세요.');
       console.error('Unhandled API error', error?.name || 'Error');
       return problem(500, 'INTERNAL_ERROR', '요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.');
     }
@@ -130,7 +130,7 @@ async function route(request, env, ctx, url) {
   if(path==='/api/provider-webhooks/toss'){
     if(env.APP_ENV!=='test'||env.PROVIDER_SANDBOX_ENABLED!=='true')return problem(503,'MONEY_FLOW_DISABLED','실거래 웹훅은 아직 개방되지 않았습니다.');
     if(method!=='POST')return problem(405,'METHOD_NOT_ALLOWED','POST 요청만 지원합니다.');
-    const body=await readJson(request);if(body instanceof Response)return body;
+    const body=await readProviderWebhook(request,env);
     return json(await reconcileWebhook(env,body));
   }
   if(path.startsWith('/api/transactions/test/')&&env.APP_ENV==='test'&&env.PROVIDER_SANDBOX_ENABLED==='true'){
@@ -151,11 +151,11 @@ async function route(request, env, ctx, url) {
     const admin=await requirePrimaryAdmin(request,env),primary=!(admin instanceof Response);
     if(![order.owner_id,order.solver_id].includes(user.id)&&!primary)return problem(403,'PARTY_REQUIRED','당사자만 확인할 수 있습니다.');
     if(match[2]==='action'){
-      if(!['REQUEST_PAYMENT','REQUEST_REFUND','SUBMIT_PROOF','REJECT_PROOF','ACCEPT_PROOF','CANCEL','OPEN_DISPUTE','RESOLVE_REFUND','RESOLVE_PAYOUT','QUEUE_PAYOUT'].includes(body.action))return problem(403,'PROVIDER_ONLY','기관 결과는 직접 입력할 수 없습니다.');
+      if(!['REQUEST_PAYMENT','REQUEST_REFUND','REQUEST_PARTIAL_REFUND','SUBMIT_PROOF','REJECT_PROOF','ACCEPT_PROOF','CANCEL','OPEN_DISPUTE','RESOLVE_REFUND','RESOLVE_PAYOUT','QUEUE_PAYOUT'].includes(body.action))return problem(403,'PROVIDER_ONLY','기관 결과는 직접 입력할 수 없습니다.');
       const operator=['RESOLVE_REFUND','RESOLVE_PAYOUT','QUEUE_PAYOUT'].includes(body.action);
       if(operator&&!primary)return problem(403,'PRIMARY_ADMIN_REQUIRED','최고관리자 확인이 필요합니다.');
       const mission=await fetchChallenge(order.challenge_id,env);const gate=await verifiedPartiesGate(mission,null,{...env,VERIFICATION_ENFORCEMENT:"required"});if(gate)return gate;
-      return json(await transitionTestOrder(env,{orderId:order.id,requestKey:key,action:body.action,actorId:operator?'TEST_OPERATOR':user.id,revision:body.revision,reason:body.reason||''}));
+      return json(await transitionTestOrder(env,{orderId:order.id,requestKey:key,action:body.action,actorId:operator?'TEST_OPERATOR':user.id,revision:body.revision,amount:body.action==='REQUEST_PARTIAL_REFUND'?body.refundAmount:undefined,reason:body.reason||''}));
     }
     if(match[2]==='provider'){
       if(body.kind==='PAYOUT'&&!primary)return problem(403,'PRIMARY_ADMIN_REQUIRED','최고관리자 확인이 필요합니다.');
@@ -290,6 +290,9 @@ async function route(request, env, ctx, url) {
   if (method === 'GET' && path === '/api/admin/moderation-queue') return moderationQueue(request, env);
   if (method === 'POST' && path === '/api/admin/moderation/auto-review') return autoReviewModerationQueue(request, env);
   if (method === 'POST' && path === '/api/admin/push-announcements') return sendAdminPushAnnouncement(request, env);
+
+  match = path.match(/^\/api\/admin\/challenges\/([^/]+)\/moderation$/);
+  if (match && method === 'GET') return getAdminModerationDetail(match[1], request, env);
 
   match = path.match(/^\/api\/admin\/challenges\/([^/]+)\/moderation\/approve$/);
   if (match && method === 'POST') return approveModerationChallenge(match[1], request, env);
@@ -466,18 +469,22 @@ async function verifyEmail(request, env) {
   if (body instanceof Response) return body;
   const token = String(body.token || '');
   if (!/^[A-Za-z0-9_-]{40,200}$/.test(token)) return problem(400, 'INVALID_VERIFICATION_TOKEN', '인증 링크가 올바르지 않습니다.');
+  const throttled = await consumeRequestLimit(request, env, 'email-link', '', 30);
+  if (throttled) return throttled;
   const verification = await env.DB.prepare(`
     SELECT id, user_id, target_email FROM email_verifications
     WHERE token_hash = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP AND target_email = (SELECT email FROM users WHERE id = email_verifications.user_id)
   `).bind(await sha256(token)).first();
   if (!verification) return problem(400, 'VERIFICATION_EXPIRED', '인증 링크가 만료되었거나 이미 사용되었습니다.');
+  const viewer = await optionalAuth(request, env);
+  if (viewer && !(viewer instanceof Response) && viewer.id !== verification.user_id) return problem(403, 'VERIFICATION_ACCOUNT_MISMATCH', '인증메일을 요청한 계정으로 로그인한 후 다시 확인해주세요.');
   const claim=crypto.randomUUID();
   const result=await env.DB.batch([
     env.DB.prepare('UPDATE email_verifications SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP').bind(claim,verification.id),
     env.DB.prepare('UPDATE users SET email_verified = 1, email_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND email = ? AND EXISTS(SELECT 1 FROM email_verifications WHERE id=? AND used_at=?)').bind(verification.user_id,verification.target_email,verification.id,claim),
-    auditStatement(env, verification.user_id, 'EMAIL_VERIFIED', 'user', verification.user_id, null, { method: 'email-link' }),
   ]);
-  if(!result[0]?.meta?.changes)return problem(400,'VERIFICATION_EXPIRED','이미 사용한 링크입니다.');
+  if(!result[0]?.meta?.changes || !result[1]?.meta?.changes)return problem(400,'VERIFICATION_EXPIRED','이미 사용했거나 계정 정보가 변경된 링크입니다.');
+  await audit(env, verification.user_id, 'EMAIL_VERIFIED', 'user', verification.user_id, null, { method: 'email-link' });
   const user = await env.DB.prepare('SELECT signup_source FROM users WHERE id = ?').bind(verification.user_id).first();
   return json({ ok: true, loginProvider: ['google', 'naver'].includes(user?.signup_source) ? user.signup_source : 'password' });
 }
@@ -511,6 +518,8 @@ async function requestPasswordReset(request, env) {
   if (body instanceof Response) return body;
   const email = normalizeEmail(body.email);
   if (!EMAIL_RE.test(email)) return problem(400, 'INVALID_EMAIL', '가입 이메일을 정확히 입력해주세요.');
+  const throttled = await consumeRequestLimit(request, env, 'password-reset-send', email, 5);
+  if (throttled) return throttled;
   const rate = await checkAuthRateLimit(request, env, 'LOGIN', `password-reset:${email}`);
   if (rate instanceof Response) return rate;
 
@@ -537,18 +546,21 @@ async function resetPassword(request, env) {
     WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > CURRENT_TIMESTAMP
   `).bind(await sha256(token)).first();
   if (!reset) return problem(400, 'RESET_EXPIRED', '비밀번호 재설정 링크가 만료되었거나 이미 사용되었습니다. 다시 요청해주세요.');
+  if (!['active', 'limited'].includes(reset.status)) return problem(403, 'ACCOUNT_RESTRICTED', '현재 이용할 수 없는 계정입니다.');
 
   const passwordHash = await hashPasswordVerifier(passwordVerifier);
-  await env.DB.batch([
-    env.DB.prepare('UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE id = ?').bind(reset.reset_id),
-    env.DB.prepare('UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL').bind(reset.user_id),
-    env.DB.prepare('UPDATE users SET password_hash = ?, password_salt = ?, status = \'active\', updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .bind(passwordHash, passwordSalt, reset.user_id),
-    env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(reset.user_id),
-    auditStatement(env, reset.user_id, 'PASSWORD_RESET', 'user', reset.user_id, null, { method: 'email-link', sessionsSignedOut: true }),
+  const claim = crypto.randomUUID();
+  const claimed = await env.DB.batch([
+    env.DB.prepare("UPDATE password_resets SET used_at = ? WHERE id = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP AND EXISTS(SELECT 1 FROM users WHERE id=password_resets.user_id AND status IN ('active','limited'))").bind(claim, reset.reset_id),
+    env.DB.prepare('UPDATE password_resets SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL AND EXISTS(SELECT 1 FROM password_resets WHERE id=? AND used_at=?)').bind(reset.user_id, reset.reset_id, claim),
+    env.DB.prepare("UPDATE users SET password_hash = ?, password_salt = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status IN ('active','limited') AND EXISTS(SELECT 1 FROM password_resets WHERE id=? AND used_at=?)")
+      .bind(passwordHash, passwordSalt, reset.user_id, reset.reset_id, claim),
+    env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND EXISTS(SELECT 1 FROM password_resets WHERE id=? AND used_at=?)').bind(reset.user_id, reset.reset_id, claim),
   ]);
+  if (!claimed[0]?.meta?.changes || !claimed[2]?.meta?.changes) return problem(400, 'RESET_EXPIRED', '이미 사용되었거나 더 이상 사용할 수 없는 링크입니다.');
+  await audit(env, reset.user_id, 'PASSWORD_RESET', 'user', reset.user_id, null, { method: 'email-link', sessionsSignedOut: true });
   const session = await createSession(reset.user_id, request, env);
-  const restoredUser = { ...reset, password_hash: passwordHash, password_salt: passwordSalt, status: 'active' };
+  const restoredUser = { ...reset, password_hash: passwordHash, password_salt: passwordSalt };
   return json({ user: publicUser(restoredUser), otherSessionsSignedOut: true }, 200, { 'Set-Cookie': session.cookie });
 }
 
@@ -564,6 +576,7 @@ async function issuePasswordReset(env, request, user) {
   const origin = new URL(request.url).origin;
   const resetUrl = `${origin}/#/reset-password?token=${encodeURIComponent(token)}`;
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    signal: AbortSignal.timeout(10000),
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'api-key': String(env.BREVO_API_KEY) },
     body: JSON.stringify({
@@ -615,31 +628,46 @@ async function fetchOAuthProfile(provider, config, code, redirectUri, state) {
   return { subject: String(profile.id), email: normalizeEmail(profile.email), emailVerified: false, displayName: cleanText(profile.name || profile.nickname, 2, 40) || 'NAVER 회원' };
 }
 
-async function findOrCreateOAuthUser(env, provider, profile) {
-  let identity = await env.DB.prepare('SELECT user_id FROM auth_identities WHERE provider = ? AND provider_subject = ?').bind(provider, profile.subject).first();
+async function findOrCreateOAuthUser(env, provider, profile, signedInUser = null) {
+  let identity = await env.DB.prepare('SELECT user_id FROM auth_identities WHERE provider = ? AND provider_subject = ? AND NOT EXISTS(SELECT 1 FROM auth_identity_restrictions r WHERE r.identity_id=auth_identities.id AND r.cleared_at IS NULL)').bind(provider, profile.subject).first();
   if (identity?.user_id) {
     const linkedUser = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(identity.user_id).first();
     return verifyOAuthEmailForExistingUser(env, linkedUser, provider, profile);
   }
   let user = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(profile.email).first();
   if (!user || ['closed', 'suspended'].includes(user.status)) return user || null;
+  // A matching, unverified provider email is not proof of the existing account.
+  // NAVER linking requires the already authenticated, email-verified member.
+  const trustedEmail = provider === 'google' && profile.emailVerified === true;
+  if (!trustedEmail && (signedInUser?.id !== user.id || !user.email_verified)) return { oauthLinkRequired: true };
   user = await verifyOAuthEmailForExistingUser(env, user, provider, profile);
   if (!user?.email_verified) return user || null;
-  await env.DB.prepare(`INSERT INTO auth_identities (id, user_id, provider, provider_subject, provider_email, last_login_at)
-    VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(provider, provider_subject) DO NOTHING`)
-    .bind(makeId('oid'), user.id, provider, profile.subject, profile.email).run();
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO auth_identities (id, user_id, provider, provider_subject, provider_email, last_login_at)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(provider, provider_subject) DO NOTHING`)
+      .bind(makeId('oid'), user.id, provider, profile.subject, profile.email),
+    env.DB.prepare('UPDATE auth_identity_restrictions SET cleared_at=CURRENT_TIMESTAMP WHERE cleared_at IS NULL AND identity_id IN (SELECT id FROM auth_identities WHERE user_id=? AND provider=? AND provider_subject=?)').bind(user.id, provider, profile.subject),
+  ]);
   return user;
 }
 
 async function verifyOAuthEmailForExistingUser(env, user, provider, profile) {
   if (!user || user.email_verified || !profile.emailVerified || normalizeEmail(user.email)!==profile.email || provider !== 'google' || ['closed', 'suspended'].includes(user.status)) return user;
-  await env.DB.batch([
-    env.DB.prepare('UPDATE users SET email_verified = 1, email_verified_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(user.id),
-    env.DB.prepare('UPDATE email_verifications SET used_at = CURRENT_TIMESTAMP WHERE user_id = ? AND used_at IS NULL').bind(user.id),
-    auditStatement(env, user.id, 'OAUTH_VERIFIED_EMAIL_LINK', 'user', user.id, { emailVerified: false }, { emailVerified: true, provider }),
+  // Google has established mailbox ownership for a previously unverified
+  // account. Earlier sessions/passwords/social identities may have been made
+  // by somebody who pre-registered that email; retain data, revoke credentials.
+  const passwordSalt = bytesToBase64(crypto.getRandomValues(new Uint8Array(PASSWORD_SALT_BYTES)));
+  const passwordHash = await hashPasswordVerifier(bytesToBase64(crypto.getRandomValues(new Uint8Array(PASSWORD_VERIFIER_BYTES))));
+  const results = await env.DB.batch([
+    env.DB.prepare("UPDATE users SET email_verified=1,email_verified_at=CURRENT_TIMESTAMP,password_hash=?,password_salt=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND email=? AND email_verified=0 AND status IN ('active','limited')").bind(passwordHash,passwordSalt,user.id,profile.email),
+    env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND EXISTS(SELECT 1 FROM users WHERE id=? AND password_hash=?)').bind(user.id,user.id,passwordHash),
+    env.DB.prepare('UPDATE email_verifications SET used_at=CURRENT_TIMESTAMP WHERE user_id=? AND used_at IS NULL AND EXISTS(SELECT 1 FROM users WHERE id=? AND password_hash=?)').bind(user.id,user.id,passwordHash),
+    env.DB.prepare('UPDATE password_resets SET used_at=CURRENT_TIMESTAMP WHERE user_id=? AND used_at IS NULL AND EXISTS(SELECT 1 FROM users WHERE id=? AND password_hash=?)').bind(user.id,user.id,passwordHash),
+    env.DB.prepare("INSERT INTO auth_identity_restrictions(identity_id,reason) SELECT id,'UNVERIFIED_ACCOUNT_OWNERSHIP_RECOVERY' FROM auth_identities WHERE user_id=? AND NOT(provider=? AND provider_subject=?) AND EXISTS(SELECT 1 FROM users WHERE id=? AND password_hash=?) ON CONFLICT(identity_id) DO UPDATE SET reason=excluded.reason,revoked_at=CURRENT_TIMESTAMP,cleared_at=NULL").bind(user.id,provider,profile.subject,user.id,passwordHash),
   ]);
-  return { ...user, email_verified: 1, email_verified_at: new Date().toISOString() };
+  if (results[0]?.meta?.changes) await audit(env, user.id, 'OAUTH_VERIFIED_EMAIL_LINK', 'user', user.id, { emailVerified: false }, { emailVerified: true, provider, priorCredentialsRevoked: true });
+  return env.DB.prepare('SELECT * FROM users WHERE id=?').bind(user.id).first();
 }
 
 
@@ -711,7 +739,8 @@ async function finishOAuth(provider, request, env, url) {
   const authorization = await env.DB.prepare(`SELECT id, return_route FROM oauth_authorizations
     WHERE provider = ? AND state_hash = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP`).bind(provider, await sha256(state)).first();
   if (!authorization) return oauthFailure(request, '소셜 로그인 확인이 만료되었습니다. 다시 시도해주세요.');
-  await env.DB.prepare('UPDATE oauth_authorizations SET used_at = CURRENT_TIMESTAMP WHERE id = ?').bind(authorization.id).run();
+  const claimed = await env.DB.prepare('UPDATE oauth_authorizations SET used_at = CURRENT_TIMESTAMP WHERE id = ? AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP').bind(authorization.id).run();
+  if (!claimed.meta?.changes) return oauthFailure(request, '이미 사용되었거나 만료된 소셜 로그인 요청입니다. 다시 시도해주세요.');
   const providerError = url.searchParams.get('error');
   if (providerError) {
     const message = providerError === 'access_denied'
@@ -722,7 +751,9 @@ async function finishOAuth(provider, request, env, url) {
   if (!code) return oauthFailure(request, '소셜 로그인 응답을 확인하지 못했습니다. 다시 시도해주세요.');
   const profile = await fetchOAuthProfile(provider, config, code, `${url.origin}/api/auth/oauth/${provider}/callback`, state);
   if (!profile) return oauthFailure(request, '소셜 계정의 이메일 정보를 확인하지 못했습니다. 로그인 제공 화면에서 이메일 정보 제공에 동의했는지 확인해주세요.');
-  const user = await findOrCreateOAuthUser(env, provider, profile);
+  const auth = await optionalAuth(request, env);
+  const user = await findOrCreateOAuthUser(env, provider, profile, auth instanceof Response ? null : auth);
+  if (user?.oauthLinkRequired) return oauthFailure(request, '기존 계정으로 로그인하고 이메일 인증을 완료한 후 NAVER 로그인을 다시 선택하면 계정이 연결됩니다.');
   if (!user) {
     const signupToken = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
     await env.DB.prepare(`INSERT INTO oauth_signup_pending (token_hash, provider, subject, email, display_name, expires_at)
@@ -731,7 +762,7 @@ async function finishOAuth(provider, request, env, url) {
   }
   if (['closed', 'suspended'].includes(user.status)) return oauthFailure(request, '현재 이용할 수 없는 계정입니다.');
   if (!user.email_verified) {
-    const linked=await env.DB.prepare('SELECT id FROM auth_identities WHERE user_id=? AND provider=? AND provider_subject=?').bind(user.id,provider,profile.subject).first();
+    const linked=await env.DB.prepare('SELECT id FROM auth_identities WHERE user_id=? AND provider=? AND provider_subject=? AND NOT EXISTS(SELECT 1 FROM auth_identity_restrictions r WHERE r.identity_id=auth_identities.id AND r.cleared_at IS NULL)').bind(user.id,provider,profile.subject).first();
     if(!linked)return oauthFailure(request,'가입한 비밀번호로 로그인하여 이메일 인증을 먼저 완료해주세요.');
   }
   const session = await createSession(user.id, request, env);
@@ -847,6 +878,8 @@ async function logout(request, env) {
 async function changePassword(request, env) {
   const user = await requireAuth(request, env);
   if (user instanceof Response) return user;
+  const throttled = await consumeRequestLimit(request, env, 'password-change', user.id, 10);
+  if (throttled) return throttled;
   const body = await readJson(request);
   if (body instanceof Response) return body;
   const currentVerifier = canonicalPasswordMaterial(body.currentPasswordVerifier, PASSWORD_VERIFIER_BYTES);
@@ -1376,7 +1409,7 @@ async function requireAuth(request, env) {
     FROM sessions s
     JOIN users u ON u.id = s.user_id
     LEFT JOIN admin_roles ar ON ar.user_id = u.id
-    WHERE s.token_hash = ? AND s.expires_at > CURRENT_TIMESTAMP
+    WHERE s.token_hash = ? AND datetime(s.expires_at) > CURRENT_TIMESTAMP
   `).bind(tokenHash).first();
 
   if (!user) return problem(401, 'SESSION_EXPIRED', '로그인이 만료되었습니다. 다시 로그인해주세요.');
@@ -1600,7 +1633,7 @@ async function getChallenge(challengeId, request, env) {
   if (!challenge) return problem(404, 'CHALLENGE_NOT_FOUND', '미션을 찾을 수 없습니다.');
   const auth = await optionalAuth(request, env);
   const viewerAuth = !(auth instanceof Response) ? auth : null;
-  if (challenge.visibility !== 'public' && (!viewerAuth || (viewerAuth.id !== challenge.owner_id && !viewerAuth.is_admin))) {
+  if (!['public', 'unlisted'].includes(challenge.visibility) && (!viewerAuth || (viewerAuth.id !== challenge.owner_id && !viewerAuth.is_admin))) {
     return problem(404, 'CHALLENGE_NOT_FOUND', '미션을 찾을 수 없습니다.');
   }
 
@@ -1661,6 +1694,8 @@ async function getChallenge(challengeId, request, env) {
 async function createChallenge(request, env) {
   const user = await requireAuth(request, env);
   if (user instanceof Response) return user;
+  const throttled = await consumeRequestLimit(request, env, 'mission-write', user.id, 30);
+  if (throttled) return throttled;
   if (user.status === 'limited') return problem(403, 'OWNER_LIMITED', '현재 미션 등록이 제한되어 있습니다.');
 
   const body = await readJson(request);
@@ -1708,9 +1743,7 @@ async function createChallenge(request, env) {
   const id = makeId('chl');
   const requestHash = await sha256(JSON.stringify(body));
   const feeRate = Number(env.PLATFORM_FEE_RATE || 0.1);
-  let moderation = assessChallengeModeration({ title, summary, description, successCriteria, rewardAmount });
-  const duplicate = await findSimilarChallenge(user.id, title, null, env);
-  if (duplicate) moderation = addModerationFinding(moderation, { code: 'POSSIBLE_DUPLICATE', label: '동일·유사 미션 중복 등록 가능성', score: 30, prohibited: false });
+  const moderation = await evaluateChallengeModeration({ title, summary, description, successCriteria, paymentTrigger, evidenceRequirements, rewardAmount }, user.id, null, env);
   const moderationReasons = moderation.reasons;
   const outcome = moderationOutcome(moderation, visibility);
   const moderationPending = false;
@@ -1748,12 +1781,15 @@ async function createChallenge(request, env) {
       .bind(makeId('aqf'), user.id, subjectType, verification.profile.id, id, JSON.stringify(verification.snapshot)),
   ]);
 
-  return json({ challenge: publicChallenge(await fetchChallenge(id, env)), moderationPending, moderationAction: moderation.action, moderationDecision: outcome.legacyDecision, moderationRiskScore: moderation.riskScore, moderationReasons, moderationGuidance: moderation.guidance, policyVersion: MODERATION_POLICY_VERSION, verificationAdvisory: !verification.eligible }, 201);
+  const challenge = publicChallenge(await fetchChallenge(id, env));
+  return json({ challenge, moderationPending, moderationAction: challenge.moderationAction, moderationDecision: challenge.moderationDecision, moderationReasons: challenge.moderationReasons, moderationGuidance: challenge.moderationGuidance, verificationAdvisory: !verification.eligible }, 201);
 }
 
 async function updateChallenge(challengeId, request, env) {
   const user = await requireAuth(request, env);
   if (user instanceof Response) return user;
+  const throttled = await consumeRequestLimit(request, env, 'mission-write', user.id, 30);
+  if (throttled) return throttled;
   const current = await fetchChallenge(challengeId, env);
   if (!current) return problem(404, 'CHALLENGE_NOT_FOUND', '미션을 찾을 수 없습니다.');
   if (current.owner_id !== user.id) return problem(403, 'OWNER_REQUIRED', '미션 등록자만 수정할 수 있습니다.');
@@ -1782,9 +1818,7 @@ async function updateChallenge(challengeId, request, env) {
   const verification = await memberVerificationContext(user, subjectType, env);
   const gate = emailActivityGate(user);
   if (gate) return gate;
-  let moderation = assessChallengeModeration({ title, summary, description, successCriteria, rewardAmount });
-  const duplicate = await findSimilarChallenge(user.id, title, challengeId, env);
-  if (duplicate) moderation = addModerationFinding(moderation, { code: 'POSSIBLE_DUPLICATE', label: '동일·유사 미션 중복 등록 가능성', score: 30, prohibited: false });
+  const moderation = await evaluateChallengeModeration({ title, summary, description, successCriteria, paymentTrigger, evidenceRequirements, rewardAmount }, user.id, challengeId, env);
   const moderationReasons = moderation.reasons;
   const outcome = moderationOutcome(moderation, submittedVisibility);
   const status = outcome.status;
@@ -1797,15 +1831,17 @@ async function updateChallenge(challengeId, request, env) {
       .bind(makeId('evt'), challengeId, user.id, current.status, status, JSON.stringify({ moderationAction: moderation.action, moderationRiskScore: moderation.riskScore, moderationReasons, policyVersion: MODERATION_POLICY_VERSION })),
     auditStatement(env, user.id, 'CHALLENGE_UPDATE', 'challenge', challengeId, { status: current.status }, { status, moderationAction: moderation.action, moderationRiskScore: moderation.riskScore, moderationReasons, policyVersion: MODERATION_POLICY_VERSION }),
   ]);
-  return json({ challenge: publicChallenge(await fetchChallenge(challengeId, env)), moderationPending: false, moderationAction: moderation.action, moderationDecision: outcome.legacyDecision, moderationRiskScore: moderation.riskScore, moderationReasons, moderationGuidance: moderation.guidance, policyVersion: MODERATION_POLICY_VERSION, verificationAdvisory: !verification.eligible });
+  const challenge = publicChallenge(await fetchChallenge(challengeId, env));
+  return json({ challenge, moderationPending: false, moderationAction: challenge.moderationAction, moderationDecision: challenge.moderationDecision, moderationReasons: challenge.moderationReasons, moderationGuidance: challenge.moderationGuidance, verificationAdvisory: !verification.eligible });
 }
 
-function assessChallengeModeration({ title, summary, description, successCriteria, rewardAmount }) {
-  const combined = `${title}\n${summary}\n${description}\n${successCriteria}`.toLowerCase();
+function assessChallengeModeration({ title, summary, description, successCriteria, paymentTrigger = '', evidenceRequirements = '' }) {
+  // Amount changes must never change a content moderation decision. All public
+  // promise/evidence fields are reviewed by the same deterministic rule engine.
+  const combined = `${title}\n${summary}\n${description}\n${successCriteria}\n${paymentTrigger}\n${evidenceRequirements}`.toLowerCase();
   const rules = [
-    ['HIGH_REWARD', rewardAmount >= HIGH_REWARD_REVIEW_AMOUNT, '고액 보상금(50만원 이상)', 25],
     ['PERSONAL_INFORMATION', /(주민등록|주민번호|전화번호|연락처|카카오톡|텔레그램|계좌번호|sns.?아이디|인스타.?아이디)/i.test(combined), '개인정보·직접 연락처 관련 표현', 40],
-    ['PERSONAL_DATA_TRADE', /(개인정보|고객명단|디비|db).{0,12}(판매|구매|제공|수집)/i.test(combined), '개인정보 불법 수집·판매 가능성', 100, true],
+    ['PERSONAL_DATA_TRADE', /(개인정보|고객\s*명단|(?:고객|회원|연락처|전화번호)\s*(?:디비|db)).{0,12}(판매|구매|제공|수집)/i.test(combined), '개인정보 불법 수집·판매 가능성', 100, true],
     ['DATING_RELATIONSHIP', /(소개팅|연애|이성.?만남|데이트|결혼.?상대|배우자)/i.test(combined), '연애·만남 관련 표현', 35],
     ['MEDICAL_GUARANTEE', /(의료|진단|처방|치료|수술|약물).{0,20}(보장|완치|확실|무조건)/i.test(combined), '의료 결과 허위 보장 가능성', 70],
     ['LEGAL_INVESTMENT_GUARANTEE', /(법률|소송|투자|수익|주식|코인).{0,20}(보장|확실|무조건|원금)/i.test(combined), '법률·투자 결과 허위 보장 가능성', 70],
@@ -1828,6 +1864,13 @@ function assessChallengeModeration({ title, summary, description, successCriteri
   return { action, decision: action === 'AUTO_APPROVED' ? 'AUTO_APPROVED' : action === 'AUTO_REJECTED' ? 'ARCHIVED' : 'ADMIN_REVIEW', riskScore, reasons, guidance, prohibited };
 }
 
+async function evaluateChallengeModeration(input, ownerId, excludeId, env) {
+  let moderation = assessChallengeModeration(input);
+  const duplicate = await findSimilarChallenge(ownerId, input.title, excludeId, env);
+  if (duplicate) moderation = addModerationFinding(moderation, { code: 'POSSIBLE_DUPLICATE', label: '동일·유사 미션 중복 등록 가능성', score: 30, prohibited: false });
+  return moderation;
+}
+
 async function findSimilarChallenge(ownerId, title, excludeId, env) {
   const normalized = String(title || '').replace(/\s+/g, '').toLowerCase();
   if (normalized.length < 5) return null;
@@ -1847,7 +1890,9 @@ function addModerationFinding(moderation, finding) {
   const action = prohibited || riskScore >= 60 ? 'AUTO_REJECTED' : riskScore >= 30 ? 'CHANGES_REQUIRED' : 'AUTO_APPROVED';
   const guidance = action === 'AUTO_APPROVED' ? [] : reasons.map((reason) => ({
     code: reason.code,
-    message: action === 'AUTO_REJECTED'
+    message: reason.code === 'EMAIL_VERIFICATION_REQUIRED'
+      ? '이메일 인증을 완료한 뒤 저장된 미션의 등록 신청을 다시 눌러주세요. 작성 내용은 유지됩니다.'
+      : action === 'AUTO_REJECTED'
       ? `${reason.label}으로 자동 차단되었습니다. 오탐이라면 이의신청에서 합법성과 안전 근거를 제출해주세요.`
       : `${reason.label}이 감지되었습니다. 중복 내용을 정리하거나 목적·조건을 구체적으로 고쳐주세요.`,
   }));
@@ -1933,6 +1978,22 @@ async function archiveModerationChallenge(challengeId, request, env) {
   return json({ challenge: publicChallenge(await fetchChallenge(challengeId, env)), preserved: true });
 }
 
+async function getAdminModerationDetail(challengeId, request, env) {
+  const admin = await requireAdmin(request, env);
+  if (admin instanceof Response) return admin;
+  const record = await env.DB.prepare(`SELECT moderation_risk_score, moderation_policy_version, moderation_reasons_json,
+    moderation_guidance_json, moderation_action FROM challenges WHERE id = ?`).bind(challengeId).first();
+  if (!record) return problem(404, 'CHALLENGE_NOT_FOUND', '미션을 찾을 수 없습니다.');
+  await audit(env, admin.id, 'ADMIN_MODERATION_DETAIL_VIEW', 'challenge', challengeId, null, { viewed: true });
+  return json({ moderation: {
+    riskScore: record.moderation_risk_score == null ? null : Number(record.moderation_risk_score),
+    policyVersion: record.moderation_policy_version || null,
+    reasons: record.moderation_reasons_json == null ? null : safeJsonParse(record.moderation_reasons_json, null),
+    guidance: record.moderation_guidance_json == null ? null : safeJsonParse(record.moderation_guidance_json, null),
+    action: record.moderation_action || null,
+  } });
+}
+
 async function moderationQueue(request, env) {
   const admin = await requireAdmin(request, env);
   if (admin instanceof Response) return admin;
@@ -1951,19 +2012,26 @@ async function autoReviewModerationQueue(request, env) {
 }
 
 async function autoReviewPendingChallenges(env, actorId = null) {
-  const pending = await env.DB.prepare(`SELECT id, owner_id, title, summary, description, success_criteria, reward_amount, submitted_visibility
-    FROM challenges WHERE status = 'REVIEW' AND moderation_decision = 'ADMIN_REVIEW'
-    ORDER BY created_at ASC LIMIT 100`).all();
+  const pending = await env.DB.prepare(`SELECT c.id, c.owner_id, c.title, c.summary, c.description, c.success_criteria, c.payment_trigger, c.evidence_requirements, c.reward_amount, c.submitted_visibility, u.email_verified
+    FROM challenges c JOIN users u ON u.id = c.owner_id
+    WHERE c.status = 'REVIEW' AND c.moderation_decision = 'ADMIN_REVIEW'
+    ORDER BY c.created_at ASC LIMIT 100`).all();
   let autoApproved = 0;
   let changesRequired = 0;
   let autoRejected = 0;
   for (const challenge of pending.results || []) {
-    const moderation = assessChallengeModeration({
+    let moderation = await evaluateChallengeModeration({
       title: challenge.title,
       summary: challenge.summary,
       description: challenge.description,
       successCriteria: challenge.success_criteria,
+      paymentTrigger: challenge.payment_trigger,
+      evidenceRequirements: challenge.evidence_requirements,
       rewardAmount: Number(challenge.reward_amount),
+    }, challenge.owner_id, challenge.id, env);
+    // Older queued records also need today's email gate before publication.
+    if (!challenge.email_verified) moderation = addModerationFinding(moderation, {
+      code: 'EMAIL_VERIFICATION_REQUIRED', label: '등록자의 이메일 인증 필요', score: 30, prohibited: false,
     });
     const visibility = ['public', 'unlisted', 'private'].includes(challenge.submitted_visibility) ? challenge.submitted_visibility : 'public';
     const outcome = moderationOutcome(moderation, visibility);
@@ -2104,8 +2172,11 @@ async function openDispute(challengeId, request, env) {
 async function submitTeaser(challengeId, request, env) {
   const user = await requireAuth(request, env);
   if (user instanceof Response) return user;
+  const throttled = await consumeRequestLimit(request, env, 'teaser-write', user.id, 30);
+  if (throttled) return throttled;
   const challenge = await fetchChallenge(challengeId, env);
   if (!challenge) return problem(404, 'CHALLENGE_NOT_FOUND', '미션을 찾을 수 없습니다.');
+  if (challenge.visibility === 'private' && challenge.owner_id !== user.id) return problem(404, 'CHALLENGE_NOT_FOUND', '미션을 찾을 수 없습니다.');
   if (challenge.owner_id === user.id) return problem(409, 'OWNER_CANNOT_APPLY', '자신이 등록한 미션에는 참가할 수 없습니다.');
   if (!['OPEN', 'REVIEW'].includes(challenge.status)) return problem(409, 'APPLICATION_CLOSED', '현재 참가 신청을 받지 않는 미션입니다.');
 
@@ -2214,6 +2285,8 @@ async function listTeasers(challengeId, request, env) {
 async function updateTeaser(challengeId, teaserId, request, env) {
   const user = await requireAuth(request, env);
   if (user instanceof Response) return user;
+  const throttled = await consumeRequestLimit(request, env, 'teaser-write', user.id, 30);
+  if (throttled) return throttled;
   const challenge = await fetchChallenge(challengeId, env);
   if (!challenge || !['OPEN', 'REVIEW', 'SHORTLISTED'].includes(challenge.status)) return problem(409, 'CHALLENGE_CLOSED', '현재 미션에서는 TEASER를 변경할 수 없습니다.');
   const teaser = await env.DB.prepare('SELECT * FROM teasers WHERE id = ? AND challenge_id = ?').bind(teaserId, challengeId).first();
@@ -2733,7 +2806,9 @@ async function getTrustProfile(userId, env) {
       reviewStats,
       recentReviews: recentReviews.results,
       trustHistory,
-      verifiedTypes: (verifiedTypes.results || []).map((item) => ({ type: item.verification_type, subjectType: item.subject_type, verifiedAt: item.verified_at, expiresAt: item.expires_at })),
+      verifiedTypes: (verifiedTypes.results || []).filter((item) => verificationProviderConfigured(item.verification_type,env) &&
+        (actorProfiles.results || []).some((profile) => (item.verification_type==='IDENTITY'||profile.subject_type===item.subject_type) && safeJsonParse(profile.public_fields_json,{}).verificationBadges===true))
+        .map((item) => ({ type: item.verification_type, subjectType: item.subject_type, verifiedAt: item.verified_at, expiresAt: item.expires_at })),
       actorProfiles: (actorProfiles.results || []).map((item) => {
         const fields = safeJsonParse(item.public_fields_json, {});
         return {
@@ -3109,6 +3184,7 @@ async function revokeStrike(strikeId, request, env) {
 async function processOverdueFunding(env) {
   await env.DB.prepare("DELETE FROM auth_attempts WHERE datetime(created_at) < datetime('now', '-30 days')")
     .run().catch(() => undefined);
+  await env.DB.prepare('DELETE FROM email_otp_limits WHERE expires_at < ?').bind(Date.now()).run();
   const overdue = await env.DB.prepare(`
     SELECT c.id, c.owner_id, c.selected_solver_id, c.title,
            u.strike_count, u.trust_score, u.status
@@ -3151,6 +3227,18 @@ async function processOverdueFunding(env) {
     }
   }
   return { processed: overdue.results?.length || 0 };
+}
+
+// Shared atomic counters use the existing expiring-limit storage. Successful
+// requests count too, so authenticated or deliverable-email abuse is bounded.
+async function consumeRequestLimit(request, env, action, subject, limit, windowMs = 600000) {
+  const now = Date.now(), bucket = Math.floor(now / windowMs);
+  const ip = await sha256(request.headers.get('CF-Connecting-IP') || 'unknown');
+  const keys = [[`request:${action}:ip:${ip}:${bucket}`, Math.max(limit * 4, 30)]];
+  if (subject) keys.push([`request:${action}:subject:${await sha256(subject)}:${bucket}`, limit]);
+  const rows = await env.DB.batch(keys.map(([key]) => env.DB.prepare('INSERT INTO email_otp_limits (key,count,expires_at) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1 RETURNING count').bind(key, now + windowMs * 2)));
+  if (rows.some((row, i) => Number(row.results?.[0]?.count ?? Infinity) > keys[i][1])) return problem(429, 'REQUEST_RATE_LIMIT', '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.');
+  return null;
 }
 
 async function checkAuthRateLimit(request, env, action, email) {
@@ -3218,6 +3306,41 @@ function publicUser(user) {
   };
 }
 
+function publicVerificationSnapshot(value) {
+  const snapshot=safeJsonParse(value,{});
+  return {
+    subjectType: ACTOR_TYPES.has(snapshot.subjectType)?snapshot.subjectType:'individual',
+    activityRequirement: snapshot.activityRequirement==='EMAIL'?'EMAIL':null,
+    emailVerified: snapshot.emailVerified===true,
+    capturedAt: typeof snapshot.capturedAt==='string'?snapshot.capturedAt:null,
+    historical: true,
+  };
+}
+
+function publicModerationFeedback(c) {
+  const storedReasons = safeJsonParse(c.moderation_reasons_json, []);
+  const storedGuidance = safeJsonParse(c.moderation_guidance_json, []);
+  const reasons = Array.isArray(storedReasons) ? storedReasons.filter((reason) => reason && typeof reason === 'object' && reason.code !== 'HIGH_REWARD') : [];
+  const guidance = Array.isArray(storedGuidance) ? storedGuidance : [];
+  const help = {
+    POSSIBLE_DUPLICATE: '이미 등록한 미션과 제목이 같거나 비슷합니다. 내 클리어에서 기존 미션을 수정하세요. 별개의 의뢰라면 대상·범위·회차의 차이를 명확히 적어주세요.',
+    PERSONAL_INFORMATION: '공개 게시물에서 개인 연락처나 민감한 식별정보를 요청하는 표현을 확인하고 수집 목적과 동의 절차를 구체적으로 적어주세요.',
+    AMBIGUOUS_SUCCESS: '성공조건을 수량·규격·제출물처럼 확인 가능한 기준으로 구체화해주세요.',
+    DATING_RELATIONSHIP: '만남·소개 관련 목적과 성인 대상 여부, 당사자 동의 및 안전 기준을 구체적으로 적어주세요.',
+    EMAIL_VERIFICATION_REQUIRED: '이메일 인증을 완료한 뒤 저장된 미션의 등록 신청을 다시 눌러주세요. 작성 내용은 유지됩니다.',
+  };
+  const publicReasons = reasons.map((reason) => ({
+    label: typeof reason.label === 'string' ? reason.label : '미션 내용 확인 필요',
+    message: help[reason.code] || guidance.find((item) => item?.code === reason.code && typeof item.message === 'string')?.message
+      || '의뢰 목적과 성공조건을 확인하고 수정·저장하면 즉시 다시 검수합니다. 잘못된 판정이라면 이의신청해주세요.',
+  }));
+  return {
+    moderationReasons: publicReasons,
+    moderationGuidance: publicReasons.map(({ message }) => ({ message })),
+    moderationRequiresEmailVerification: reasons.some((reason) => reason.code === 'EMAIL_VERIFICATION_REQUIRED'),
+  };
+}
+
 function publicChallenge(c) {
   return {
     id: c.id,
@@ -3249,14 +3372,11 @@ function publicChallenge(c) {
     selectedSolverId: c.selected_solver_id,
     paymentDueAt: c.payment_due_at,
     ownerSubjectType: c.owner_subject_type || 'individual',
-    ownerVerification: safeJsonParse(c.owner_verification_snapshot_json, {}),
-    moderationReasons: safeJsonParse(c.moderation_reasons_json, []),
+    ownerVerification: publicVerificationSnapshot(c.owner_verification_snapshot_json),
+    ...publicModerationFeedback(c),
     moderationPending: false,
     moderationAction: c.moderation_action || (c.moderation_decision === 'ADMIN_REVIEW' ? 'CHANGES_REQUIRED' : c.moderation_decision === 'ARCHIVED' ? 'AUTO_REJECTED' : 'AUTO_APPROVED'),
     moderationDecision: c.moderation_decision || (c.status === 'REVIEW' ? 'ADMIN_REVIEW' : 'AUTO_APPROVED'),
-    moderationRiskScore: Number(c.moderation_risk_score || 0),
-    moderationPolicyVersion: c.moderation_policy_version || MODERATION_POLICY_VERSION,
-    moderationGuidance: safeJsonParse(c.moderation_guidance_json, []),
     moderationAutoReviewedAt: c.moderation_auto_reviewed_at || null,
     moderationReviewedAt: c.moderation_reviewed_at || null,
     participantCount: Number(c.participant_count || 0),
@@ -3274,7 +3394,7 @@ function publicTeaser(t) {
     challengeId: t.challenge_id,
     solverId: t.solver_id,
     solverSubjectType: t.solver_subject_type || 'individual',
-    solverVerification: safeJsonParse(t.solver_verification_snapshot_json, {}),
+    solverVerification: publicVerificationSnapshot(t.solver_verification_snapshot_json),
     solver: {
       displayName: t.solver_name,
       trustScore: Number(t.solver_trust || 0),

@@ -8,9 +8,18 @@ export function entityConfigured(env){return identityConfigured(env)&&env.ENTITY
 async function atomic(env,row,statements){
  try{return (await env.DB.batch([env.DB.prepare('INSERT INTO entity_mutation_guards(case_id,expected_revision) VALUES(?,?)').bind(row.id,row.revision),...statements,env.DB.prepare('DELETE FROM entity_mutation_guards WHERE case_id=?').bind(row.id)])).slice(1,-1)}catch(e){if(String(e).includes('STALE_ENTITY_REVISION'))fail('STALE_REVISION');throw e}
 }
-const publicCase=r=>({id:r.id,subjectType:r.subject_type,status:r.status,revision:r.revision,reason:r.reason,expiresAt:r.expires_at,purgeAt:r.purge_at,registryCheckedAt:r.registry_checked_at});
-async function identity(user,env){const r=await env.DB.prepare("SELECT * FROM verified_identities WHERE user_id=? AND revoked_at IS NULL AND expires_at>?").bind(user.id,new Date().toISOString()).first();if(!identityConfigured(env)||!r)fail('IDENTITY_REQUIRED',409);}
+const publicCase=r=>({id:r.id,subjectType:r.subject_type,status:r.status==='APPROVED'&&!(Date.parse(r.expires_at)>Date.now())?'EXPIRED':r.status,revision:r.revision,reason:r.reason,expiresAt:r.expires_at,purgeAt:r.purge_at,registryCheckedAt:r.registry_checked_at});
+async function identity(user,env){const r=await env.DB.prepare(`SELECT v.user_id FROM verified_identities v JOIN member_verifications m ON m.user_id=v.user_id
+ WHERE v.user_id=? AND v.provider='portone-v2' AND v.revoked_at IS NULL AND julianday(v.expires_at)>julianday('now')
+ AND m.verification_type='IDENTITY' AND m.provider='portone-v2' AND m.status='VERIFIED' AND m.revoked_at IS NULL
+ AND m.provider_reference_hash=v.provider_reference_hash AND julianday(m.expires_at)>julianday('now')`).bind(user.id).first();if(!identityConfigured(env)||!r)fail('IDENTITY_REQUIRED',409);}
 const note=(env,caseId,reviewer,action,reason,digest=null)=>env.DB.prepare('INSERT INTO entity_reviews(id,case_id,reviewer_id,action,reason,evidence_digest) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),caseId,reviewer,action,reason,digest);
+async function registryValid(data,env){
+ if(!env.NTS_API_KEY)fail('NTS_PROVIDER_REQUIRED',503);
+ let result;
+ try{const response=await fetch('https://api.odcloud.kr/api/nts-businessman/v1/validate?serviceKey='+encodeURIComponent(env.NTS_API_KEY),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({businesses:[{b_no:data.registrationNumber,start_dt:data.openedOn,p_nm:data.representative}]}),signal:AbortSignal.timeout(10000)});if(!response.ok)fail('REGISTRY_UNAVAILABLE',503);result=await response.json()}catch{fail('REGISTRY_UNAVAILABLE',503)}
+ const item=result.data?.[0];return item?.b_no===data.registrationNumber&&item.valid==='01'&&item.status?.b_stt_cd==='01';
+}
 export async function entityApi({request,env,user,admin,path,method,json}) {
  const base=admin?'/api/admin/entity-cases':'/api/me/entity-cases';
  const parts=path.slice(base.length).split('/').filter(Boolean);
@@ -33,7 +42,8 @@ export async function entityApi({request,env,user,admin,path,method,json}) {
   }
   if(admin)await note(env,row.id,user.id,'CASE_READ','자격 심사 자료 열람').run();
   const privateData=row.private_cipher&&Date.parse(row.purge_at)>Date.now()?await unseal(row.private_cipher,env.EVIDENCE_ENCRYPTION_KEY,row.id):null;
-  return json({case:publicCase(row),details:privateData,evidence:docs.results});
+  const automaticCheckEligible=!admin&&row.subject_type==='business'&&privateData?.authority==='representative'&&String(privateData.representative||'').normalize('NFC').trim()===String(user.real_name||'').normalize('NFC').trim();
+  return json({case:publicCase(row),details:privateData,evidence:docs.results,automaticCheckEligible,automaticCheckAvailable:automaticCheckEligible&&Boolean(env.NTS_API_KEY)});
  }
  if(method!=='POST')fail('METHOD_NOT_ALLOWED',405);
  const body=await limitedJson(request);
@@ -67,6 +77,23 @@ export async function entityApi({request,env,user,admin,path,method,json}) {
  }
  if(parts[1]==='submit'&&!admin){
   if(row.status!=='DRAFT'||Date.parse(row.purge_at)<=Date.now())fail('CASE_NOT_EDITABLE');
+  const details=row.private_cipher?await unseal(row.private_cipher,env.EVIDENCE_ENCRYPTION_KEY,row.id):null;
+  const normalized=value=>String(value||'').normalize('NFC').trim();
+  if(row.subject_type==='business'&&details?.authority==='representative'&&normalized(details.representative)&&normalized(details.representative)===normalized(user.real_name)){
+   // The verified individual is the registered sole proprietor. No uploaded
+   // document or self-declared status can replace the authenticated NTS result.
+   const valid=await registryValid(details,env),checkedAt=new Date().toISOString();
+   if(!valid){await atomic(env,row,[env.DB.prepare('UPDATE entity_cases SET registry_valid=0,registry_checked_at=?,revision=revision+1 WHERE id=?').bind(checkedAt,row.id),note(env,row.id,user.id,'AUTO_REGISTRY_REJECTED','사업자 진위 또는 계속사업 상태를 확인하지 못함')]);fail('REGISTRY_NOT_ACTIVE',409);}
+   const duplicate=await env.DB.prepare("SELECT id FROM entity_cases WHERE registration_hash=? AND status='APPROVED' AND id<>?").bind(row.registration_hash,row.id).first();if(duplicate)fail('ENTITY_ALREADY_REPRESENTED');
+   const expires=future(365),reason='본인확인된 대표자와 국세청 사업자 진위·계속사업 결과 자동 대조';
+   try{await atomic(env,row,[
+    env.DB.prepare("UPDATE entity_cases SET status='APPROVED',registry_valid=1,registry_checked_at=?,expires_at=?,reason=?,revision=revision+1 WHERE id=?").bind(checkedAt,expires,reason,row.id),
+    env.DB.prepare(`INSERT INTO member_verifications(id,user_id,verification_type,subject_type,status,provider,provider_reference_hash,verified_at,expires_at,status_reason)
+      VALUES(?,?,'BUSINESS','business','VERIFIED','entity-review-v1',?,?,?,?) ON CONFLICT(user_id,verification_type,subject_type) DO UPDATE SET status='VERIFIED',provider='entity-review-v1',provider_reference_hash=excluded.provider_reference_hash,verified_at=excluded.verified_at,expires_at=excluded.expires_at,status_reason=excluded.status_reason,revoked_at=NULL,updated_at=CURRENT_TIMESTAMP`).bind('ev_'+row.id,user.id,await sha(row.id+':'+row.revision),checkedAt,expires,reason),
+    note(env,row.id,user.id,'AUTO_REGISTRY_APPROVED',reason)
+   ])}catch(error){if(String(error).includes('UNIQUE constraint failed: entity_cases.registration_hash'))fail('ENTITY_ALREADY_REPRESENTED');throw error}
+   return json({ok:true,status:'APPROVED',automaticallyVerified:true,expiresAt:expires});
+  }
   const docs=await env.DB.prepare('SELECT kind FROM entity_evidence WHERE case_id=? AND cipher IS NOT NULL AND purge_at>?').bind(row.id,new Date().toISOString()).all();
   const required=row.subject_type==='corporation'?['REGISTRATION','REGISTRY','AUTHORITY']:['REGISTRATION','AUTHORITY'];
   if(!required.every(k=>docs.results.some(d=>d.kind===k)))fail('EVIDENCE_REQUIRED');
@@ -74,10 +101,8 @@ export async function entityApi({request,env,user,admin,path,method,json}) {
  }
  if(parts[1]==='registry'&&admin){
   if(row.status!=='SUBMITTED'||!row.private_cipher||Date.parse(row.purge_at)<=Date.now())fail('CASE_NOT_REVIEWABLE');
-  if(!env.NTS_API_KEY)fail('NTS_PROVIDER_REQUIRED',503);
   const data=await unseal(row.private_cipher,env.EVIDENCE_ENCRYPTION_KEY,row.id);
-  let result;try{const response=await fetch('https://api.odcloud.kr/api/nts-businessman/v1/validate?serviceKey='+encodeURIComponent(env.NTS_API_KEY),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({businesses:[{b_no:data.registrationNumber,start_dt:data.openedOn,p_nm:data.representative}]}),signal:AbortSignal.timeout(10000)});if(!response.ok)fail('REGISTRY_UNAVAILABLE',503);result=await response.json()}catch{fail('REGISTRY_UNAVAILABLE',503)}
-  const item=result.data?.[0];const valid=item?.b_no===data.registrationNumber&&item.valid==='01'&&item.status?.b_stt_cd==='01';
+  const valid=await registryValid(data,env);
   await atomic(env,row,[env.DB.prepare('UPDATE entity_cases SET registry_valid=?,registry_checked_at=?,revision=revision+1 WHERE id=? AND revision=?').bind(valid?1:0,new Date().toISOString(),row.id,row.revision),note(env,row.id,user.id,'REGISTRY_CHECK',valid?'국세청 진위·계속사업 확인':'국세청 확인 불일치')]);return json({valid});
  }
  if(parts[1]==='review'&&admin){
@@ -88,7 +113,7 @@ export async function entityApi({request,env,user,admin,path,method,json}) {
    if(row.status!=='SUBMITTED'||Date.parse(row.purge_at)<=Date.now())fail('CASE_NOT_REVIEWABLE');
    await identity({id:row.user_id},env);
    const duplicate=await env.DB.prepare("SELECT id FROM entity_cases WHERE registration_hash=? AND status='APPROVED' AND id<>?").bind(row.registration_hash,row.id).first();if(duplicate)fail('ENTITY_ALREADY_REPRESENTED');
-   if(row.subject_type!=='organization'&&(!row.registry_valid||Date.parse(row.registry_checked_at)<Date.now()-ms))fail('REGISTRY_CHECK_REQUIRED');
+   if(row.subject_type!=='organization'&&(!row.registry_valid||!Number.isFinite(Date.parse(row.registry_checked_at))||Date.parse(row.registry_checked_at)<Date.now()-ms))fail('REGISTRY_CHECK_REQUIRED');
    if(body.authorityConfirmed!==true||body.registrationConfirmed!==true||(row.subject_type==='corporation'&&body.registryConfirmed!==true))fail('AUTHORITY_REVIEW_REQUIRED');
    const docs=await env.DB.prepare('SELECT kind FROM entity_evidence WHERE case_id=? AND cipher IS NOT NULL AND purge_at>?').bind(row.id,new Date().toISOString()).all();
    if(!['REGISTRATION','AUTHORITY',...(row.subject_type==='corporation'?['REGISTRY']:[])].every(k=>docs.results.some(d=>d.kind===k)))fail('EVIDENCE_REQUIRED');
@@ -116,6 +141,9 @@ export async function purgeEntityEvidence(env){
   env.DB.prepare("DELETE FROM entity_reviews WHERE julianday(created_at)<=julianday('now','-365 days')"),
   env.DB.prepare("DELETE FROM entity_evidence WHERE cipher IS NULL AND julianday(purge_at)<=julianday('now','-335 days')"),
   env.DB.prepare("UPDATE entity_cases SET registration_hash='',reason=NULL WHERE status IN ('REJECTED','REVOKED','EXPIRED','WITHDRAWN') AND julianday(purge_at)<=julianday('now','-335 days')"),
-  env.DB.prepare("UPDATE entity_cases SET status='EXPIRED',revision=revision+1 WHERE (status='APPROVED' AND expires_at<=?) OR (status IN ('DRAFT','SUBMITTED') AND purge_at<=?)").bind(now,now)
+  env.DB.prepare("UPDATE entity_cases SET status='EXPIRED',revision=revision+1 WHERE (status='APPROVED' AND expires_at<=?) OR (status IN ('DRAFT','SUBMITTED') AND purge_at<=?)").bind(now,now),
+  env.DB.prepare(`UPDATE member_verifications SET status='EXPIRED',status_reason='자격 확인 보유기간 만료',updated_at=CURRENT_TIMESTAMP
+    WHERE provider='entity-review-v1' AND status='VERIFIED' AND (julianday(expires_at)<=julianday('now') OR EXISTS(
+      SELECT 1 FROM entity_cases c WHERE c.user_id=member_verifications.user_id AND c.subject_type=member_verifications.subject_type AND c.status='EXPIRED'))`)
  ]);
 }

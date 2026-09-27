@@ -1,12 +1,14 @@
-import {fail,sha} from './secure-data.mjs';
+import {fail,sha,hexKey,unb64,limitedText} from './secure-data.mjs';
 import {assertSandbox,toss,verifyPayment,verifyPayout} from './toss-provider.mjs';
-import {transitionTestOrder} from './transactions.mjs';
+import {transitionTestOrder,testOrderSettlement} from './transactions.mjs';
 // An operation is durably reserved BEFORE network IO. Unknown outcomes are only
 // reconciled by provider lookup, never resubmitted under a new idempotency key.
 export async function executeProviderOperation(env,{orderId,kind,actorId,requestKey,paymentKey,reason=''}){
  assertSandbox(env);
  if(!['PAYMENT','REFUND','PAYOUT'].includes(kind)||! /^[A-Za-z0-9_-]{16,100}$/.test(requestKey||''))fail('INVALID_OPERATION',400);
  const order=await env.DB.prepare("SELECT * FROM transaction_orders WHERE id=? AND mode='TEST'").bind(orderId).first();if(!order)fail('ORDER_NOT_FOUND',404);
+ const partialTotal=(await testOrderSettlement(env,order)).refundedAmount;
+ if(order.state==='PARTIAL_REFUND_PENDING'||(partialTotal>0&&partialTotal<order.amount))fail('PARTIAL_REFUND_PROVIDER_NOT_RELEASED',503);
  if(kind==='PAYOUT'?actorId!=='TEST_OPERATOR':actorId!==order.owner_id)fail('OPERATION_FORBIDDEN',403);
  const fingerprint=await sha(JSON.stringify([orderId,kind,kind==='PAYMENT'?paymentKey:null,reason]));
  const old=await env.DB.prepare("SELECT * FROM provider_operations WHERE request_key=? OR (order_id=? AND kind=? AND status<>'FAILED') ORDER BY created_at DESC LIMIT 1").bind(requestKey,orderId,kind).first();
@@ -63,13 +65,39 @@ export async function reconcileProviderOperation(env,id,providerReferenceHint=nu
 // Webhook content is a hint, NEVER payment evidence. Known references only,
 // with authenticated provider GET and durable operation/event deduplication.
 export async function reconcileWebhook(env,body){
- assertSandbox(env);const data=body?.data;const paymentKey=data?.paymentKey,payoutId=data?.id;
+ assertSandbox(env);const data=body?.eventType==='payout.changed'?body.entityBody:body?.data;const paymentKey=data?.paymentKey,payoutId=data?.id;
  if(!['PAYMENT_STATUS_CHANGED','payout.changed'].includes(body?.eventType)||typeof (paymentKey||payoutId)!=='string')fail('INVALID_WEBHOOK',400);
  if(body.eventType==='payout.changed'&&typeof data.refPayoutId==='string'){
   const known=await env.DB.prepare("SELECT id FROM provider_operations WHERE id=? AND kind='PAYOUT'").bind(data.refPayoutId).first();if(known)await reconcileProviderOperation(env,known.id,payoutId);
  }
  const ops=await env.DB.prepare('SELECT id FROM provider_operations WHERE provider_reference=? ORDER BY created_at DESC LIMIT 3').bind(paymentKey||payoutId).all();
  for(const op of ops.results)await reconcileProviderOperation(env,op.id);return {ok:true};
+}
+
+// Toss documents signed payout/seller hooks, while general payment hooks have
+// no signature and must be reconciled with an authenticated Payment Query API.
+// https://docs.tosspayments.com/reference/using-api/webhook-events
+export async function readProviderWebhook(request,env){
+ assertSandbox(env);
+ const raw=await limitedText(request,64*1024);
+ let body;try{body=JSON.parse(raw)}catch{fail('INVALID_WEBHOOK',400)}
+ if(!body||typeof body!=='object'||Array.isArray(body)||!['PAYMENT_STATUS_CHANGED','payout.changed'].includes(body.eventType))fail('INVALID_WEBHOOK',400);
+ if(body.eventType==='payout.changed'){
+  if(!hexKey(env.TOSS_PAYOUT_SECURITY_KEY))fail('WEBHOOK_SECURITY_KEY_REQUIRED',503);
+  const time=request.headers.get('tosspayments-webhook-transmission-time')||'';
+  const sentAt=Date.parse(time);
+  // Every retry has a new transmission time; stale signed payloads are not reused.
+  if(!Number.isFinite(sentAt)||Math.abs(Date.now()-sentAt)>5*60*1000)fail('WEBHOOK_TIMESTAMP_INVALID',401);
+  const header=request.headers.get('tosspayments-webhook-signature')||'';
+  if(header.length>512)fail('WEBHOOK_SIGNATURE_INVALID',401);
+  const signatures=[...header.matchAll(/(?:^|[,\s])v1:([A-Za-z0-9+/]+={0,2})(?=$|[,\s])/g)].map(m=>m[1]);
+  if(!signatures.length||signatures.length>4)fail('WEBHOOK_SIGNATURE_INVALID',401);
+  const key=await crypto.subtle.importKey('raw',Uint8Array.from(env.TOSS_PAYOUT_SECURITY_KEY.match(/../g),x=>parseInt(x,16)),{name:'HMAC',hash:'SHA-256'},false,['verify']);
+  let valid=false;
+  for(const signature of signatures){try{valid=(await crypto.subtle.verify('HMAC',key,unb64(signature),new TextEncoder().encode(raw+':'+time)))||valid}catch{}}
+  if(!valid)fail('WEBHOOK_SIGNATURE_INVALID',401);
+ }
+ return body;
 }
 
 export async function reconcilePendingOperations(env){

@@ -51,10 +51,13 @@ jobs:
       - name: Verify behavior and stamp source version
         run: |
           npm test
+          node --test scripts/deployment-safety.test.mjs
           node scripts/stamp-build.mjs
 
       - name: Back up and encrypt existing production D1
         run: |
+          umask 077
+          trap 'rm -f production-before.sql inventory-before.json' EXIT
           # Wrangler prints a signed plaintext SQL download URL; never publish it in logs.
           modu_export_log="$(mktemp)"
           if ! npx wrangler d1 export DB --remote --output=production-before.sql > "$modu_export_log" 2>&1; then
@@ -67,8 +70,11 @@ jobs:
           openssl cms -encrypt -binary -aes256 -in production-before.sql -out production-before.sql.cms -outform DER scripts/backup-recipient.pem
           test -s production-before.sql.cms
           rm production-before.sql
-          npx wrangler d1 execute DB --remote --json --command="SELECT id,email,is_admin FROM users ORDER BY id; SELECT id,owner_id FROM challenges ORDER BY id; SELECT user_id,role FROM admin_roles ORDER BY user_id;" > inventory-before.json
-          node scripts/production-preservation.mjs before inventory-before.json preservation.json
+          node scripts/production-preservation.mjs sql preservation-query.sql restore-validation.json
+          # --file uses D1 import and returns only a summary; --command returns
+          # the read-only SELECT results required by the preservation checker.
+          npx wrangler d1 execute DB --remote --json --command="$(cat preservation-query.sql)" > inventory-before.json
+          node scripts/production-preservation.mjs before inventory-before.json preservation.json preservation-query.sql.tables.json
           rm inventory-before.json
           npx wrangler secret list > provider-secret-names.json
 
@@ -87,11 +93,12 @@ jobs:
       - name: Apply pending D1 migrations
         run: npx wrangler d1 migrations apply DB --remote
 
-      - name: Verify existing member mission and administrator preservation
+      - name: Verify existing member activity TRUST authentication and transaction preservation
         run: |
-          npx wrangler d1 execute DB --remote --json --command="SELECT id,email,is_admin FROM users ORDER BY id; SELECT id,owner_id FROM challenges ORDER BY id; SELECT user_id,role FROM admin_roles ORDER BY user_id;" > inventory-after.json
-          node scripts/production-preservation.mjs after inventory-after.json preservation.json
-          rm inventory-after.json
+          umask 077
+          trap 'rm -f inventory-after.json preservation.json.key preservation-query.sql preservation-query.sql.tables.json' EXIT
+          npx wrangler d1 execute DB --remote --json --command="$(cat preservation-query.sql)" > inventory-after.json
+          node scripts/production-preservation.mjs after inventory-after.json preservation.json preservation-result.json
 
       - name: Deploy existing Worker
         run: npx wrangler deploy
@@ -123,4 +130,19 @@ jobs:
           MODU_PRIMARY_RECOVERY_TOKEN: ${{ secrets.MODU_PRIMARY_RECOVERY_TOKEN }}
 
       - name: Verify deployed public service and real-money gates
-        run: node scripts/verify-production.mjs
+        run: node scripts/verify-production.mjs production-verification.json
+
+      - name: Preserve deployment verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: modu-clear-deployment-evidence-${{ github.run_id }}
+          path: |
+            modu-challenge/preservation-result.json
+            modu-challenge/production-verification.json
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Remove temporary sensitive inventory
+        if: always()
+        run: rm -f production-before.sql inventory-before.json inventory-after.json preservation.json.key preservation-query.sql preservation-query.sql.tables.json

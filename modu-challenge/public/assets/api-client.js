@@ -69,6 +69,7 @@ export async function api(path, { method = 'GET', body, signal, headers = {} } =
   const timeoutId = setTimeout(() => timeoutController.abort(), REQUEST_TIMEOUT_MS);
   const abortFromCaller = () => timeoutController.abort();
   signal?.addEventListener('abort', abortFromCaller, { once: true });
+  if (signal?.aborted) abortFromCaller();
   const options = {
     method,
     credentials: 'same-origin',
@@ -81,9 +82,21 @@ export async function api(path, { method = 'GET', body, signal, headers = {} } =
   }
 
   let response;
+  let payload = null;
   try {
     response = await fetch(path, options);
+    const contentType = response.headers.get('Content-Type') || '';
+    if (contentType.includes('application/json')) {
+      try { payload = await response.json(); }
+      catch (error) {
+        if (timeoutController.signal.aborted) throw error;
+        throw new ApiError('서버 응답을 확인하지 못했습니다. 잠시 후 다시 시도해주세요.', { code: 'INVALID_RESPONSE', status: response.status });
+      }
+    } else {
+      payload = { raw: await response.text() };
+    }
   } catch (error) {
+    if (error instanceof ApiError) throw error;
     throw new ApiError(timeoutController.signal.aborted
       ? '요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.'
       : '서버에 연결하지 못했습니다. 네트워크 상태를 확인해주세요.', {
@@ -91,16 +104,9 @@ export async function api(path, { method = 'GET', body, signal, headers = {} } =
       details: error?.message || null,
     });
   } finally {
+    // Keep the deadline active until the response body finishes, not just headers.
     clearTimeout(timeoutId);
     signal?.removeEventListener('abort', abortFromCaller);
-  }
-
-  let payload = null;
-  const contentType = response.headers.get('Content-Type') || '';
-  if (contentType.includes('application/json')) {
-    try { payload = await response.json(); } catch { payload = null; }
-  } else {
-    try { payload = { raw: await response.text() }; } catch { payload = null; }
   }
 
   if (!response.ok) {
@@ -183,6 +189,7 @@ export const apiClient = {
   sendPushAnnouncement: (data) => api('/api/admin/push-announcements', { method: 'POST', body: data }),
   approveModerationChallenge: (id) => api(`/api/admin/challenges/${encodeURIComponent(id)}/moderation/approve`, { method: 'POST', body: {} }),
   archiveModerationChallenge: (id, reason) => api(`/api/admin/challenges/${encodeURIComponent(id)}/moderation/archive`, { method: 'POST', body: { reason } }),
+  moderationDetails: (id) => api(`/api/admin/challenges/${encodeURIComponent(id)}/moderation`),
   moderationQueue: () => api('/api/admin/moderation-queue'),
   autoReviewModerationQueue: () => api('/api/admin/moderation/auto-review', { method: 'POST', body: {} }),
   addModerationNote: (id, note, requestApproval) => api(`/api/admin/challenges/${encodeURIComponent(id)}/moderation/notes`, { method: 'POST', body: { note, requestApproval } }),

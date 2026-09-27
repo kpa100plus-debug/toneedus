@@ -1372,14 +1372,14 @@ strong, h1, h2, h3, h4, h5, h6 { text-wrap: pretty; }
   text-align: left;
 }
 .challenge-card:focus-visible { outline: 3px solid color-mix(in srgb, var(--card-theme-accent) 54%, white); outline-offset: 4px; transform: translateY(-2px); box-shadow: 0 22px 55px color-mix(in srgb, var(--card-theme-accent) 18%, transparent); }
-.card-theme-connect { --card-theme-accent: #6c5ce7; --card-theme-soft: #f5f3ff; }
-.card-theme-find { --card-theme-accent: #2f80ed; --card-theme-soft: #f1f7ff; }
-.card-theme-idea { --card-theme-accent: #f39c3d; --card-theme-soft: #fff8ef; }
-.card-theme-business { --card-theme-accent: #12a37f; --card-theme-soft: #effaf7; }
-.card-theme-action { --card-theme-accent: #f05265; --card-theme-soft: #fff2f4; }
-.card-theme-local { --card-theme-accent: #8b5cf6; --card-theme-soft: #f7f2ff; }
-.card-theme-social { --card-theme-accent: #ec4899; --card-theme-soft: #fff2f8; }
-.card-theme-public { --card-theme-accent: #167c89; --card-theme-soft: #eff9fa; }
+.card-theme-connect { --card-theme-accent: var(--category-color, #6c5ce7); --card-theme-soft: #f5f3ff; }
+.card-theme-find { --card-theme-accent: var(--category-color, #2f80ed); --card-theme-soft: #f1f7ff; }
+.card-theme-idea { --card-theme-accent: var(--category-color, #f39c3d); --card-theme-soft: #fff8ef; }
+.card-theme-business { --card-theme-accent: var(--category-color, #12a37f); --card-theme-soft: #effaf7; }
+.card-theme-action { --card-theme-accent: var(--category-color, #f05265); --card-theme-soft: #fff2f4; }
+.card-theme-local { --card-theme-accent: var(--category-color, #b45309); --card-theme-soft: #fff7ed; }
+.card-theme-social { --card-theme-accent: var(--category-color, #ec4899); --card-theme-soft: #fff2f8; }
+.card-theme-public { --card-theme-accent: var(--category-color, #167c89); --card-theme-soft: #eff9fa; }
 .challenge-card::before, .challenge-card::after { display: none; }
 .challenge-card-top { position: relative; z-index: 1; min-height: 82px; padding: 17px 20px 15px; border-bottom: 1px solid color-mix(in srgb, var(--card-theme-accent) 15%, #e8ebf2); }
 .card-category { min-width: 0; gap: 11px; }
@@ -2365,3 +2365,13 @@ body.modal-open .app-install-banner { display: none !important; }
 .email-status-icon{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:#6550dc;color:#fff;font-size:21px;font-weight:700}.email-status-card .btn{min-height:48px;font-size:16px;white-space:nowrap}.email-status-card.is-verified{grid-template-columns:36px minmax(0,1fr);border:1px solid #b4ddcd;background:#edf9f3;color:#125b48}.is-verified .email-status-icon{background:#198269}.email-status-done{display:inline-block;color:#125b48;background:#d4f0e3;border-radius:20px;padding:6px 10px;font-size:14px;font-weight:700;white-space:nowrap}.email-status-card.is-compact{box-shadow:none;padding:14px 16px}.email-status-loading{text-align:center;padding:28px 16px;display:grid;justify-items:center;gap:14px}.email-status-loading p{margin:0;color:#535c70}
 .verification-status-list{display:grid;gap:12px;margin:18px 0}.verification-status-list>div{display:flex;align-items:center;justify-content:space-between;gap:12px}.verification-status-list dt{color:#616779}.verification-status-list dd{margin:0;font-weight:700}.verification-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:18px}.verification-actions .btn{width:100%;min-height:46px;white-space:normal;word-break:keep-all}.verification-grid .preview-row{flex-wrap:wrap;gap:10px}.verification-grid .preview-row .btn{margin-left:auto}
 @media(max-width:640px){.email-status-card,.email-status-card.is-verified{grid-template-columns:30px minmax(0,1fr);padding:14px;gap:10px}.email-status-icon{width:30px;height:30px;font-size:18px}.email-status-card strong{font-size:16px}.email-status-card .btn{grid-column:1/-1;width:100%;white-space:normal}.email-status-card small{font-size:13px}.verification-actions{grid-template-columns:1fr}.verification-grid .preview-row .btn{flex-basis:100%;margin-left:0}}
+
+/* Category accents stay consistent from filter to card and detail, in every theme. */
+.studio-mission-icon { color:var(--category-color,var(--primary-2)); background:color-mix(in srgb,var(--category-color,var(--primary-2)) 12%,white); }
+body[data-home-theme="command"] .studio-mission-icon { color:color-mix(in srgb,var(--category-color,var(--primary-2)) 65%,white); background:color-mix(in srgb,var(--category-color,var(--primary-2)) 18%,transparent); }
+[data-home-theme="editorial"] .category-label { color:var(--category-color,#824733); }
+
+.bootstrap-cards { display:grid; gap:16px; min-width:0; padding:28px; border:1px solid var(--line); border-radius:22px; background:var(--surface,#fff); color:var(--ink); }
+.bootstrap-cards p { margin:0; color:var(--muted); line-height:1.6; }
+.bootstrap-card-placeholder { height:90px; border-radius:14px; background:linear-gradient(110deg,#eff1f7,#f8f9fc); }
+#simulation-partial-refund-form { margin-top:22px; padding-top:20px; border-top:1px solid var(--line); }

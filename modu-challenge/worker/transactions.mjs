@@ -3,6 +3,13 @@
 const uid=()=>crypto.randomUUID();
 const error=(code)=>{const e=new Error(code);e.code=code;e.status=409;throw e;};
 const keyOK=k=>typeof k==='string' && /^[a-zA-Z0-9_-]{16,100}$/.test(k);
+export async function testOrderSettlement(env,row){
+  const refunds=await env.DB.prepare('SELECT COALESCE(SUM(amount),0) AS total FROM transaction_refund_receipts WHERE order_id=?').bind(row.id).first();
+  const refundedAmount=Number(refunds.total),remainingAmount=row.amount-refundedAmount;
+  if(!Number.isSafeInteger(refundedAmount)||remainingAmount<0)error('REFUND_LEDGER_MISMATCH');
+  const settlementFee=Math.round(remainingAmount/10);
+  return {refundedAmount,remainingAmount,settlementFee,settlementNet:remainingAmount-settlementFee};
+}
 export async function createTestOrder(env,{challengeId,ownerId,solverId,amount,requestKey}) {
   if (env.APP_ENV!=='test') error('LIVE_PROVIDER_NOT_RELEASED');
   if (!keyOK(requestKey)) error('IDEMPOTENCY_KEY_REQUIRED');
@@ -13,8 +20,9 @@ export async function createTestOrder(env,{challengeId,ownerId,solverId,amount,r
     if(old.challenge_id!==challengeId||old.solver_id!==solverId||old.amount!==amount) error('IDEMPOTENCY_CONFLICT');
     return old;
   }
-  const mission=await env.DB.prepare('SELECT owner_id,selected_solver_id FROM challenges WHERE id=?').bind(challengeId).first();
+  const mission=await env.DB.prepare('SELECT owner_id,selected_solver_id,reward_amount FROM challenges WHERE id=?').bind(challengeId).first();
   if(!mission||mission.owner_id!==ownerId||mission.selected_solver_id!==solverId) error('PARTIES_MISMATCH');
+  if(amount!==mission.reward_amount) error('MISSION_AMOUNT_MISMATCH');
   const fee=Math.round(amount/10),id=uid();
   await env.DB.prepare(`INSERT INTO transaction_orders(id,challenge_id,owner_id,solver_id,mode,amount,fee,net,request_key)
     VALUES(?,?,?,?,'TEST',?,?,?,?) ON CONFLICT(owner_id,request_key) DO NOTHING`).bind(id,challengeId,ownerId,solverId,amount,fee,amount-fee,requestKey).run();
@@ -28,7 +36,7 @@ export async function transitionTestOrder(env,{orderId,requestKey,action,actorId
   if(!keyOK(requestKey)) error('IDEMPOTENCY_KEY_REQUIRED');
   const row=await env.DB.prepare('SELECT * FROM transaction_orders WHERE id=?').bind(orderId).first();
   if(!row||row.mode!=='TEST') error('ORDER_NOT_FOUND');
-  const providerActions=['PAYMENT_SUCCEEDED','PAYMENT_FAILED','REFUND_SUCCEEDED','REFUND_FAILED','PAYOUT_SUCCEEDED','PAYOUT_FAILED'];
+  const providerActions=['PAYMENT_SUCCEEDED','PAYMENT_FAILED','REFUND_SUCCEEDED','PARTIAL_REFUND_SUCCEEDED','REFUND_FAILED','PAYOUT_SUCCEEDED','PAYOUT_FAILED'];
   const operatorActions=['QUEUE_PAYOUT','RESOLVE_REFUND','RESOLVE_PAYOUT'];
   if(providerActions.includes(action)) { if(actorId!=='TEST_PROVIDER') error('PROVIDER_ONLY'); }
   else if(operatorActions.includes(action)) { if(actorId!=='TEST_OPERATOR') error('OPERATOR_ONLY'); }
@@ -37,8 +45,9 @@ export async function transitionTestOrder(env,{orderId,requestKey,action,actorId
   else if(actorId!==row.owner_id) error('OWNER_ONLY');
   const fingerprint=JSON.stringify([action,actorId,providerReference||null,amount??null,currency,reason]);
   const prior=await env.DB.prepare('SELECT * FROM transaction_events WHERE order_id=? AND request_key=?').bind(orderId,requestKey).first();
-  if(prior) { if(prior.fingerprint!==fingerprint) error('IDEMPOTENCY_CONFLICT'); return {...row,idempotent:true}; }
+  if(prior) { if(prior.fingerprint!==fingerprint) error('IDEMPOTENCY_CONFLICT'); return {...row,...await testOrderSettlement(env,row),idempotent:true}; }
   if(revision!==row.revision) error('STALE_REVISION');
+  const settlement=await testOrderSettlement(env,row);
   const s=row.state;
   let next, paymentRef=row.payment_reference, payoutRef=row.payout_reference;
   let ledger=[];
@@ -53,19 +62,30 @@ export async function transitionTestOrder(env,{orderId,requestKey,action,actorId
       state(['PAYMENT_PENDING'],'FUNDED');providerCheck(row.amount);paymentRef=providerReference;
       pair('PROVIDER_HELD_FUNDS','CUSTOMER_LIABILITY',row.amount);break;
     case 'PAYMENT_FAILED':state(['PAYMENT_PENDING'],'PAYMENT_FAILED');break;
-    case 'SUBMIT_PROOF':state(['FUNDED'],'PROOF_SUBMITTED');break;
-    case 'REJECT_PROOF':state(['PROOF_SUBMITTED'],'FUNDED');break;
+    case 'SUBMIT_PROOF':state(['FUNDED','PARTIALLY_REFUNDED'],'PROOF_SUBMITTED');break;
+    case 'REJECT_PROOF':state(['PROOF_SUBMITTED'],settlement.refundedAmount?'PARTIALLY_REFUNDED':'FUNDED');break;
     case 'ACCEPT_PROOF':state(['PROOF_SUBMITTED'],'ACCEPTED');break;
     case 'CANCEL':state(['CREATED','PAYMENT_FAILED'],'CANCELLED');break;
     // A network timeout stays pending: never turn an unknown outcome into failure.
-    case 'REQUEST_REFUND':state(['FUNDED'],'REFUND_PENDING');break;
-    case 'REFUND_FAILED':state(['REFUND_PENDING'],'REFUND_FAILED');break;
+    case 'REQUEST_REFUND':state(['FUNDED','PARTIALLY_REFUNDED'],'REFUND_PENDING');break;
+    case 'REQUEST_PARTIAL_REFUND':
+      if(!Number.isSafeInteger(amount)||amount<=0||amount>=settlement.remainingAmount)error('INVALID_REFUND_AMOUNT');
+      if(reason.trim().length<10||reason.length>1000)error('REFUND_REASON_REQUIRED');
+      state(['FUNDED','PARTIALLY_REFUNDED'],'PARTIAL_REFUND_PENDING');break;
+    case 'REFUND_FAILED':state(['REFUND_PENDING','PARTIAL_REFUND_PENDING'],'REFUND_FAILED');break;
     case 'REFUND_SUCCEEDED':
-      state(['REFUND_PENDING'],'REFUNDED');providerCheck(row.amount);
-      pair('CUSTOMER_LIABILITY','PROVIDER_HELD_FUNDS',row.amount);break;
+      state(['REFUND_PENDING'],'REFUNDED');providerCheck(settlement.remainingAmount);
+      pair('CUSTOMER_LIABILITY','PROVIDER_HELD_FUNDS',settlement.remainingAmount);break;
+    case 'PARTIAL_REFUND_SUCCEEDED': {
+      state(['PARTIAL_REFUND_PENDING'],'PARTIALLY_REFUNDED');
+      const pending=await env.DB.prepare("SELECT fingerprint FROM transaction_events WHERE order_id=? AND action='REQUEST_PARTIAL_REFUND' ORDER BY created_at DESC,rowid DESC LIMIT 1").bind(orderId).first();
+      const expected=pending&&JSON.parse(pending.fingerprint)[3];
+      if(!Number.isSafeInteger(expected)||expected<=0||expected>=settlement.remainingAmount)error('INVALID_REFUND_AMOUNT');
+      providerCheck(expected);pair('CUSTOMER_LIABILITY','PROVIDER_HELD_FUNDS',expected);break;
+    }
     case 'OPEN_DISPUTE':
       if(reason.trim().length<10||reason.length>1000) error('DISPUTE_REASON_REQUIRED');
-      state(['FUNDED','PROOF_SUBMITTED','ACCEPTED','PAYOUT_FAILED','REFUND_FAILED'],'DISPUTED');break;
+      state(['FUNDED','PARTIALLY_REFUNDED','PROOF_SUBMITTED','ACCEPTED','PAYOUT_FAILED','REFUND_FAILED'],'DISPUTED');break;
     case 'RESOLVE_REFUND':
       if(reason.trim().length<10) error('RESOLUTION_REQUIRED');state(['DISPUTED'],'REFUND_PENDING');break;
     case 'RESOLVE_PAYOUT':
@@ -74,8 +94,8 @@ export async function transitionTestOrder(env,{orderId,requestKey,action,actorId
     case 'PAYOUT_FAILED':state(['PAYOUT_PENDING'],'PAYOUT_FAILED');break;
     // Retry only after provider reconciliation, via audited dispute resolution.
     case 'PAYOUT_SUCCEEDED':
-      state(['PAYOUT_PENDING'],'PAID');providerCheck(row.net);payoutRef=providerReference;
-      ledger=[['CUSTOMER_LIABILITY',row.amount,0],['PROVIDER_HELD_FUNDS',0,row.net],['PLATFORM_FEE',0,row.fee]];break;
+      state(['PAYOUT_PENDING'],'PAID');providerCheck(settlement.settlementNet);payoutRef=providerReference;
+      ledger=[['CUSTOMER_LIABILITY',settlement.remainingAmount,0],['PROVIDER_HELD_FUNDS',0,settlement.settlementNet],['PLATFORM_FEE',0,settlement.settlementFee]].filter(([,debit,credit])=>debit||credit);break;
     default:error('UNKNOWN_ACTION');
   }
   const eventId=uid();
@@ -85,6 +105,10 @@ export async function transitionTestOrder(env,{orderId,requestKey,action,actorId
       .bind(eventId,requestKey,fingerprint,action,actorId,next,orderId,revision,s),
     env.DB.prepare(`UPDATE transaction_orders SET state=?,revision=revision+1,payment_reference=?,payout_reference=?,updated_at=CURRENT_TIMESTAMP
       WHERE id=? AND revision=? AND EXISTS(SELECT 1 FROM transaction_events WHERE id=?)`).bind(next,paymentRef,payoutRef,orderId,revision,eventId),
+    ...(['REFUND_SUCCEEDED','PARTIAL_REFUND_SUCCEEDED'].includes(action)?[
+      env.DB.prepare(`INSERT INTO transaction_refund_receipts(event_id,order_id,mode,provider_reference,amount)
+        SELECT ?,?,'TEST',?,? WHERE EXISTS(SELECT 1 FROM transaction_events WHERE id=?)`).bind(eventId,orderId,providerReference,amount,eventId)
+    ]:[]),
     ...ledger.map(([account,debit,credit])=>env.DB.prepare(`INSERT INTO transaction_ledger(id,order_id,event_id,account,debit,credit)
       SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM transaction_events WHERE id=?)`).bind(uid(),orderId,eventId,account,debit,credit,eventId))
   ];
@@ -92,5 +116,6 @@ export async function transitionTestOrder(env,{orderId,requestKey,action,actorId
   try { results=await env.DB.batch(statements); }
   catch(e){if(String(e).includes('UNIQUE')) error('DUPLICATE_PROVIDER_OR_REQUEST');throw e;}
   if(Number(results[0].meta?.changes)!==1) error('STALE_REVISION');
-  return env.DB.prepare('SELECT * FROM transaction_orders WHERE id=?').bind(orderId).first();
+  const saved=await env.DB.prepare('SELECT * FROM transaction_orders WHERE id=?').bind(orderId).first();
+  return {...saved,...await testOrderSettlement(env,saved)};
 }

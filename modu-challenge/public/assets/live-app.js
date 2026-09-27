@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=71';
-import { legacyNotificationText } from './brand.js?v=71';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=71';
-import { calculateSettlement } from './business-rules.js?v=71';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=71';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=72';
+import { legacyNotificationText } from './brand.js?v=72';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=72';
+import { calculateSettlement } from './business-rules.js?v=72';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=72';
 
 /**
  * 모두의클리어 live frontend
@@ -144,7 +144,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=71').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=72').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }

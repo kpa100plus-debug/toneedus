@@ -177,4 +177,16 @@ pass('API deadline remains active while a response body stalls after headers');
 clientContext.fetch = async () => ({ ok: true, status: 200, headers: { get: () => 'application/json' }, json: async () => { throw new SyntaxError('bad JSON'); } });
 await assert.rejects(vm.runInContext("api('/api/bootstrap')", clientContext), error => error.code === 'INVALID_RESPONSE');
 pass('invalid JSON produces an explicit retryable failure instead of null success');
+const heroCss = readFileSync(new URL('../public/assets/styles.css', import.meta.url), 'utf8');
+const desktopFloat = heroCss.split('@keyframes heroBoardFloat {')[1].split('@keyframes heroBoardFloatMobile')[0];
+const poses = [...desktopFloat.matchAll(/translate3d\(([^,]+),\s*([^,]+),\s*([^\)]+)\)/g)].map(match => match.slice(1).map(Number.parseFloat));
+assert.equal(poses.length, 4);
+// Recorded live desktop geometry: copy right=692, visual left=746, width=518,
+// board width=350/right=-18. All interpolated keyframes must stay in its column.
+for (const [x,y,z] of poses) {
+  assert.equal(x, 0); assert.equal(z, 0); assert.ok(y >= -14 && y <= 0);
+  const left = 746 + 518 + 18 - 350 + x;
+  assert.ok(left >= 746 && left > 692, 'floating mission must never cross into headline column');
+}
+pass('desktop floating mission remains inside the visual column for the full animation and cannot cover the headline');
 console.log(`${passed} frontend state regression groups passed`);

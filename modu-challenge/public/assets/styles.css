@@ -731,11 +731,12 @@ strong { font-weight: 700; }
 @keyframes popIn { from { opacity: 0; transform: translateY(12px) scale(.985); } to { opacity: 1; transform: none; } }
 @keyframes slideIn { from { opacity: 0; transform: translateX(15px); } to { opacity: 1; transform: none; } }
 @keyframes liveDotBlink { 0%, 100% { opacity: .62; filter: brightness(.95); } 50% { opacity: 1; filter: brightness(1.18); } }
+/* Keep the floating mission inside the photo column, clear of the headline. */
 @keyframes heroBoardFloat {
   0%, 100% { transform: translate3d(0, 0, 0); }
-  25% { transform: translate3d(calc(-52vw + 385px), -145px, 0); }
-  50% { transform: translate3d(calc(-100vw + 720px), -225px, 0); }
-  75% { transform: translate3d(calc(-48vw + 355px), -90px, 0); }
+  25% { transform: translate3d(0, -8px, 0); }
+  50% { transform: translate3d(0, -14px, 0); }
+  75% { transform: translate3d(0, -6px, 0); }
 }
 @keyframes heroBoardFloatMobile {
   0%, 100% { transform: translate3d(0, 0, 0); }

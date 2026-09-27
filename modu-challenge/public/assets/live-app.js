@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=74';
-import { legacyNotificationText } from './brand.js?v=74';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=74';
-import { calculateSettlement } from './business-rules.js?v=74';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=74';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=75';
+import { legacyNotificationText } from './brand.js?v=75';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=75';
+import { calculateSettlement } from './business-rules.js?v=75';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=75';
 
 /**
  * 모두의클리어 live frontend
@@ -144,7 +144,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=74').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=75').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -2560,7 +2560,7 @@ function navigate(route) {
     return;
   }
   if (location.hash === `#/${route}`) {
-    state.route = route;
+    state.route = routeFromHash();
     refreshCurrentRoute().catch(showError);
   } else location.hash = `#/${route}`;
 }

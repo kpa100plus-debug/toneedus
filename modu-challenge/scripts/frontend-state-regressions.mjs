@@ -13,6 +13,7 @@ Object.assign(win, { CATEGORY_META, STATUS_META, FUNDING_META, calculateSettleme
 vm.runInContext('class ApiError extends Error {constructor(message,options={}){super(message);Object.assign(this,options)}};const apiClient={};', ctx);
 vm.runInContext(readFileSync(new URL('../public/assets/live-app.js', import.meta.url), 'utf8').replace(/^import .*;\n/gm, '').replace('init().catch((error) => fatal(error));', ''), ctx);
 const run = code => vm.runInContext(code, ctx);
+run('const originalLoadRouteData = loadRouteData;');
 let passed = 0; const pass = name => { passed++; console.log('PASS frontend state: ' + name); };
 run(`state.user={id:'member-a',email:'member-a@test.invalid',emailVerified:false};state.config={environment:'production',moneyEnabled:false};state.loading=false;state.authLoading=false;loadRouteData=async()=>{};bindGlobalEvents();main.innerHTML=renderCreate();`);
 let finishStatus;
@@ -201,6 +202,20 @@ run(`state.user.isAdmin=false;main.innerHTML=renderSimulation();`);
 assert.equal(doc.querySelector('[data-action=quick-start-simulation]'),null);
 assert.equal(run('renderSimulationEntry()'),'');
 pass('payout waits for simulated solver/holder approval, example proof is fillable and closed/nonadmin tests stay locked');
+
+run(`state.user={id:'sandbox-admin',isAdmin:true};state.authError=null;state.authLoading=false;state.loading=false;state.route='simulation';state.simulationRole='owner';history.replaceState(null,'','#/simulation?id=sim-readiness');const savedSimulation={...sandboxSample,stage:'SUCCESS',payoutStatus:'PAID',refundedAmount:20000,remainingAmount:80000,platformFee:8000,solverPayout:72000};state.simulation=savedSimulation;state.simulations=[savedSimulation];main.innerHTML=renderSimulation();loadRouteData=originalLoadRouteData;let savedSimulationReads=0;apiClient.listSimulations=async()=>({simulations:[savedSimulation]});apiClient.getSimulation=async id=>{if(id!=='sim-readiness')throw Error('wrong saved id');savedSimulationReads++;return {simulation:savedSimulation}};state.simulation=null;`);
+for (let repeat = 0; repeat < 2; repeat++) {
+  doc.querySelector('.simulation-history [data-action=load-simulation]').click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(run('state.route'),'simulation');
+  assert.equal(win.location.hash,'#/simulation?id=sim-readiness');
+  assert.equal(run('state.simulation.id'),'sim-readiness');
+  assert.ok(doc.querySelector('.simulation-history'));
+  assert.match(doc.querySelector('.simulation-summary').textContent,/72,000원/);
+  assert.match(doc.querySelector('.simulation-summary').textContent,/지급 완료/);
+}
+assert.ok(run('savedSimulationReads') >= 2);
+pass('reopening the same saved simulation query URL keeps the normalized route and reloads its completed record');
 
 run('clearInterval(emailCountdownTimer);clearInterval(activityPollTimer);clearInterval(heroRotationTimer)');win.close();
 

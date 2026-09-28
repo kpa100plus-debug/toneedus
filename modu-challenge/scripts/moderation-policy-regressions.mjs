@@ -78,7 +78,7 @@ const pendingOwner = await req('/api/auth/signup', { ...common, displayName: '�
 assert.equal(owner.status, 201); assert.equal(pendingOwner.status, 201);
 sql.prepare('UPDATE users SET email_verified=1, trust_score=73 WHERE id=?').run(owner.body.user.id);
 sql.prepare('UPDATE users SET trust_score=61 WHERE id=?').run(pendingOwner.body.user.id);
-const trustBefore = sql.prepare('SELECT id,trust_score FROM users ORDER BY id').all();
+let trustBefore;
 
 const fetchBefore = globalThis.fetch;
 globalThis.fetch = async () => { throw new Error('External analysis service unavailable'); };
@@ -110,6 +110,16 @@ assert.deepEqual(duplicate.body.existingMission, {id:original.body.challenge.id,
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges').get().n, countBeforeDuplicate);
 assert.equal((await req(`/api/challenges/${high.body.challenge.id}`, undefined, pendingOwner.cookie)).status, 404);
 pass('identical content with changed reward or deadline cannot create a duplicate; private high-value review is invisible to others');
+const otherOwner = await req('/api/auth/signup', { ...common, displayName: '별도검수계정', email: 'another-owner@test.invalid', phone: '01000003003' });
+assert.equal(otherOwner.status, 201);
+sql.prepare('UPDATE users SET email_verified=1 WHERE id=?').run(otherOwner.body.user.id);
+trustBefore = sql.prepare('SELECT id,trust_score FROM users ORDER BY id').all();
+const crossOwnerDuplicate = await req('/api/challenges', { ...mission, rewardAmount: 1000000 }, otherOwner.cookie);
+assert.equal(crossOwnerDuplicate.status, 409);
+assert.equal(crossOwnerDuplicate.body.existingMission.id, original.body.challenge.id);
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges').get().n, countBeforeDuplicate);
+assert.equal((await req(`/api/challenges/${high.body.challenge.id}`, undefined, otherOwner.cookie)).status, 404);
+pass('exact public mission content cannot be copied across accounts, while a different account cannot inspect a private review');
 const originalEdit = await req(`/api/challenges/${original.body.challenge.id}`, mission, owner.cookie, 'PUT');
 assert.equal(originalEdit.status, 200);
 assert.equal(originalEdit.body.moderationAction, 'AUTO_APPROVED');
@@ -152,7 +162,7 @@ const lifecycleInput = { ...mission, title: 'ABC 안내판 제작 범위 검사'
 enqueue('lifecycle-probe', owner.body.user.id, lifecycleInput.title);
 policy.env = env; policy.ownerId = owner.body.user.id; policy.lifecycleInput = lifecycleInput;
 for (const [status, visibility, expected] of [
-  ['DRAFT', 'private', false], ['DRAFT', 'public', false], ['OPEN', 'private', false],
+  ['DRAFT', 'private', true], ['DRAFT', 'public', true], ['OPEN', 'private', false],
   ['SUCCESS', 'public', false], ['FAILED', 'public', false], ['CANCELLED', 'public', false],
   ['OPEN', 'public', true], ['OPEN', 'unlisted', true], ['EXECUTING', 'public', true],
 ]) {
@@ -162,14 +172,17 @@ for (const [status, visibility, expected] of [
 }
 assert.equal((await run("evaluateChallengeModeration(lifecycleInput,ownerId,'lifecycle-probe',env)")).action, 'AUTO_APPROVED');
 sql.prepare("UPDATE challenges SET owner_id=? WHERE id='lifecycle-probe'").run(pendingOwner.body.user.id);
+assert.equal((await run('evaluateChallengeModeration(lifecycleInput,ownerId,null,env)')).action, 'CHANGES_REQUIRED');
+sql.prepare("UPDATE challenges SET status='DRAFT',visibility='private' WHERE id='lifecycle-probe'").run();
 assert.equal((await run('evaluateChallengeModeration(lifecycleInput,ownerId,null,env)')).action, 'AUTO_APPROVED');
+assert.equal((await run('evaluateChallengeModeration(lifecycleInput,ownerId,null,env)')).existingMission, undefined);
 sql.prepare("UPDATE challenges SET owner_id=? WHERE id='lifecycle-probe'").run(owner.body.user.id);
 const changedCommercialTerms = await run("evaluateChallengeModeration({...lifecycleInput,title:'ＡＢＣ 안내판 제작 범위 검사',rewardAmount:90000000,deadline:'2099-12-31'},ownerId,null,env)");
 assert.equal(changedCommercialTerms.action, 'CHANGES_REQUIRED');
 sql.prepare("UPDATE challenges SET title='앱 테스트' WHERE id='lifecycle-probe'").run();
 assert.equal((await run("evaluateChallengeModeration({...lifecycleInput,title:'앱 테스트'},ownerId,null,env)")).action, 'CHANGES_REQUIRED');
 sql.prepare("UPDATE challenges SET status='CANCELLED' WHERE id='lifecycle-probe'").run();
-pass('only same-owner active public/link missions can collide; historical/private/self rows are ignored while formatting, reward and date changes cannot bypass exact-content duplicate detection');
+pass('published exact content collides across owners, unpublished drafts only for their owner; historical/self rows stay excluded');
 
 const medium = await req('/api/challenges', { ...mission, title: '고객 연락처 정리 업무 요청', description: '고객 연락처를 동의 절차와 함께 정리하고 결과 문서를 작성해주세요.', rewardAmount: 100000000 }, owner.cookie);
 assert.equal(medium.body.moderationAction, 'CHANGES_REQUIRED'); assert.equal(sql.prepare('SELECT moderation_risk_score FROM challenges WHERE id=?').get(medium.body.challenge.id).moderation_risk_score, 40);

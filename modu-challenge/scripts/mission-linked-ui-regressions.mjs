@@ -67,15 +67,16 @@ const baseChallenge = {
   evidenceRequirements: '검수용 결과 문서', region: '서울', deadline: '2026-12-31T00:00:00Z',
   participantCount: 2, teaserCount: 2, owner: { trustScore: 50, strikes: 0 },
 };
-const baseDetail = { challenge: baseChallenge, context: { isOwner: true, isAdmin: false, selectedCandidateId: 'solver-private-id' }, ownerReviews: [] };
+const baseDetail = { challenge: baseChallenge, context: { isOwner: true, isAdmin: false, selectedCandidateHeadline: '현장 보행동선 개선 제안' }, ownerReviews: [] };
 win.testDetail = structuredClone(baseDetail);
 win.refreshReads = [];
 run(`state.user={id:'actual-owner',emailVerified:true,isAdmin:false};state.selectedChallenge=testDetail;renderChallengeModal(testDetail);apiClient.getChallenge=async(id,options)=>{refreshReads.push({id,refresh:options?.refresh});return testDetail;};`);
 assert.equal(doc.querySelectorAll('[data-action="open-mission-simulation"]').length, 2);
 assert.match(doc.querySelector('.workflow-notice').textContent, /보상금 확보부터 결과 제출·검수·지급 완료/);
 assert.match(doc.querySelector('.workflow-notice').textContent, /실제 청구·송금은 0원/);
-assert.match(doc.querySelector('.workflow-notice').textContent, /solver-private-id/);
-assert.doesNotMatch(run('renderProgressNotice(testDetail.challenge,{isOwner:false})'), /solver-private-id/);
+assert.match(doc.querySelector('.workflow-notice').textContent, /현장 보행동선 개선 제안/);
+assert.doesNotMatch(doc.querySelector('.workflow-notice').textContent, /usr_|계정 ID/);
+assert.doesNotMatch(run('renderProgressNotice(testDetail.challenge,{isOwner:false})'), /현장 보행동선 개선 제안/);
 assert.doesNotMatch(doc.querySelector('[data-action="open-mission-simulation"].mission-start-entry').textContent, /테스트/);
 assert.doesNotMatch(run('renderLiveActions(testDetail.challenge,{isOwner:false,isAdmin:false})'), /open-mission-simulation/);
 assert.doesNotMatch(run('renderLiveActions({...testDetail.challenge,status:"OPEN"},{isOwner:true})'), /open-mission-simulation/);
@@ -162,7 +163,8 @@ function detailFixture() {
     ...structuredClone(baseDetail),
     context: {
       isOwner: actorId === 'actual-owner', isAdmin: false,
-      viewerTeaser: actorId === 'actual-solver' ? { id: 'candidate-teaser', status: 'SHORTLISTED', canEdit: false } : null,
+      viewerTeaser: actorId === 'actual-solver' ? { id: 'candidate-teaser', status: 'SHORTLISTED', headline: '현장 보행동선 개선 제안', canEdit: false } : null,
+      selectedCandidateHeadline: participating ? '현장 보행동선 개선 제안' : null,
       missionSimulation: participating ? structuredClone(serverSimulation) : null,
     },
   };
@@ -213,6 +215,8 @@ await run('handleForm(document.querySelector("#mission-simulation-start-form"))'
 assert.equal(requests.length, 1);
 assert.equal(requests[0].actorId, 'actual-owner');
 assert.match(doc.querySelector('.mission-simulation-panel').textContent, /가상 최종 수행자가 확정/);
+assert.match(doc.querySelector('.mission-simulation-panel').textContent, /TEASER · 현장 보행동선 개선 제안/);
+assert.doesNotMatch(doc.querySelector('.mission-simulation-panel').textContent, /actual-solver|usr_|계정 ID/);
 assert.ok(doc.querySelector('[data-step=PAY_APPROVE]'));
 assert.equal(doc.querySelector('[data-step=BEGIN]'), null);
 assert.equal(run('state.selectedChallenge.challenge.status'), 'SHORTLISTED');

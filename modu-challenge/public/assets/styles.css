@@ -2432,6 +2432,6 @@ body[data-home-theme="command"] .studio-mission-icon { color:color-mix(in srgb,v
 @media(max-width:640px){.mission-simulation-panel{padding:14px}.mission-simulation-heading{align-items:flex-start;flex-direction:column}.mission-simulation-actions{display:grid;grid-template-columns:minmax(0,1fr)}.mission-simulation-actions .btn{width:100%}.mission-simulation-amounts{grid-template-columns:minmax(0,1fr)}.mission-simulation-zero{padding:12px}}
 /* Keep private account identifiers inside the mission's card on narrow screens. */
 .mission-selected-id { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; min-width: 0; }
-.mission-selected-id code { overflow-wrap: anywhere; min-width: 0; max-width: 100%; }
+.mission-selected-id span { overflow-wrap: anywhere; min-width: 0; max-width: 100%; }
 .mission-selected-id small { flex-basis: 100%; }
 .mission-start-entry { white-space: nowrap; word-break: keep-all; }

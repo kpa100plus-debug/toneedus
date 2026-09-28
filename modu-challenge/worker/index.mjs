@@ -1706,9 +1706,9 @@ async function getChallenge(challengeId, request, env) {
       settlement,
       latestProof,
       missionSimulation: await readMissionSimulationContext(env, challenge, viewerAuth),
-      selectedCandidateId: isOwner && challenge.status === 'SHORTLISTED'
-        ? (await env.DB.prepare("SELECT solver_id FROM teasers WHERE challenge_id = ? AND status IN ('SHORTLISTED','SELECTED') ORDER BY CASE status WHEN 'SELECTED' THEN 0 ELSE 1 END,created_at,id LIMIT 1").bind(challengeId).first())?.solver_id || null
-        : null,
+      selectedCandidateHeadline: isOwner && challenge.status === 'SHORTLISTED'
+        ? (await env.DB.prepare("SELECT headline FROM teasers WHERE challenge_id = ? AND status IN ('SHORTLISTED','SELECTED') ORDER BY CASE status WHEN 'SELECTED' THEN 0 ELSE 1 END,created_at,id LIMIT 1").bind(challengeId).first())?.headline || null
+        : isSelectedSolver || viewerTeaser?.status === 'SHORTLISTED' ? viewerTeaser?.headline || null : null,
       existingMission: await existingDuplicateForOwner(challenge, viewerAuth, env),
     };
   }
@@ -1918,7 +1918,8 @@ async function existingDuplicateForOwner(challenge, user, env) {
 
 async function findSimilarChallenge(ownerId, input, excludeId, env) {
   // A recurring title is not a duplicate mission. Compare the actual requested
-  // work and terms, and never let a private draft block its published original.
+  // work and terms. Public exact copies collide across accounts; unpublished
+  // work can only be compared for its author, never disclosed to another user.
   const normalize = (value) => String(value || '').normalize('NFKC').replace(/\s+/gu, '').toLowerCase();
   const fields = [
     ['title', 'title'], ['summary', 'summary'], ['description', 'description'],
@@ -1927,15 +1928,18 @@ async function findSimilarChallenge(ownerId, input, excludeId, env) {
   ];
   const normalized = fields.map(([key]) => normalize(input[key]));
   if (normalized.some((value) => !value)) return null;
-  // Reward or deadline changes alone do not create a different task. Check all
-  // active publications, not only the most recent 50 historical records.
+  // Reward or deadline changes alone do not create a different task. Prefer a
+  // published original over an older private draft with identical content.
   const candidates = await env.DB.prepare(`SELECT id, title, summary, description, success_criteria, payment_trigger, evidence_requirements, category, region
-    FROM challenges WHERE owner_id = ? AND id <> COALESCE(?, '')
-      AND ((visibility IN ('public','unlisted')
+    FROM challenges WHERE id <> COALESCE(?, '')
+      AND ((visibility = 'public'
         AND status IN ('OPEN','REVIEW','SHORTLISTED','FUNDING_REQUIRED','FUNDED','EXECUTING','PROOF_SUBMITTED','DISPUTED'))
-        OR (status = 'REVIEW' AND moderation_decision = 'ADMIN_REVIEW' AND moderation_guidance_json LIKE '%"HIGH_VALUE_REVIEW"%'))
-    ORDER BY created_at DESC`)
-    .bind(ownerId, excludeId).all();
+        OR (owner_id = ? AND ((visibility = 'unlisted'
+          AND status IN ('OPEN','REVIEW','SHORTLISTED','FUNDING_REQUIRED','FUNDED','EXECUTING','PROOF_SUBMITTED','DISPUTED'))
+          OR status = 'DRAFT'
+          OR (status = 'REVIEW' AND moderation_decision = 'ADMIN_REVIEW' AND moderation_guidance_json LIKE '%"HIGH_VALUE_REVIEW"%'))))
+    ORDER BY CASE WHEN status = 'DRAFT' THEN 1 ELSE 0 END, created_at DESC`)
+    .bind(excludeId, ownerId).all();
   return (candidates.results || []).find((item) => fields.every(([, column], index) => normalize(item[column]) === normalized[index])) || null;
 }
 

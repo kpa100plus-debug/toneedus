@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=80';
-import { legacyNotificationText } from './brand.js?v=80';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=80';
-import { calculateSettlement } from './business-rules.js?v=80';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=80';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=81';
+import { legacyNotificationText } from './brand.js?v=81';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=81';
+import { calculateSettlement } from './business-rules.js?v=81';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=81';
 
 /**
  * 모두의클리어 live frontend
@@ -148,7 +148,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=80').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=81').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -1660,11 +1660,11 @@ function missionSimulationZeroNotice() {
   return '<div class="mission-simulation-zero"><strong>VIRTUAL · 실제 청구 및 송금 0원</strong><p>이 미션의 의뢰자와 선정 수행자가 함께 진행하는 가상 거래입니다. 실제 결제·지급·본인확인 또는 운영 실적으로 반영되지 않습니다.</p></div>';
 }
 
-function selectedSolverIdNotice(solverId) {
-  return solverId ? `<p class="mission-selected-id"><strong>선정된 수행자 계정 ID</strong><code>${escapeHTML(solverId)}</code><small>의뢰자와 해당 수행자에게만 표시됩니다.</small></p>` : '';
+function selectedSolverNotice(headline) {
+  return `<p class="mission-selected-id"><strong>선정된 수행자</strong><span>${headline ? `TEASER · ${escapeHTML(headline)}` : '선정된 TEASER에서 확인하세요'}</span></p>`;
 }
 
-function renderMissionSimulation(challenge, simulation) {
+function renderMissionSimulation(challenge, simulation, selectedHeadline) {
   const role = missionSimulationRole(simulation);
   if (!role) return '';
   const disabled = simulation.active === false || Boolean(simulation.blockedReason);
@@ -1688,7 +1688,7 @@ function renderMissionSimulation(challenge, simulation) {
   const proof = simulation.proof;
   let evidenceUrl = '';
   try { if (proof?.evidenceUrl && new URL(proof.evidenceUrl).protocol === 'https:') evidenceUrl = proof.evidenceUrl; } catch { /* Invalid evidence links remain plain text. */ }
-  return `<section class="mission-simulation-panel" data-mission-simulation="${escapeAttribute(simulation.id)}" aria-label="이 미션의 가상 진행">${missionSimulationZeroNotice()}<div class="mission-simulation-heading"><div><span class="activity-badge">${role === 'owner' ? '의뢰자' : '선정 수행자'} 계정</span><h3>${escapeHTML(missionSimulationLabel(simulation))}</h3></div><button type="button" class="btn btn-outline btn-small" data-action="open-mission-simulation" data-challenge-id="${escapeAttribute(challenge.id)}">진행 새로고침</button></div>${selectedSolverIdNotice(simulation.solverId)}<p>${message}</p>${simulation.blockedReason ? `<p class="workflow-blocked">${escapeHTML(missionSimulationBlockedMessage(simulation.blockedReason))}</p>` : ''}${simulation.reviewReason ? `<div class="notice-box warning"><span>!</span><div><strong>의뢰자의 보완 요청</strong><p>${escapeHTML(simulation.reviewReason)}</p></div></div>` : ''}${proof ? `<div class="mission-simulation-proof"><h4>제출된 가상 수행 결과</h4><p>${nl2br(proof.description)}</p>${evidenceUrl ? `<a href="${escapeAttribute(evidenceUrl)}" target="_blank" rel="noopener noreferrer">증빙 링크 열기</a>` : ''}</div>` : ''}<div class="mission-simulation-actions">${actions}</div><div class="mission-simulation-amounts"><div><span>가상 보상금</span><strong>${formatWon(simulation.rewardAmount)}</strong></div><div><span>가상 수수료 10%</span><strong>${formatWon(simulation.platformFee)}</strong></div><div><span>가상 수행자 수령액 90%</span><strong>${formatWon(simulation.solverPayout)}</strong></div><div><span>실제 청구·송금</span><strong>0원</strong></div></div><details><summary>가상 진행 기록</summary><ol class="mission-simulation-events">${(simulation.events || []).slice(-12).map(event => `<li>${escapeHTML(event.label || event.action || '진행 상태 변경')}${event.at ? ` <small>${escapeHTML(formatDateTime(event.at))}</small>` : ''}</li>`).join('') || '<li>가상 최종 수행자 확정</li>'}</ol></details><p class="form-hint">상세 화면은 8초마다 갱신됩니다. 상대방은 자신의 계정에서 같은 미션의 진행상황을 확인할 수 있습니다.</p></section>`;
+  return `<section class="mission-simulation-panel" data-mission-simulation="${escapeAttribute(simulation.id)}" aria-label="이 미션의 가상 진행">${missionSimulationZeroNotice()}<div class="mission-simulation-heading"><div><span class="activity-badge">${role === 'owner' ? '의뢰자' : '선정 수행자'} 계정</span><h3>${escapeHTML(missionSimulationLabel(simulation))}</h3></div><button type="button" class="btn btn-outline btn-small" data-action="open-mission-simulation" data-challenge-id="${escapeAttribute(challenge.id)}">진행 새로고침</button></div>${selectedSolverNotice(selectedHeadline)}<p>${message}</p>${simulation.blockedReason ? `<p class="workflow-blocked">${escapeHTML(missionSimulationBlockedMessage(simulation.blockedReason))}</p>` : ''}${simulation.reviewReason ? `<div class="notice-box warning"><span>!</span><div><strong>의뢰자의 보완 요청</strong><p>${escapeHTML(simulation.reviewReason)}</p></div></div>` : ''}${proof ? `<div class="mission-simulation-proof"><h4>제출된 가상 수행 결과</h4><p>${nl2br(proof.description)}</p>${evidenceUrl ? `<a href="${escapeAttribute(evidenceUrl)}" target="_blank" rel="noopener noreferrer">증빙 링크 열기</a>` : ''}</div>` : ''}<div class="mission-simulation-actions">${actions}</div><div class="mission-simulation-amounts"><div><span>가상 보상금</span><strong>${formatWon(simulation.rewardAmount)}</strong></div><div><span>가상 수수료 10%</span><strong>${formatWon(simulation.platformFee)}</strong></div><div><span>가상 수행자 수령액 90%</span><strong>${formatWon(simulation.solverPayout)}</strong></div><div><span>실제 청구·송금</span><strong>0원</strong></div></div><details><summary>가상 진행 기록</summary><ol class="mission-simulation-events">${(simulation.events || []).slice(-12).map(event => `<li>${escapeHTML(event.label || event.action || '진행 상태 변경')}${event.at ? ` <small>${escapeHTML(formatDateTime(event.at))}</small>` : ''}</li>`).join('') || '<li>가상 최종 수행자 확정</li>'}</ol></details><p class="form-hint">상세 화면은 8초마다 갱신됩니다. 상대방은 자신의 계정에서 같은 미션의 진행상황을 확인할 수 있습니다.</p></section>`;
 }
 
 async function openMissionSimulation(challengeId, teaserId) {
@@ -2921,7 +2921,7 @@ function renderTrustFeature(icon, title, description) { return `<article class="
 function adminMetric(label, value, sub) { return `<article class="admin-metric"><span>${label}</span><strong>${value ?? 0}</strong><small>${sub}</small></article>`; }
 function renderEmpty(title, description, action = '') { return `<div class="empty-state"><div class="empty-icon">⌁</div><h3>${escapeHTML(title)}</h3><p>${escapeHTML(description)}</p>${action}</div>`; }
 function renderProgressNotice(challenge, context = {}) {
-  if (missionSimulationRole(context.missionSimulation)) return renderMissionSimulation(challenge, context.missionSimulation);
+  if (missionSimulationRole(context.missionSimulation)) return renderMissionSimulation(challenge, context.missionSimulation, context.selectedCandidateHeadline || context.viewerTeaser?.headline);
   let title = '티저 접수 중';
   let message = context.isOwner ? '접수된 티저를 검토하고 수행자 후보 1명을 선택하세요.' : '제안한 내용은 내 티저 보기에서 확인할 수 있습니다. 후보선정은 의뢰자가 진행합니다.';
   let action = context.isOwner && !challenge.moderationPending && ['OPEN','REVIEW','SHORTLISTED'].includes(challenge.status) ? 'review-candidates' : '';
@@ -2936,7 +2936,7 @@ function renderProgressNotice(challenge, context = {}) {
     title = context.viewerTeaser?.status === 'SHORTLISTED' ? '수행자 후보로 선택되었습니다' : '수행자 후보 선택 · 최종 확정 대기';
     message = '수행자 후보는 현재 1명만 유지됩니다. 후보선정만으로 수행이나 보상 지급이 시작되지는 않으며, 최종 확정과 보상금 확보가 필요합니다.';
     label = '후보 확인 · 최종 확정';
-    if (context.isOwner) message += ` 선정된 수행자 계정 ID는 아래에서 확인할 수 있습니다.`;
+    if (context.isOwner) message += ' 선정된 TEASER는 아래에서 확인할 수 있습니다.';
     if (blocked) {
       message += ' 실제 결제·지급 연동은 준비 중입니다.';
       if (context.isOwner) {
@@ -2965,7 +2965,7 @@ function renderProgressNotice(challenge, context = {}) {
     title = { CANCELLED:'취소된 미션', FAILED:'종료된 미션', DISPUTED:'분쟁 검토 중' }[challenge.status];
     message = '현재 일반 진행이 중단된 상태입니다. 기존 제출 내용과 진행 기록은 보존됩니다.'; action = '';
   }
-  return `<section class="workflow-notice" aria-label="현재 진행상황"><strong>${title}</strong><p>${message}</p>${context.isOwner && challenge.status === 'SHORTLISTED' ? selectedSolverIdNotice(context.selectedCandidateId) : ''}${action ? `<button type="button" class="btn btn-primary" data-action="${action}" data-challenge-id="${escapeAttribute(challenge.id)}">${label}</button>` : ''}</section>`;
+  return `<section class="workflow-notice" aria-label="현재 진행상황"><strong>${title}</strong><p>${message}</p>${context.isOwner && challenge.status === 'SHORTLISTED' ? selectedSolverNotice(context.selectedCandidateHeadline) : ''}${action ? `<button type="button" class="btn btn-primary" data-action="${action}" data-challenge-id="${escapeAttribute(challenge.id)}">${label}</button>` : ''}</section>`;
 }
 
 function renderFlow(challenge, context = {}) {

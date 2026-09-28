@@ -64,7 +64,7 @@ const applied=await req('/api/challenges/'+cid+'/teasers',teaser,b.cookie,connec
 sql.prepare("UPDATE member_verifications SET expires_at='2000-01-01T00:00:00Z' WHERE user_id=?").run(b.body.user.id);
 assert.equal((await req('/api/challenges/'+cid+'/shortlist',{teaserId:applied.body.teaser.id,mode:'select'},a.cookie,connected)).body.error.code,'VERIFICATION_REQUIRED');
 assert.equal((await req('/api/challenges/'+cid+'/teasers/'+applied.body.teaser.id,teaser,b.cookie,connected,'PUT')).status,200);
-assert.equal((await req('/api/challenges',{...mission,subjectType:'corporation'},a.cookie,connected)).status,201);
+assert.equal((await req('/api/challenges',{...mission,title:'법인 활동 별도 브랜드 간판 제작',subjectType:'corporation'},a.cookie,connected)).status,201);
 assert.equal((await req('/api/challenges/'+cid+'/shortlist',{teaserId:applied.body.teaser.id},a.cookie,connected)).status,200);
 pass('email allows registration, editing and shortlist; expired identity still blocks final confirmation');
 const adminEnv={...connected,PRIMARY_ADMIN_EMAIL:'owner@test.invalid'};

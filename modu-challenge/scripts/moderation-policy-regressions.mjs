@@ -9,7 +9,7 @@ const pass = (name) => { checks++; console.log(`PASS moderation: ${name}`); };
 const source = readFileSync(new URL('../worker/index.mjs', import.meta.url), 'utf8');
 const functions = source.slice(source.indexOf('function assessChallengeModeration('), source.indexOf('function analyzeChallengeForModeration('));
 const policy = vm.createContext({});
-vm.runInContext(functions, policy);
+vm.runInContext('const HIGH_REWARD_REVIEW_AMOUNT = 5_000_000; ' + functions, policy);
 const run = (code) => vm.runInContext(code, policy);
 const mission = {
   title: '공원 안내판 디자인 제안', summary: '공원에서 사용할 안내판 디자인을 요청합니다.',
@@ -82,36 +82,40 @@ const trustBefore = sql.prepare('SELECT id,trust_score FROM users ORDER BY id').
 
 const fetchBefore = globalThis.fetch;
 globalThis.fetch = async () => { throw new Error('External analysis service unavailable'); };
-const high = await req('/api/challenges', { ...mission, rewardAmount: 100000000 }, owner.cookie, 'POST', { 'Idempotency-Key': 'moderation-public-replay-001' });
+const highInput = { ...mission, title: '고액 정원 방문자 지도 디자인 제안', rewardAmount: 100000000 };
+const high = await req('/api/challenges', highInput, owner.cookie, 'POST', { 'Idempotency-Key': 'moderation-public-replay-001' });
 globalThis.fetch = fetchBefore;
-assert.equal(high.status, 201, JSON.stringify(high.body)); assert.equal(high.body.moderationAction, 'AUTO_APPROVED');
-assert.equal(sql.prepare('SELECT moderation_risk_score FROM challenges WHERE id=?').get(high.body.challenge.id).moderation_risk_score, 0); assert.equal((await req(`/api/challenges/${high.body.challenge.id}`)).status, 200);
-pass('safe maximum reward publishes through the API when external services are unavailable');
+assert.equal(high.status, 201, JSON.stringify(high.body)); assert.equal(high.body.moderationAction, 'HIGH_VALUE_REVIEW');
+assert.equal(high.body.challenge.moderationPending, true);
+assert.equal(sql.prepare('SELECT moderation_risk_score FROM challenges WHERE id=?').get(high.body.challenge.id).moderation_risk_score, 0); assert.equal((await req(`/api/challenges/${high.body.challenge.id}`)).status, 404);
+assert.equal((await req(`/api/challenges/${high.body.challenge.id}`, undefined, owner.cookie)).status, 200);
+pass('safe maximum reward is privately queued, with zero content risk and no external provider dependency');
+const highDuplicate = await req('/api/challenges', { ...highInput, rewardAmount: 5000000 }, owner.cookie);
+assert.equal(highDuplicate.status, 409);
+assert.equal(highDuplicate.body.existingMission.id, high.body.challenge.id);
+pass('a private high-value mission awaiting review also blocks identical new submissions');
 
 for (const amount of [100000001, 100000000.5, 9999]) {
   const invalid = await req('/api/challenges', { ...mission, rewardAmount: amount }, owner.cookie);
   assert.equal(invalid.status, 400); assert.equal(invalid.body.error.code, 'INVALID_REWARD');
 }
 pass('server rejects amounts above 100 million, fractional amounts and amounts below the minimum');
-const duplicate = await req('/api/challenges', mission, owner.cookie);
-assert.deepEqual(duplicate.body.existingMission, {id:high.body.challenge.id,title:mission.title});
-const savedDuplicate = await req(`/api/challenges/${duplicate.body.challenge.id}?refresh=1`, undefined, owner.cookie);
-assert.deepEqual(savedDuplicate.body.context.existingMission, duplicate.body.existingMission);
-assert.equal((await req(`/api/challenges/${duplicate.body.challenge.id}`, undefined, pendingOwner.cookie)).status, 404);
-assert.equal((await req(`/api/challenges/${high.body.challenge.id}`, undefined, pendingOwner.cookie)).body.context.existingMission, null);
-pass('duplicate recovery points to the exact original for its owner without exposing private copies to another member');
-assert.equal(duplicate.body.moderationAction, 'CHANGES_REQUIRED'); assert.equal(duplicate.body.challenge.publicationVisibility, 'private');
-assert.equal((await req(`/api/challenges/${duplicate.body.challenge.id}`)).status, 404);
-assert.ok(duplicate.body.moderationGuidance.some((item) => /기존 미션을 수정/.test(item.message)));
-const originalEdit = await req(`/api/challenges/${high.body.challenge.id}`, mission, owner.cookie, 'PUT');
+const original = await req('/api/challenges', mission, owner.cookie);
+assert.equal(original.status, 201);
+const countBeforeDuplicate = sql.prepare('SELECT COUNT(*) n FROM challenges').get().n;
+const duplicate = await req('/api/challenges', { ...mission, rewardAmount: 90000000, deadline: '2099-12-31' }, owner.cookie);
+assert.equal(duplicate.status, 409);
+assert.equal(duplicate.body.error.code, 'DUPLICATE_MISSION');
+assert.deepEqual(duplicate.body.existingMission, {id:original.body.challenge.id,title:mission.title});
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges').get().n, countBeforeDuplicate);
+assert.equal((await req(`/api/challenges/${high.body.challenge.id}`, undefined, pendingOwner.cookie)).status, 404);
+pass('identical content with changed reward or deadline cannot create a duplicate; private high-value review is invisible to others');
+const originalEdit = await req(`/api/challenges/${original.body.challenge.id}`, mission, owner.cookie, 'PUT');
 assert.equal(originalEdit.status, 200);
 assert.equal(originalEdit.body.moderationAction, 'AUTO_APPROVED');
 assert.equal(originalEdit.body.challenge.publicationVisibility, 'public');
-pass('self-edit excludes the current row and a blocked private copy cannot demote its published original');
-const edited = await req(`/api/challenges/${duplicate.body.challenge.id}`, { ...mission, title: '박물관 전시 안내 책자 제작' }, owner.cookie, 'PUT');
-assert.equal(edited.body.moderationAction, 'AUTO_APPROVED'); assert.equal(edited.body.challenge.id, duplicate.body.challenge.id);
-assert.equal((await req(`/api/challenges/${duplicate.body.challenge.id}`)).status, 200);
-pass('duplicate stays private, and a substantive correction immediately republishes the preserved record');
+pass('updating the original retains its identifier and automatic publication');
+const edited = originalEdit;
 
 for (const [field, value] of [
   ['title', '부산 공원 안내판 디자인 제안'],
@@ -141,7 +145,7 @@ const legacyRecovered = await req('/api/challenges/legacy-title-only', recoveryI
 assert.equal(legacyRecovered.body.challenge.id, 'legacy-title-only');
 assert.equal(legacyRecovered.body.moderationAction, 'AUTO_APPROVED');
 assert.equal(legacyRecovered.body.challenge.publicationVisibility, 'public');
-assert.equal(sql.prepare("SELECT moderation_policy_version FROM challenges WHERE id='legacy-title-only'").get().moderation_policy_version, '2026-09-27-v4');
+assert.equal(sql.prepare("SELECT moderation_policy_version FROM challenges WHERE id='legacy-title-only'").get().moderation_policy_version, '2026-09-28-v5');
 pass('legacy title-only rejection is explained truthfully, preserved on read and reopened on explicit resave using the same mission ID');
 
 const lifecycleInput = { ...mission, title: 'ABC 안내판 제작 범위 검사' };
@@ -175,7 +179,7 @@ pass('high value cannot escalate medium risk into rejection; prohibited evidence
 
 const internalFixture = JSON.stringify([{ code: 'AMBIGUOUS_SUCCESS', label: '성공조건을 확인해주세요', score: 30, prohibited: false, rawEvidence: 'PRIVATE_MODERATION_EVIDENCE', sourceText: 'PRIVATE_MODERATION_SOURCE' }]);
 sql.prepare('UPDATE challenges SET moderation_reasons_json=? WHERE id=?').run(internalFixture, high.body.challenge.id);
-const replay = await req('/api/challenges', mission, owner.cookie, 'POST', { 'Idempotency-Key': 'moderation-public-replay-001' });
+const replay = await req('/api/challenges', highInput, owner.cookie, 'POST', { 'Idempotency-Key': 'moderation-public-replay-001' });
 assert.equal(replay.body.duplicatePrevented, true); assert.equal(replay.body.challenge.id, high.body.challenge.id);
 const forbiddenKeys = new Set(['moderationRiskScore', 'moderationPolicyVersion', 'policyVersion', 'riskScore', 'score', 'code', 'prohibited', 'rawEvidence', 'sourceText']);
 function assertPublicModeration(value) {
@@ -186,14 +190,14 @@ function assertPublicModeration(value) {
   }
   assert.doesNotMatch(JSON.stringify(value), /PRIVATE_MODERATION_EVIDENCE|PRIVATE_MODERATION_SOURCE/);
 }
-for (const response of [high, duplicate, edited, medium, prohibited, replay,
-  await req(`/api/challenges/${high.body.challenge.id}`),
+for (const response of [high, original, edited, medium, prohibited, replay,
+  await req(`/api/challenges/${high.body.challenge.id}`, undefined, owner.cookie),
   await req(`/api/challenges/${medium.body.challenge.id}`, undefined, owner.cookie),
   await req('/api/challenges'), await req('/api/bootstrap')]) {
   assert.ok(response.status >= 200 && response.status < 300, JSON.stringify(response.body));
   assertPublicModeration(response.body);
 }
-assert.match(replay.body.moderationReasons[0].message, /확인 가능한 기준/);
+assert.equal(replay.body.moderationAction, 'HIGH_VALUE_REVIEW');
 assert.ok(medium.body.moderationReasons.every((reason) => typeof reason.label === 'string' && typeof reason.message === 'string'));
 const storedAudit = sql.prepare("SELECT after_json FROM audit_logs WHERE resource_id=? AND action='CHALLENGE_MODERATION_CHANGES_REQUIRED'").get(medium.body.challenge.id);
 assert.equal(JSON.parse(storedAudit.after_json).moderationRiskScore, 40);
@@ -208,9 +212,15 @@ assert.equal((await req('/api/admin/moderation-queue')).status, 401);
 assert.equal((await req('/api/admin/moderation-queue', undefined, pendingOwner.cookie)).status, 403);
 const adminQueue = await req('/api/admin/moderation-queue', undefined, owner.cookie);
 assert.equal(adminQueue.status, 200);
+assert.ok(adminQueue.body.challenges.some(item => item.id === high.body.challenge.id));
+const approveHigh = await req(`/api/admin/challenges/${high.body.challenge.id}/moderation/approve`, {}, owner.cookie);
+assert.equal(approveHigh.status, 200, JSON.stringify(approveHigh.body));
+assert.equal(approveHigh.body.challenge.status, 'OPEN');
+assert.equal((await req(`/api/challenges/${high.body.challenge.id}`)).status, 200);
+pass('only primary admin publishes the private high-value record after content review');
 const internalReview = adminQueue.body.challenges.find((item) => item.id === prohibited.body.challenge.id);
 assert.equal(internalReview.moderation_risk_score, 100);
-assert.equal(internalReview.moderation_policy_version, '2026-09-27-v4');
+assert.equal(internalReview.moderation_policy_version, '2026-09-28-v5');
 assert.ok(internalReview.moderationReasons.some((reason) => reason.code === 'DECEPTION_PHISHING' && reason.prohibited));
 pass('only authorized administrator review retains risk, policy and detection evidence');
 const detailPath = `/api/admin/challenges/${prohibited.body.challenge.id}/moderation`;
@@ -220,7 +230,7 @@ assert.equal(sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action='ADMIN_
 const internalDetail = await req(detailPath, undefined, owner.cookie);
 assert.equal(internalDetail.status, 200);
 assert.equal(internalDetail.body.moderation.riskScore, 100);
-assert.equal(internalDetail.body.moderation.policyVersion, '2026-09-27-v4');
+assert.equal(internalDetail.body.moderation.policyVersion, '2026-09-28-v5');
 assert.equal(internalDetail.body.moderation.action, 'AUTO_REJECTED');
 assert.ok(internalDetail.body.moderation.reasons.some((reason) => reason.code === 'DECEPTION_PHISHING'));
 assert.equal(sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action='ADMIN_MODERATION_DETAIL_VIEW' AND resource_id=? AND actor_id=?").get(prohibited.body.challenge.id, owner.body.user.id).n, 1);
@@ -243,20 +253,20 @@ sql.prepare("UPDATE challenges SET category='LOCAL' WHERE id='cron-category'").r
 enqueue('cron-region', owner.body.user.id, mission.title);
 sql.prepare("UPDATE challenges SET region='대전' WHERE id='cron-region'").run();
 const reviewed = await req('/api/admin/moderation/auto-review', {}, owner.cookie);
-assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body)); assert.equal(reviewed.body.autoApproved, 3); assert.equal(reviewed.body.changesRequired, 2);
+assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body)); assert.equal(reviewed.body.adminReview, 3); assert.equal(reviewed.body.changesRequired, 2); assert.equal(reviewed.body.autoRejected, 0);
 const result = (id) => sql.prepare('SELECT * FROM challenges WHERE id=?').get(id);
 assert.equal(result('cron-duplicate').moderation_action, 'CHANGES_REQUIRED');
 assert.equal(result('cron-duplicate').visibility, 'private');
 assert.ok(JSON.parse(result('cron-duplicate').moderation_reasons_json).some((item) => item.code === 'POSSIBLE_DUPLICATE'));
-assert.equal(result('cron-safe').moderation_action, 'AUTO_APPROVED'); assert.equal(result('cron-safe').moderation_risk_score, 0);
-assert.equal(result('cron-category').moderation_action, 'AUTO_APPROVED');
-assert.equal(result('cron-region').moderation_action, 'AUTO_APPROVED');
+assert.equal(result('cron-safe').moderation_action, 'ADMIN_OVERRIDE'); assert.equal(result('cron-safe').status, 'REVIEW'); assert.equal(result('cron-safe').moderation_risk_score, 0);
+assert.equal(result('cron-category').moderation_action, 'ADMIN_OVERRIDE');
+assert.equal(result('cron-region').moderation_action, 'ADMIN_OVERRIDE');
 assert.equal(result('cron-email').status, 'DRAFT'); assert.equal(result('cron-email').visibility, 'private');
 assert.ok(JSON.parse(result('cron-email').moderation_guidance_json).some((item) => /이메일 인증/.test(item.message)));
 const auditCount = sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action LIKE 'CHALLENGE_MODERATION_%'").get().n;
 assert.equal((await req('/api/admin/moderation/auto-review', {}, owner.cookie)).body.checked, 0);
 assert.equal(sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action LIKE 'CHALLENGE_MODERATION_%'").get().n, auditCount);
-pass('Cron uses matching content/duplicate policy, enforces email, and does not repeat decisions');
+pass('Cron preserves high-value private review, enforces email, and does not repeat decisions');
 
 assert.deepEqual(sql.prepare('SELECT id,trust_score FROM users ORDER BY id').all(), trustBefore);
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges').get().n, 19);

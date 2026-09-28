@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=78';
-import { legacyNotificationText } from './brand.js?v=78';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=78';
-import { calculateSettlement } from './business-rules.js?v=78';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=78';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=79';
+import { legacyNotificationText } from './brand.js?v=79';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=79';
+import { calculateSettlement } from './business-rules.js?v=79';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=79';
 
 /**
  * 모두의클리어 live frontend
@@ -148,7 +148,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=78').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=79').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -1054,7 +1054,7 @@ function renderCreate() {
           </div>
         </div>
         <div class="form-section"><div class="form-section-head"><span>2</span><div><h2>보상금과 일정</h2><p>등록 시에는 표시되고, FINALIST 선정 후 Funding 단계가 시작됩니다.</p></div></div>
-          <div class="form-grid reward-schedule-grid"><div class="field"><label>보상금 <span class="required">*</span></label><input name="rewardAmount" type="number" min="${min}" max="${max}" step="1" required value="100000" /><small>최소 ${formatWon(min)} · 최대 ${formatWon(max)} · 계정별 표시 한도 적용. 금액만으로 관리자 승인을 요구하지 않습니다. 표시 보상금은 실제 확보된 돈이 아니며 현재 실제 청구·송금은 0원입니다.</small></div><div class="field"><label>마감일 <span class="required">*</span></label><input name="deadline" type="date" min="${minDate}" required /></div></div>
+          <div class="form-grid reward-schedule-grid"><div class="field"><label>보상금 <span class="required">*</span></label><input name="rewardAmount" type="number" min="${min}" max="${max}" step="1" required value="100000" /><small>최소 ${formatWon(min)} · 최대 ${formatWon(max)} · 계정별 표시 한도 적용. 500만 원 이상 미션은 비공개로 접수하고 관리자 확인 후 게시합니다. 표시 보상금은 실제 확보된 돈이 아니며 현재 실제 청구·송금은 0원입니다.</small></div><div class="field"><label>마감일 <span class="required">*</span></label><input name="deadline" type="date" min="${minDate}" required /></div></div>
         </div>
         <div class="form-section"><div class="form-section-head"><span>3</span><div><h2>성공·보상금 준비 기준</h2><p>분쟁을 막는 가장 중요한 약속 정보입니다.</p></div></div>
           ${easy ? renderCriteriaCheckBuilder() : ''}
@@ -1065,7 +1065,7 @@ function renderCreate() {
             <div class="field"><label>공개범위</label><select name="visibility"><option value="public">전체 공개</option><option value="unlisted">링크 공개</option><option value="private">비공개</option></select></div>
           </div>
         </div>
-        <div class="notice-box"><span>!</span><div><strong>등록 전 확인해주세요</strong><p>이메일 인증과 미션 내용 검수는 별도입니다. 중복 등록·개인정보·금지 내용을 확인하며, 수정이 필요하면 비공개로 보관하고 이유와 수정 방법을 바로 안내합니다. 통과하면 선택한 공개범위로 등록됩니다.</p></div></div>
+        <div class="notice-box"><span>!</span><div><strong>등록 전 확인해주세요</strong><p>이메일 인증과 미션 내용 검수는 별도입니다. 중복 등록·개인정보·금지 내용을 확인하며, 수정이 필요하면 비공개로 보관하고 이유와 수정 방법을 바로 안내합니다. 통과한 500만 원 미만 미션은 선택한 공개범위로 게시하고, 500만 원 이상은 비공개 관리자 검토 후 게시합니다.</p></div></div>
         <label class="check-row"><input type="checkbox" name="rulesAccepted" required /><span>성공조건·보상금·운영정책과 10% 플랫폼 이용수수료를 확인했습니다.</span></label>
         <button class="btn btn-primary btn-lg btn-block" type="submit">미션 등록하기</button>
       </form>
@@ -1426,9 +1426,9 @@ function renderAdmin() {
   if (overview.role === 'deputy') return renderDeputyAdmin(overview);
   const pushPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card push-notice-card"><div class="dashboard-card-head"><div><span class="admin-kicker">PUSH NOTICE</span><h2>전체 공지 푸시</h2><p class="form-hint">푸시를 켠 활성 회원에게만 발송됩니다.<br />발송 결과는 감사 기록에 남습니다.</p></div><button class="btn btn-primary" type="button" data-action="open-push-announcement">공지 푸시 작성</button></div></section></div></section>`;
   const pushAudit = overview.pushAudit ? `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card push-audit-card"><span class="admin-kicker">PUSH DELIVERY AUDIT</span><h2>푸시 전송 현황</h2><div class="push-audit-summary"><div><strong>${overview.pushAudit.summary.subscribed || 0}</strong><span>수신 기기</span></div><div><strong>${overview.pushAudit.summary.accepted || 0}</strong><span>최근 7일 전송 수락</span></div><div><strong>${overview.pushAudit.summary.failed || 0}</strong><span>최근 7일 실패·만료</span></div></div><p class="form-hint">전송 수락은 푸시 서비스가 받은 상태입니다. 실제 화면 표시와 앱 확인은 기기에서 별도로 확인합니다.</p></section></div></section>` : '';
-  const moderationPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-moderation-card"><div class="dashboard-card-head moderation-card-head"><div><span class="admin-kicker">SAFETY REVIEW</span><h2>관리자 검토 대기</h2><p class="form-hint">일상 미션은 자동 검수하며 이의신청·예외와 기존 검토 기록을 확인합니다. 보상금만 높다는 이유로 승인을 기다리지 않습니다.</p></div><div class="moderation-head-actions"><strong>${overview.moderationChallenges?.length || 0}</strong><button class="btn btn-outline btn-small" type="button" data-action="auto-review-moderation">전체 자동 재검수</button></div></div><div class="audit-table">${overview.moderationChallenges?.length ? overview.moderationChallenges.map((item) => `<div class="audit-row moderation-row"><div><strong>${escapeHTML(item.title)}</strong><span>${formatWon(item.reward_amount)} · 위험도 ${Number(item.moderation_risk_score || 0)} · ${item.moderationReasons.map((reason) => escapeHTML(reason.label)).join(' · ')}</span><small>접수 ${formatDateTime(item.created_at)} · 마감 ${formatDateTime(item.deadline)}</small></div><span class="moderation-actions"><button class="btn btn-outline btn-small" type="button" data-challenge-id="${escapeAttribute(item.id)}">내용 보기</button><button class="btn btn-danger btn-small" type="button" data-action="archive-moderation" data-challenge-id="${escapeAttribute(item.id)}">비공개 보관</button><button class="btn btn-primary btn-small" type="button" data-action="approve-moderation" data-challenge-id="${escapeAttribute(item.id)}">승인 후 공개</button></span></div>`).join('') : '<p class="muted">관리자 검토 대기 미션이 없습니다.</p>'}</div></section></div></section>`;
+  const moderationPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-moderation-card"><div class="dashboard-card-head moderation-card-head"><div><span class="admin-kicker">SAFETY REVIEW</span><h2>관리자 검토 대기</h2><p class="form-hint">500만 원 이상 미션은 비공개로 접수하여 관리자 확인 후 게시합니다. 일반 미션은 내용에 따라 자동 검수합니다.</p></div><div class="moderation-head-actions"><strong>${overview.moderationChallenges?.length || 0}</strong><button class="btn btn-outline btn-small" type="button" data-action="auto-review-moderation">전체 자동 재검수</button></div></div><div class="audit-table">${overview.moderationChallenges?.length ? overview.moderationChallenges.map((item) => `<div class="audit-row moderation-row"><div><strong>${escapeHTML(item.title)}</strong><span>${formatWon(item.reward_amount)} · ${item.moderation_action === 'ADMIN_OVERRIDE' && Number(item.reward_amount) >= 5000000 ? '500만 원 이상 금액 검토' : `위험도 ${Number(item.moderation_risk_score || 0)}`} · ${item.moderationReasons.map((reason) => escapeHTML(reason.label)).join(' · ')}</span><small>접수 ${formatDateTime(item.created_at)} · 마감 ${formatDateTime(item.deadline)}</small></div><span class="moderation-actions"><button class="btn btn-outline btn-small" type="button" data-challenge-id="${escapeAttribute(item.id)}">내용 보기</button><button class="btn btn-danger btn-small" type="button" data-action="archive-moderation" data-challenge-id="${escapeAttribute(item.id)}">비공개 보관</button><button class="btn btn-primary btn-small" type="button" data-action="approve-moderation" data-challenge-id="${escapeAttribute(item.id)}">승인 후 공개</button></span></div>`).join('') : '<p class="muted">관리자 검토 대기 미션이 없습니다.</p>'}</div></section></div></section>`;
   const stats = overview.moderationStats || {};
-  const automaticPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-moderation-card"><div class="dashboard-card-head"><div><span class="admin-kicker">AUTO MODERATION</span><h2>자동검수 처리 현황</h2><p class="form-hint">일상 승인은 시스템이 처리하며, 관리자는 이의신청·분쟁·특수 예외만 확인합니다.</p></div><strong>${Number(stats.total || 0)}</strong></div><div class="stats-grid"><div><strong>${Number(stats.auto_approved || 0)}</strong><span>자동승인</span></div><div><strong>${Number(stats.changes_required || 0)}</strong><span>자동 수정요청</span></div><div><strong>${Number(stats.auto_rejected || 0)}</strong><span>자동거절</span></div></div><div class="dashboard-card-head"><h3>이의신청·예외</h3><strong>${overview.moderationAppeals?.length || 0}</strong></div><div class="audit-table">${overview.moderationAppeals?.length ? overview.moderationAppeals.map((item) => `<button class="audit-row admin-row-button" type="button" data-challenge-id="${escapeAttribute(item.challenge_id)}"><strong>${escapeHTML(item.title)}</strong><span>${escapeHTML(item.moderation_action)} · 위험도 ${Number(item.moderation_risk_score || 0)}</span><small>${escapeHTML(item.display_name)} · ${formatDateTime(item.created_at)}</small></button>`).join('') : '<p class="muted">확인할 이의신청·예외가 없습니다.</p>'}</div></section></div></section>`;
+  const automaticPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-moderation-card"><div class="dashboard-card-head"><div><span class="admin-kicker">AUTO MODERATION</span><h2>자동검수 처리 현황</h2><p class="form-hint">일상 승인은 시스템이 처리하며, 관리자는 500만 원 이상 미션과 이의신청·분쟁·특수 예외를 확인합니다.</p></div><strong>${Number(stats.total || 0)}</strong></div><div class="stats-grid"><div><strong>${Number(stats.auto_approved || 0)}</strong><span>자동승인</span></div><div><strong>${Number(stats.changes_required || 0)}</strong><span>자동 수정요청</span></div><div><strong>${Number(stats.auto_rejected || 0)}</strong><span>자동거절</span></div></div><div class="dashboard-card-head"><h3>이의신청·예외</h3><strong>${overview.moderationAppeals?.length || 0}</strong></div><div class="audit-table">${overview.moderationAppeals?.length ? overview.moderationAppeals.map((item) => `<button class="audit-row admin-row-button" type="button" data-challenge-id="${escapeAttribute(item.challenge_id)}"><strong>${escapeHTML(item.title)}</strong><span>${escapeHTML(item.moderation_action)} · 위험도 ${Number(item.moderation_risk_score || 0)}</span><small>${escapeHTML(item.display_name)} · ${formatDateTime(item.created_at)}</small></button>`).join('') : '<p class="muted">확인할 이의신청·예외가 없습니다.</p>'}</div></section></div></section>`;
   const draftPanel = `<section class="page-section admin-draft-section"><div class="container"><section class="dashboard-card admin-draft-card"><div class="dashboard-card-head"><div><span class="admin-kicker">DRAFT CENTER</span><h2>비공개 초안</h2><p class="form-hint">자동 수정요청·자동거절·사용자 초안을 삭제하지 않고 보존합니다.</p></div><strong>${overview.draftChallenges?.length || 0}</strong></div><div class="audit-table">${overview.draftChallenges?.length ? overview.draftChallenges.map((item) => `<button class="audit-row admin-row-button" type="button" data-challenge-id="${escapeAttribute(item.id)}"><strong>${escapeHTML(item.title)}</strong><span>초안 · 비공개 · ${formatWon(item.reward_amount)}</span><small>마감 ${formatDateTime(item.deadline)}</small></button>`).join('') : '<p class="muted">비공개 초안이 없습니다.</p>'}</div></section></div></section>`;
   return `<section class="page-hero compact admin-hero"><div class="container"><span class="eyebrow">ADMIN CONTROL</span><h1>운영 관리자</h1><button class="btn btn-primary" data-route="simulation">연동 전 테스트 열기</button><p>회원·미션·분쟁·정산·Audit 상태를 확인합니다.</p></div></section>
     ${renderSimulationEntry()}
@@ -1659,6 +1659,10 @@ function missionSimulationZeroNotice() {
   return '<div class="mission-simulation-zero"><strong>VIRTUAL · 실제 청구 및 송금 0원</strong><p>이 미션의 의뢰자와 선정 수행자가 함께 진행하는 가상 거래입니다. 실제 결제·지급·본인확인 또는 운영 실적으로 반영되지 않습니다.</p></div>';
 }
 
+function selectedSolverIdNotice(solverId) {
+  return solverId ? `<p class="mission-selected-id"><strong>선정된 수행자 계정 ID</strong><code>${escapeHTML(solverId)}</code><small>의뢰자와 해당 수행자에게만 표시됩니다.</small></p>` : '';
+}
+
 function renderMissionSimulation(challenge, simulation) {
   const role = missionSimulationRole(simulation);
   if (!role) return '';
@@ -1683,7 +1687,7 @@ function renderMissionSimulation(challenge, simulation) {
   const proof = simulation.proof;
   let evidenceUrl = '';
   try { if (proof?.evidenceUrl && new URL(proof.evidenceUrl).protocol === 'https:') evidenceUrl = proof.evidenceUrl; } catch { /* Invalid evidence links remain plain text. */ }
-  return `<section class="mission-simulation-panel" data-mission-simulation="${escapeAttribute(simulation.id)}" aria-label="이 미션의 가상 진행">${missionSimulationZeroNotice()}<div class="mission-simulation-heading"><div><span class="activity-badge">${role === 'owner' ? '의뢰자' : '선정 수행자'} 계정</span><h3>${escapeHTML(missionSimulationLabel(simulation))}</h3></div><button type="button" class="btn btn-outline btn-small" data-action="open-mission-simulation" data-challenge-id="${escapeAttribute(challenge.id)}">진행 새로고침</button></div><p>${message}</p>${simulation.blockedReason ? `<p class="workflow-blocked">${escapeHTML(missionSimulationBlockedMessage(simulation.blockedReason))}</p>` : ''}${simulation.reviewReason ? `<div class="notice-box warning"><span>!</span><div><strong>의뢰자의 보완 요청</strong><p>${escapeHTML(simulation.reviewReason)}</p></div></div>` : ''}${proof ? `<div class="mission-simulation-proof"><h4>제출된 가상 수행 결과</h4><p>${nl2br(proof.description)}</p>${evidenceUrl ? `<a href="${escapeAttribute(evidenceUrl)}" target="_blank" rel="noopener noreferrer">증빙 링크 열기</a>` : ''}</div>` : ''}<div class="mission-simulation-actions">${actions}</div><div class="mission-simulation-amounts"><div><span>가상 보상금</span><strong>${formatWon(simulation.rewardAmount)}</strong></div><div><span>가상 수수료 10%</span><strong>${formatWon(simulation.platformFee)}</strong></div><div><span>가상 수행자 수령액 90%</span><strong>${formatWon(simulation.solverPayout)}</strong></div><div><span>실제 청구·송금</span><strong>0원</strong></div></div><details><summary>가상 진행 기록</summary><ol class="mission-simulation-events">${(simulation.events || []).slice(-12).map(event => `<li>${escapeHTML(event.label || event.action || '진행 상태 변경')}${event.at ? ` <small>${escapeHTML(formatDateTime(event.at))}</small>` : ''}</li>`).join('') || '<li>가상 최종 수행자 확정</li>'}</ol></details><p class="form-hint">상세 화면은 8초마다 갱신됩니다. 상대방은 자신의 계정에서 같은 미션의 진행상황을 확인할 수 있습니다.</p></section>`;
+  return `<section class="mission-simulation-panel" data-mission-simulation="${escapeAttribute(simulation.id)}" aria-label="이 미션의 가상 진행">${missionSimulationZeroNotice()}<div class="mission-simulation-heading"><div><span class="activity-badge">${role === 'owner' ? '의뢰자' : '선정 수행자'} 계정</span><h3>${escapeHTML(missionSimulationLabel(simulation))}</h3></div><button type="button" class="btn btn-outline btn-small" data-action="open-mission-simulation" data-challenge-id="${escapeAttribute(challenge.id)}">진행 새로고침</button></div>${selectedSolverIdNotice(simulation.solverId)}<p>${message}</p>${simulation.blockedReason ? `<p class="workflow-blocked">${escapeHTML(missionSimulationBlockedMessage(simulation.blockedReason))}</p>` : ''}${simulation.reviewReason ? `<div class="notice-box warning"><span>!</span><div><strong>의뢰자의 보완 요청</strong><p>${escapeHTML(simulation.reviewReason)}</p></div></div>` : ''}${proof ? `<div class="mission-simulation-proof"><h4>제출된 가상 수행 결과</h4><p>${nl2br(proof.description)}</p>${evidenceUrl ? `<a href="${escapeAttribute(evidenceUrl)}" target="_blank" rel="noopener noreferrer">증빙 링크 열기</a>` : ''}</div>` : ''}<div class="mission-simulation-actions">${actions}</div><div class="mission-simulation-amounts"><div><span>가상 보상금</span><strong>${formatWon(simulation.rewardAmount)}</strong></div><div><span>가상 수수료 10%</span><strong>${formatWon(simulation.platformFee)}</strong></div><div><span>가상 수행자 수령액 90%</span><strong>${formatWon(simulation.solverPayout)}</strong></div><div><span>실제 청구·송금</span><strong>0원</strong></div></div><details><summary>가상 진행 기록</summary><ol class="mission-simulation-events">${(simulation.events || []).slice(-12).map(event => `<li>${escapeHTML(event.label || event.action || '진행 상태 변경')}${event.at ? ` <small>${escapeHTML(formatDateTime(event.at))}</small>` : ''}</li>`).join('') || '<li>가상 최종 수행자 확정</li>'}</ol></details><p class="form-hint">상세 화면은 8초마다 갱신됩니다. 상대방은 자신의 계정에서 같은 미션의 진행상황을 확인할 수 있습니다.</p></section>`;
 }
 
 async function openMissionSimulation(challengeId, teaserId) {
@@ -1739,7 +1743,7 @@ function renderLiveActions(challenge, context) {
   if (context.isAdmin) buttons.push(`<button class="btn btn-outline btn-block" data-action="open-admin">관리기록 보기</button>`);
   if (context.isAdmin && challenge.moderationPending) buttons.push(`<button class="btn btn-primary btn-block" data-action="approve-moderation" data-challenge-id="${challenge.id}">검토 승인 후 공개</button>`);
   if (context.isOwner) {
-    if (challenge.status === 'SHORTLISTED' && challenge.fundingStatus === 'POSTED' && !context.missionSimulation) buttons.push(`<button type="button" class="btn btn-primary btn-block" data-action="open-mission-simulation" data-challenge-id="${escapeAttribute(challenge.id)}">가상 진행 시작 · 보상금 확보 테스트</button><p class="action-explanation">선택한 후보와 결과 제출·검수·지급 완료까지 테스트합니다. 실제 청구·송금은 0원입니다.</p>`);
+    if (challenge.status === 'SHORTLISTED' && challenge.fundingStatus === 'POSTED' && !context.missionSimulation) buttons.push(`<button type="button" class="btn btn-primary btn-block mission-start-entry" data-action="open-mission-simulation" data-challenge-id="${escapeAttribute(challenge.id)}">가상 진행 시작</button><p class="action-explanation">보상금 확보부터 결과 제출·검수·지급 완료까지 테스트합니다. 실제 청구·송금은 0원입니다.</p>`);
     const canEdit = context.canEdit || (Number(challenge.teaserCount || 0) === 0 && challenge.fundingStatus === 'POSTED' && ['OPEN', 'REVIEW', 'DRAFT'].includes(challenge.status));
     if (canEdit) buttons.push(`<button class="btn btn-outline btn-block" data-action="edit-challenge" data-challenge-id="${challenge.id}">미션 수정</button>`);
     if (challenge.moderationAction === 'AUTO_REJECTED') buttons.push(`<button class="btn btn-outline btn-block" data-action="appeal-moderation" data-challenge-id="${challenge.id}">자동판정 이의신청</button>`);
@@ -2202,7 +2206,7 @@ function moderationReasonHelp(reason) {
   if (reason.message) return String(reason.message);
   return ({
     POSSIBLE_DUPLICATE: '내용과 조건이 같은 진행 중 미션이 있습니다. 내 클리어에서 기존 미션을 수정하세요. 별개의 의뢰라면 대상·범위·결과물의 차이를 본문과 성공조건에 구체적으로 적어주세요. 보상금이나 마감일만 바꾼 경우에는 같은 의뢰로 봅니다. 제목이 같다는 이유만으로 중복 처리하지 않습니다.',
-    HIGH_REWARD: '보상금이 50만 원 이상입니다. 이 금액만으로 비공개 처리되지는 않으며 다른 검수 사유와 함께 확인합니다.',
+    HIGH_REWARD: '이전 검수 정책의 보상금 참고 항목입니다. 현재는 500만 원 이상을 비공개로 접수하고 관리자 확인 후 게시합니다.',
     PERSONAL_INFORMATION: '제목·요약·상세 설명·성공조건에서 개인 연락처나 식별정보를 요청하는 표현을 확인해주세요. 공개 게시물에는 민감한 정보를 적지 마세요.',
     AMBIGUOUS_SUCCESS: '성공조건을 수량·규격·제출물처럼 확인 가능한 기준으로 구체화해주세요.',
     DATING_RELATIONSHIP: '만남·소개 관련 목적과 성인 대상 여부, 당사자 동의 및 안전 기준을 구체적으로 적어주세요.',
@@ -2231,12 +2235,20 @@ function showChallengeSubmissionResult(result) {
   challenge.moderationAction ||= result.moderationAction;
   challenge.moderationReasons ||= result.moderationReasons || [];
   const blocked = ['CHANGES_REQUIRED', 'AUTO_REJECTED'].includes(challenge.moderationAction) || challenge.status === 'DRAFT';
+  const pending = challenge.moderationAction === 'HIGH_VALUE_REVIEW' || challenge.moderationPending === true;
   const visibility = challenge.publicationVisibility || challenge.visibility;
-  const message = blocked ? '비공개 저장 · 사유를 확인해주세요' : visibility === 'private' ? '비공개로 등록했습니다' : visibility === 'unlisted' ? '링크 공개로 등록했습니다' : '미션이 공개되었습니다';
+  const message = blocked ? '비공개 저장 · 사유를 확인해주세요' : pending ? '500만 원 이상 · 비공개 검토 접수' : visibility === 'private' ? '비공개로 등록했습니다' : visibility === 'unlisted' ? '링크 공개로 등록했습니다' : '미션이 공개되었습니다';
   const id = escapeAttribute(challenge.id);
   const existing = result.existingMission;
   const existingLink = blocked && existing?.id ? `<div class="notice-box"><div><strong>이미 진행 중인 미션: ${escapeHTML(existing.title)}</strong><p>이번 작성본은 비공개로 보존했습니다. 같은 의뢰를 이어가려면 기존 미션을 여세요. 별개의 의뢰라면 이번 작성본의 대상·범위·성공조건을 수정해주세요.</p><button type="button" class="btn btn-primary btn-block" data-challenge-id="${escapeAttribute(existing.id)}">중복으로 확인된 기존 미션 열기</button></div></div>` : '';
-  openModal(`<section class="submission-result"><p class="submission-result-title">${escapeHTML(challenge.title)}</p>${blocked ? renderModerationFeedback(challenge) : `<p>내용 검수를 통과했습니다. ${visibility === 'private' ? '선택한 비공개 설정이 유지됩니다.' : visibility === 'unlisted' ? '링크를 아는 사람에게 공개됩니다.' : '미션 목록에서 확인할 수 있습니다.'}</p>`}${existingLink}${blocked ? `<button class="btn btn-primary btn-lg btn-block" type="button" data-action="edit-saved-challenge" data-challenge-id="${id}">이 미션 수정하기</button>` : ''}<button class="btn btn-outline btn-block" type="button" data-challenge-id="${id}">저장한 미션 상세 보기</button><button class="btn btn-outline btn-block" type="button" data-route="dashboard">내 클리어에서 기존 미션 확인</button><p class="form-hint">보상금은 의뢰 시 표시한 금액이며 실제 확보된 돈이 아닙니다. 금액만으로 관리자 승인을 요구하지 않으며, 계정별 표시 한도와 내용 검수를 적용합니다. 실제 결제·지급은 아직 제공하지 않습니다.</p></section>`, { title: message });
+  openModal(`<section class="submission-result"><p class="submission-result-title">${escapeHTML(challenge.title)}</p>${blocked ? renderModerationFeedback(challenge) : pending ? '<p>내용 자동검수는 통과했지만 500만 원 이상 미션은 비공개로 보관하고 관리자 확인 후 게시합니다. 아직 공개되지 않았습니다.</p>' : `<p>내용 검수를 통과했습니다. ${visibility === 'private' ? '선택한 비공개 설정이 유지됩니다.' : visibility === 'unlisted' ? '링크를 아는 사람에게 공개됩니다.' : '미션 목록에서 확인할 수 있습니다.'}</p>`}${existingLink}${blocked ? `<button class="btn btn-primary btn-lg btn-block" type="button" data-action="edit-saved-challenge" data-challenge-id="${id}">이 미션 수정하기</button>` : ''}<button class="btn btn-outline btn-block" type="button" data-challenge-id="${id}">저장한 미션 상세 보기</button><button class="btn btn-outline btn-block" type="button" data-route="dashboard">내 클리어에서 기존 미션 확인</button><p class="form-hint">보상금은 의뢰 시 표시한 금액이며 실제 확보된 돈이 아닙니다. 500만 원 이상은 비공개 검토를 거치며, 실제 결제·지급은 아직 제공하지 않습니다.</p></section>`, { title: message });
+}
+
+function showDuplicateMissionError(error) {
+  if (error?.code !== 'DUPLICATE_MISSION') return false;
+  const existing = error.details?.existingMission;
+  openModal(`<section class="submission-result"><p>같은 내용과 조건의 진행 중인 미션은 다시 등록할 수 없습니다. 작성 중인 내용은 보존했습니다. 별개의 의뢰라면 대상·범위·결과물을 구체적으로 구분해 수정해주세요.</p>${existing?.id ? `<button type="button" class="btn btn-primary btn-block" data-challenge-id="${escapeAttribute(existing.id)}">기존 미션 열기: ${escapeHTML(existing.title || '')}</button>` : ''}<button type="button" class="btn btn-outline btn-block" data-route="create">작성 화면으로 돌아가기</button></section>`, { title: '중복 미션 등록 차단' });
+  return true;
 }
 
 async function submitChallenge(form) {
@@ -2244,7 +2256,8 @@ async function submitChallenge(form) {
   saveCreateDraft();
   const data = Object.fromEntries(new FormData(form));
   const deadline = new Date(`${data.deadline}T23:59:59+09:00`).toISOString();
-  const result = await apiClient.createChallenge({
+  let result;
+  try { result = await apiClient.createChallenge({
     title: data.title,
     summary: data.summary,
     description: data.description,
@@ -2257,7 +2270,8 @@ async function submitChallenge(form) {
     deadline,
     visibility: data.visibility,
     subjectType: data.subjectType,
-  }, form.dataset.idempotencyKey);
+  }, form.dataset.idempotencyKey); }
+  catch (error) { if (showDuplicateMissionError(error)) return; throw error; }
   if (!state.challenges.some((item) => item.id === result.challenge.id)) state.challenges.unshift(result.challenge);
   state.activity = null;
   state.createDraft = null;
@@ -2516,7 +2530,7 @@ function openChallengeEditForm(challengeId) {
   const context = state.selectedChallenge?.context;
   if (!challenge || challenge.id !== challengeId || !context?.canEdit) return toast('현재 수정할 수 없습니다', context?.editBlockedReason || '미션 상태를 다시 확인해주세요.', 'warning');
   const categoryOptions = Object.entries(CATEGORY_META).filter(([key]) => key !== 'ALL').map(([key, meta]) => `<option value="${key}" ${key === challenge.category ? 'selected' : ''}>${meta.label}</option>`).join('');
-  openModal(`<form id="challenge-edit-form" data-challenge-id="${challengeId}">${renderModerationFeedback(challenge)}<div class="notice-box"><span>✎</span><div><strong>아직 참여가 시작되지 않아 수정할 수 있습니다</strong><p>수정 내용을 저장하면 관리자 대기 없이 즉시 자동 재검수됩니다.</p></div></div><div class="form-grid" style="margin-top:18px"><div class="field full"><label>제목</label><input name="title" required minlength="5" maxlength="90" value="${escapeAttribute(challenge.title)}" /></div><div class="field full"><label>한 줄 요약</label><input name="summary" required minlength="10" maxlength="180" value="${escapeAttribute(challenge.summary)}" /></div><div class="field full"><label>상세 설명</label><textarea name="description" required minlength="20" maxlength="4000" rows="7">${escapeHTML(challenge.description)}</textarea></div><div class="field"><label>카테고리</label><select name="category" required>${categoryOptions}</select></div><div class="field"><label>지역</label><input name="region" maxlength="80" value="${escapeAttribute(challenge.region || '')}" /></div><div class="field"><label>보상금</label><input name="rewardAmount" type="number" min="${rewardBoundsForUser().min}" max="${rewardBoundsForUser().max}" step="1" required value="${challenge.rewardAmount}" /><small>최소 ${formatWon(rewardBoundsForUser().min)} · 최대 ${formatWon(rewardBoundsForUser().max)}</small></div><div class="field"><label>마감일</label><input name="deadline" type="date" required value="${escapeAttribute(String(challenge.deadline || '').slice(0, 10))}" /></div><div class="field full"><label>성공조건</label><textarea name="successCriteria" required minlength="10" maxlength="1600" rows="4">${escapeHTML(challenge.successCriteria)}</textarea></div><div class="field full"><label>보상금 준비 시점</label><textarea name="paymentTrigger" required minlength="10" maxlength="800" rows="3">${escapeHTML(challenge.paymentTrigger)}</textarea></div><div class="field full"><label>필수 증빙</label><textarea name="evidenceRequirements" required minlength="5" maxlength="800" rows="3">${escapeHTML(challenge.evidenceRequirements)}</textarea></div><div class="field full"><label>공개범위</label><select name="visibility"><option value="public" ${challenge.visibility === 'public' ? 'selected' : ''}>전체 공개</option><option value="unlisted" ${challenge.visibility === 'unlisted' ? 'selected' : ''}>링크 공개</option><option value="private" ${challenge.visibility === 'private' ? 'selected' : ''}>비공개</option></select></div></div><button class="btn btn-primary btn-lg btn-block" type="submit">수정 내용 저장</button></form>`, { title: '미션 수정', wide: true });
+  openModal(`<form id="challenge-edit-form" data-challenge-id="${challengeId}">${renderModerationFeedback(challenge)}<div class="notice-box"><span>✎</span><div><strong>아직 참여가 시작되지 않아 수정할 수 있습니다</strong><p>수정 내용을 저장하면 즉시 자동 재검수합니다. 500만 원 이상 미션은 비공개 관리자 검토를 거칩니다.</p></div></div><div class="form-grid" style="margin-top:18px"><div class="field full"><label>제목</label><input name="title" required minlength="5" maxlength="90" value="${escapeAttribute(challenge.title)}" /></div><div class="field full"><label>한 줄 요약</label><input name="summary" required minlength="10" maxlength="180" value="${escapeAttribute(challenge.summary)}" /></div><div class="field full"><label>상세 설명</label><textarea name="description" required minlength="20" maxlength="4000" rows="7">${escapeHTML(challenge.description)}</textarea></div><div class="field"><label>카테고리</label><select name="category" required>${categoryOptions}</select></div><div class="field"><label>지역</label><input name="region" maxlength="80" value="${escapeAttribute(challenge.region || '')}" /></div><div class="field"><label>보상금</label><input name="rewardAmount" type="number" min="${rewardBoundsForUser().min}" max="${rewardBoundsForUser().max}" step="1" required value="${challenge.rewardAmount}" /><small>최소 ${formatWon(rewardBoundsForUser().min)} · 최대 ${formatWon(rewardBoundsForUser().max)}</small></div><div class="field"><label>마감일</label><input name="deadline" type="date" required value="${escapeAttribute(String(challenge.deadline || '').slice(0, 10))}" /></div><div class="field full"><label>성공조건</label><textarea name="successCriteria" required minlength="10" maxlength="1600" rows="4">${escapeHTML(challenge.successCriteria)}</textarea></div><div class="field full"><label>보상금 준비 시점</label><textarea name="paymentTrigger" required minlength="10" maxlength="800" rows="3">${escapeHTML(challenge.paymentTrigger)}</textarea></div><div class="field full"><label>필수 증빙</label><textarea name="evidenceRequirements" required minlength="5" maxlength="800" rows="3">${escapeHTML(challenge.evidenceRequirements)}</textarea></div><div class="field full"><label>공개범위</label><select name="visibility"><option value="public" ${challenge.visibility === 'public' ? 'selected' : ''}>전체 공개</option><option value="unlisted" ${challenge.visibility === 'unlisted' ? 'selected' : ''}>링크 공개</option><option value="private" ${challenge.visibility === 'private' ? 'selected' : ''}>비공개</option></select></div></div><button class="btn btn-primary btn-lg btn-block" type="submit">수정 내용 저장</button></form>`, { title: '미션 수정', wide: true });
   const editForm = document.querySelector('#challenge-edit-form');
   editForm?.insertAdjacentHTML('afterbegin', renderEmailStatusCard('등록 신청', true));
   editForm?.querySelector('.form-grid')?.insertAdjacentHTML('afterbegin', `<div class="field full"><label>의뢰 활동 주체</label><select name="subjectType"><option value="individual" ${challenge.ownerSubjectType === 'individual' ? 'selected' : ''}>개인</option><option value="business" ${challenge.ownerSubjectType === 'business' ? 'selected' : ''}>개인사업자</option><option value="corporation" ${challenge.ownerSubjectType === 'corporation' ? 'selected' : ''}>법인</option><option value="organization" ${challenge.ownerSubjectType === 'organization' ? 'selected' : ''}>단체</option></select></div>`);
@@ -2527,7 +2541,9 @@ async function submitChallengeEdit(form) {
   const challengeId = form.dataset.challengeId;
   const data = Object.fromEntries(new FormData(form));
   data.rewardAmount = Number(data.rewardAmount);
-  const result = await apiClient.updateChallenge(challengeId, data);
+  let result;
+  try { result = await apiClient.updateChallenge(challengeId, data); }
+  catch (error) { if (showDuplicateMissionError(error)) return; throw error; }
   // Saving is complete even when a background list refresh fails.
   loadChallenges().catch(() => undefined);
   state.activity = null;
@@ -2919,11 +2935,12 @@ function renderProgressNotice(challenge, context = {}) {
     title = context.viewerTeaser?.status === 'SHORTLISTED' ? '수행자 후보로 선택되었습니다' : '수행자 후보 선택 · 최종 확정 대기';
     message = '수행자 후보는 현재 1명만 유지됩니다. 후보선정만으로 수행이나 보상 지급이 시작되지는 않으며, 최종 확정과 보상금 확보가 필요합니다.';
     label = '후보 확인 · 최종 확정';
+    if (context.isOwner) message += ` 선정된 수행자 계정 ID는 아래에서 확인할 수 있습니다.`;
     if (blocked) {
       message += ' 실제 결제·지급 연동은 준비 중입니다.';
       if (context.isOwner) {
         message += ' 아래 버튼으로 선택한 후보와 보상금 확보부터 결과 제출·검수·지급 완료까지 가상으로 진행하세요. 실제 청구·송금은 0원입니다.';
-        action = 'open-mission-simulation'; label = '가상 진행 시작 · 보상금 확보 테스트';
+        action = 'open-mission-simulation'; label = '가상 진행 시작';
       }
       else if (context.isAdmin) message += ' 운영 관리자는 아래 ‘가상 거래로 복제해 테스트’에서 별도 테스트를 할 수 있습니다.';
     }
@@ -2947,7 +2964,7 @@ function renderProgressNotice(challenge, context = {}) {
     title = { CANCELLED:'취소된 미션', FAILED:'종료된 미션', DISPUTED:'분쟁 검토 중' }[challenge.status];
     message = '현재 일반 진행이 중단된 상태입니다. 기존 제출 내용과 진행 기록은 보존됩니다.'; action = '';
   }
-  return `<section class="workflow-notice" aria-label="현재 진행상황"><strong>${title}</strong><p>${message}</p>${action ? `<button type="button" class="btn btn-primary" data-action="${action}" data-challenge-id="${escapeAttribute(challenge.id)}">${label}</button>` : ''}</section>`;
+  return `<section class="workflow-notice" aria-label="현재 진행상황"><strong>${title}</strong><p>${message}</p>${context.isOwner && challenge.status === 'SHORTLISTED' ? selectedSolverIdNotice(context.selectedCandidateId) : ''}${action ? `<button type="button" class="btn btn-primary" data-action="${action}" data-challenge-id="${escapeAttribute(challenge.id)}">${label}</button>` : ''}</section>`;
 }
 
 function renderFlow(challenge, context = {}) {

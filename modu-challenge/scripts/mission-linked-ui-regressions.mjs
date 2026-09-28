@@ -67,13 +67,16 @@ const baseChallenge = {
   evidenceRequirements: '검수용 결과 문서', region: '서울', deadline: '2026-12-31T00:00:00Z',
   participantCount: 2, teaserCount: 2, owner: { trustScore: 50, strikes: 0 },
 };
-const baseDetail = { challenge: baseChallenge, context: { isOwner: true, isAdmin: false }, ownerReviews: [] };
+const baseDetail = { challenge: baseChallenge, context: { isOwner: true, isAdmin: false, selectedCandidateId: 'solver-private-id' }, ownerReviews: [] };
 win.testDetail = structuredClone(baseDetail);
 win.refreshReads = [];
 run(`state.user={id:'actual-owner',emailVerified:true,isAdmin:false};state.selectedChallenge=testDetail;renderChallengeModal(testDetail);apiClient.getChallenge=async(id,options)=>{refreshReads.push({id,refresh:options?.refresh});return testDetail;};`);
 assert.equal(doc.querySelectorAll('[data-action="open-mission-simulation"]').length, 2);
 assert.match(doc.querySelector('.workflow-notice').textContent, /보상금 확보부터 결과 제출·검수·지급 완료/);
 assert.match(doc.querySelector('.workflow-notice').textContent, /실제 청구·송금은 0원/);
+assert.match(doc.querySelector('.workflow-notice').textContent, /solver-private-id/);
+assert.doesNotMatch(run('renderProgressNotice(testDetail.challenge,{isOwner:false})'), /solver-private-id/);
+assert.doesNotMatch(doc.querySelector('[data-action="open-mission-simulation"].mission-start-entry').textContent, /테스트/);
 assert.doesNotMatch(run('renderLiveActions(testDetail.challenge,{isOwner:false,isAdmin:false})'), /open-mission-simulation/);
 assert.doesNotMatch(run('renderLiveActions({...testDetail.challenge,status:"OPEN"},{isOwner:true})'), /open-mission-simulation/);
 pass('shortlisted owner has direct simulation entry in progress notice and sidebar, other members and unselected missions do not');

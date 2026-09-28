@@ -36,7 +36,7 @@ let dialog=win.document.querySelector('[role=dialog]');
 assert.equal(dialog.querySelector('[data-email-status-slot]'),null);
 assert.match(dialog.querySelector('.submission-feedback li').textContent,/진행 중인 공개 미션과 동일한 의뢰/);
 assert.doesNotMatch(dialog.querySelector('.submission-feedback ul').textContent,/고액 보상금/);
-assert.match(dialog.textContent,/비공개 저장/);assert.match(dialog.textContent,/내용과 조건이 같은 진행 중 미션/);assert.match(dialog.textContent,/제목이 같다는 이유만으로 중복 처리하지 않습니다/);assert.match(dialog.textContent,/보상금이나 마감일만 바꾼 경우/);assert.match(dialog.textContent,/이메일 인증과는 별도/);assert.match(dialog.textContent,/이 금액만으로 비공개 처리되지는/);
+assert.match(dialog.textContent,/비공개 저장/);assert.match(dialog.textContent,/내용과 조건이 같은 진행 중 미션/);assert.match(dialog.textContent,/제목이 같다는 이유만으로 중복 처리하지 않습니다/);assert.match(dialog.textContent,/보상금이나 마감일만 바꾼 경우/);assert.match(dialog.textContent,/이메일 인증과는 별도/);assert.match(dialog.textContent,/이전 검수 정책/);
 assert.doesNotMatch(dialog.textContent,/위험도/);assert.equal(dialog.querySelector('[data-action=edit-saved-challenge]').dataset.challengeId,'saved-one');
 pass('idempotent replay reads nested moderation status and shows persistent specific reasons and existing-record edit');
 run(`showChallengeSubmissionResult({challenge:{...saved,moderationAction:'AUTO_REJECTED',moderationReasons:[{label:'<img src=x onerror=alert(1)>',code:'DANGEROUS_ACTIVITY',prohibited:true}]}})`);
@@ -47,6 +47,10 @@ for(const [visibility,message] of [['private','비공개로 등록했습니다']
  assert.equal(win.document.querySelector('.modal-header h2').textContent,message);
 }
 pass('successful result accurately distinguishes public, unlisted and private publication');
+run(`showChallengeSubmissionResult({challenge:{...saved,status:'REVIEW',moderationPending:true,moderationAction:'HIGH_VALUE_REVIEW',rewardAmount:10000000}})`);
+assert.match(win.document.querySelector('.modal-header h2').textContent,/비공개 검토 접수/);
+assert.match(win.document.querySelector('[role=dialog]').textContent,/아직 공개되지 않았습니다/);
+pass('10 million reward shows private pending review instead of a published-success message');
 run(`state.selectedChallenge={challenge:{...saved,category:'FIND',rewardAmount:500000,deadline:'2026-12-31T14:59:59Z',description:'기존 내용',summary:'기존 요약',successCriteria:'성공조건',paymentTrigger:'보상금 준비',evidenceRequirements:'공식자료'},context:{canEdit:true,isOwner:true}};openChallengeEditForm('saved-one');`);
 assert.ok(win.document.querySelector('#challenge-edit-form .submission-feedback'));
 assert.equal(win.document.querySelector('#challenge-edit-form').dataset.challengeId,'saved-one');
@@ -78,6 +82,12 @@ for(const [region,quantity] of [['전국·온라인','3'],['서울·수도권','
 assert.equal(submittedScopes.length,2);assert.equal(submittedScopes[0].title,submittedScopes[1].title);
 assert.notEqual(submittedScopes[0].region,submittedScopes[1].region);assert.notEqual(submittedScopes[0].successCriteria,submittedScopes[1].successCriteria);
 pass('same-title easy missions retain distinct region/quantity payloads and show the server-approved result without a client duplicate warning');
+run(`closeModal();state.route='create';history.replaceState(null,'','#/create');main.innerHTML=renderCreate();document.querySelector('[name=deadline]').value='2026-12-31';document.querySelector('[name=title]').value='같은 미션 작성 중';apiClient.createChallenge=async()=>{throw new ApiError('중복',{code:'DUPLICATE_MISSION',details:{existingMission:{id:'original-one',title:'기존 공원 미션'}}})};`);
+await run("submitChallenge(document.querySelector('#challenge-create-form'))");
+assert.equal(win.document.querySelector('[role=dialog] [data-challenge-id]').dataset.challengeId,'original-one');
+assert.equal(run('state.createDraft.title'),'같은 미션 작성 중');
+assert.equal(win.location.hash,'#/create');
+pass('server duplicate rejection keeps the draft and links to the original without claiming a new record');
 run(`showChallengeSubmissionResult({challenge:saved,existingMission:{id:'original-one',title:'기존 <img src=x onerror=alert(1)> 미션'}});`);
 assert.equal(win.document.querySelector('.notice-box button').dataset.challengeId,'original-one');
 assert.equal(win.document.querySelector('.notice-box img'),null);

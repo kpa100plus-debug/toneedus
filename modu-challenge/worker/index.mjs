@@ -26,8 +26,8 @@ const PASSWORD_KDF_ITERATIONS = 210_000;
 const PASSWORD_SALT_BYTES = 16;
 const PASSWORD_VERIFIER_BYTES = 32;
 const PASSWORD_HASH_PREFIX = 'v3$';
-const HIGH_REWARD_REVIEW_AMOUNT = 500_000;
-const MODERATION_POLICY_VERSION = '2026-09-27-v4';
+const HIGH_REWARD_REVIEW_AMOUNT = 5_000_000;
+const MODERATION_POLICY_VERSION = '2026-09-28-v5';
 const ACTOR_TYPES = new Set(['individual', 'business', 'corporation', 'organization']);
 const REGIONS = new Set(['전국', '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남', '전북', '전남', '경북', '경남', '제주', '해외']);
 const CHALLENGE_INTENTS = new Set(['owner', 'solver', 'both']);
@@ -1706,6 +1706,9 @@ async function getChallenge(challengeId, request, env) {
       settlement,
       latestProof,
       missionSimulation: await readMissionSimulationContext(env, challenge, viewerAuth),
+      selectedCandidateId: isOwner && challenge.status === 'SHORTLISTED'
+        ? (await env.DB.prepare("SELECT solver_id FROM teasers WHERE challenge_id = ? AND status IN ('SHORTLISTED','SELECTED') ORDER BY CASE status WHEN 'SELECTED' THEN 0 ELSE 1 END,created_at,id LIMIT 1").bind(challengeId).first())?.solver_id || null
+        : null,
       existingMission: await existingDuplicateForOwner(challenge, viewerAuth, env),
     };
   }
@@ -1766,9 +1769,10 @@ async function createChallenge(request, env) {
   const requestHash = await sha256(JSON.stringify(body));
   const feeRate = Number(env.PLATFORM_FEE_RATE || 0.1);
   const moderation = await evaluateChallengeModeration({ title, summary, description, successCriteria, paymentTrigger, evidenceRequirements, category, region, rewardAmount }, user.id, null, env);
+  if (moderation.existingMission) return json({ error: { code: 'DUPLICATE_MISSION', message: '동일한 내용의 진행 중 미션이 이미 있습니다. 기존 미션을 확인해주세요.' }, existingMission: moderation.existingMission }, 409);
   const moderationReasons = moderation.reasons;
   const outcome = moderationOutcome(moderation, visibility);
-  const moderationPending = false;
+  const moderationPending = outcome.status === 'REVIEW';
   const initialStatus = outcome.status;
   const initialVisibility = outcome.visibility;
   const autoReviewedAt = new Date().toISOString();
@@ -1786,7 +1790,7 @@ async function createChallenge(request, env) {
     `).bind(id, user.id, title, summary, description, category, region,
       rewardAmount, feeRate, successCriteria, paymentTrigger, evidenceRequirements, deadline, initialStatus,
       initialVisibility, visibility, JSON.stringify(moderationReasons), outcome.legacyDecision,
-      moderation.riskScore, autoReviewedAt, moderation.action, MODERATION_POLICY_VERSION,
+      moderation.riskScore, autoReviewedAt, storedModerationAction(moderation.action), MODERATION_POLICY_VERSION,
       JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot)),
     env.DB.prepare(`
       INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, to_status, metadata_json)
@@ -1841,6 +1845,7 @@ async function updateChallenge(challengeId, request, env) {
   const gate = emailActivityGate(user);
   if (gate) return gate;
   const moderation = await evaluateChallengeModeration({ title, summary, description, successCriteria, paymentTrigger, evidenceRequirements, category, region, rewardAmount }, user.id, challengeId, env);
+  if (moderation.existingMission) return json({ error: { code: 'DUPLICATE_MISSION', message: '동일한 내용의 진행 중 미션이 이미 있습니다. 기존 미션을 확인해주세요.' }, existingMission: moderation.existingMission }, 409);
   const moderationReasons = moderation.reasons;
   const outcome = moderationOutcome(moderation, submittedVisibility);
   const status = outcome.status;
@@ -1848,13 +1853,13 @@ async function updateChallenge(challengeId, request, env) {
   const autoReviewedAt = new Date().toISOString();
   await env.DB.batch([
     env.DB.prepare(`UPDATE challenges SET title = ?, summary = ?, description = ?, category = ?, region = ?, reward_amount = ?, success_criteria = ?, payment_trigger = ?, evidence_requirements = ?, deadline = ?, status = ?, visibility = ?, submitted_visibility = ?, moderation_reasons_json = ?, moderation_decision = ?, moderation_risk_score = ?, moderation_auto_reviewed_at = ?, moderation_action = ?, moderation_policy_version = ?, moderation_guidance_json = ?, owner_subject_type = ?, owner_actor_profile_id = ?, owner_verification_snapshot_json = ?, moderation_reviewed_by = NULL, moderation_reviewed_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-      .bind(title, summary, description, category, region, rewardAmount, successCriteria, paymentTrigger, evidenceRequirements, deadline, status, visibility, submittedVisibility, JSON.stringify(moderationReasons), outcome.legacyDecision, moderation.riskScore, autoReviewedAt, moderation.action, MODERATION_POLICY_VERSION, JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), challengeId),
+      .bind(title, summary, description, category, region, rewardAmount, successCriteria, paymentTrigger, evidenceRequirements, deadline, status, visibility, submittedVisibility, JSON.stringify(moderationReasons), outcome.legacyDecision, moderation.riskScore, autoReviewedAt, storedModerationAction(moderation.action), MODERATION_POLICY_VERSION, JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), challengeId),
     env.DB.prepare(`INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, from_status, to_status, metadata_json) VALUES (?, ?, ?, 'CHALLENGE_UPDATED', ?, ?, ?)`)
       .bind(makeId('evt'), challengeId, user.id, current.status, status, JSON.stringify({ moderationAction: moderation.action, moderationRiskScore: moderation.riskScore, moderationReasons, policyVersion: MODERATION_POLICY_VERSION })),
     auditStatement(env, user.id, 'CHALLENGE_UPDATE', 'challenge', challengeId, { status: current.status }, { status, moderationAction: moderation.action, moderationRiskScore: moderation.riskScore, moderationReasons, policyVersion: MODERATION_POLICY_VERSION }),
   ]);
   const challenge = publicChallenge(await fetchChallenge(challengeId, env));
-  return json({ challenge, moderationPending: false, existingMission: moderation.existingMission || null, moderationAction: challenge.moderationAction, moderationDecision: challenge.moderationDecision, moderationReasons: challenge.moderationReasons, moderationGuidance: challenge.moderationGuidance, verificationAdvisory: !verification.eligible });
+  return json({ challenge, moderationPending: challenge.moderationPending, moderationAction: challenge.moderationAction, moderationDecision: challenge.moderationDecision, moderationReasons: challenge.moderationReasons, moderationGuidance: challenge.moderationGuidance, verificationAdvisory: !verification.eligible });
 }
 
 function assessChallengeModeration({ title, summary, description, successCriteria, paymentTrigger = '', evidenceRequirements = '' }) {
@@ -1893,6 +1898,11 @@ async function evaluateChallengeModeration(input, ownerId, excludeId, env) {
     moderation = addModerationFinding(moderation, { code: 'POSSIBLE_DUPLICATE', label: '진행 중인 동일 내용 미션 중복 등록', score: 30, prohibited: false });
     moderation.existingMission = { id: duplicate.id, title: duplicate.title };
   }
+  if (moderation.action === 'AUTO_APPROVED' && Number(input.rewardAmount) >= HIGH_REWARD_REVIEW_AMOUNT) {
+    moderation.action = 'HIGH_VALUE_REVIEW';
+    moderation.decision = 'ADMIN_REVIEW';
+    moderation.guidance = [{ code: 'HIGH_VALUE_REVIEW', message: '보상금이 500만 원 이상이므로 비공개로 접수했습니다. 관리자가 등록 내용과 금액을 확인한 뒤 선택한 공개범위로 게시합니다. 실제 결제·지급은 진행되지 않습니다.' }];
+  }
   return moderation;
 }
 
@@ -1921,8 +1931,9 @@ async function findSimilarChallenge(ownerId, input, excludeId, env) {
   // active publications, not only the most recent 50 historical records.
   const candidates = await env.DB.prepare(`SELECT id, title, summary, description, success_criteria, payment_trigger, evidence_requirements, category, region
     FROM challenges WHERE owner_id = ? AND id <> COALESCE(?, '')
-      AND visibility IN ('public','unlisted')
-      AND status IN ('OPEN','REVIEW','SHORTLISTED','FUNDING_REQUIRED','FUNDED','EXECUTING','PROOF_SUBMITTED','DISPUTED')
+      AND ((visibility IN ('public','unlisted')
+        AND status IN ('OPEN','REVIEW','SHORTLISTED','FUNDING_REQUIRED','FUNDED','EXECUTING','PROOF_SUBMITTED','DISPUTED'))
+        OR (status = 'REVIEW' AND moderation_decision = 'ADMIN_REVIEW' AND moderation_guidance_json LIKE '%"HIGH_VALUE_REVIEW"%'))
     ORDER BY created_at DESC`)
     .bind(ownerId, excludeId).all();
   return (candidates.results || []).find((item) => fields.every(([, column], index) => normalize(item[column]) === normalized[index])) || null;
@@ -1947,8 +1958,17 @@ function addModerationFinding(moderation, finding) {
 
 function moderationOutcome(moderation, submittedVisibility) {
   if (moderation.action === 'AUTO_APPROVED') return { status: 'OPEN', visibility: submittedVisibility, legacyDecision: 'AUTO_APPROVED' };
+  if (moderation.action === 'HIGH_VALUE_REVIEW') return { status: 'REVIEW', visibility: 'private', legacyDecision: 'ADMIN_REVIEW' };
   if (moderation.action === 'CHANGES_REQUIRED') return { status: 'DRAFT', visibility: 'private', legacyDecision: 'ADMIN_REVIEW' };
   return { status: 'DRAFT', visibility: 'private', legacyDecision: 'ARCHIVED' };
+}
+
+// The existing D1 CHECK constraint admits ADMIN_OVERRIDE; the guidance marker
+// distinguishes a pending high-value review from an administrator's final override.
+function storedModerationAction(action) { return action === 'HIGH_VALUE_REVIEW' ? 'ADMIN_OVERRIDE' : action; }
+function isHighValueReview(challenge) {
+  return challenge?.moderation_action === 'ADMIN_OVERRIDE' && challenge?.moderation_decision === 'ADMIN_REVIEW'
+    && challenge?.status === 'REVIEW' && safeJsonParse(challenge?.moderation_guidance_json, []).some(item => item.code === 'HIGH_VALUE_REVIEW');
 }
 
 function analyzeChallengeForModeration(input) {
@@ -1964,9 +1984,21 @@ async function approveModerationChallenge(challengeId, request, env) {
     return json({ challenge: publicChallenge(challenge), idempotent: true });
   }
   if (challenge.status !== 'REVIEW') return problem(409, 'MODERATION_NOT_PENDING', '관리자 검토 대기 상태의 미션만 승인할 수 있습니다.');
+  const owner = await env.DB.prepare('SELECT email_verified FROM users WHERE id = ?').bind(challenge.owner_id).first();
+  if (!owner?.email_verified) return problem(409, 'OWNER_EMAIL_UNVERIFIED', '등록자의 이메일 인증이 완료되지 않아 공개할 수 없습니다.');
+  const currentModeration = assessChallengeModeration({ title: challenge.title, summary: challenge.summary, description: challenge.description,
+    successCriteria: challenge.success_criteria, paymentTrigger: challenge.payment_trigger, evidenceRequirements: challenge.evidence_requirements });
+  if (currentModeration.action !== 'AUTO_APPROVED') return problem(409, 'CONTENT_REVIEW_REQUIRED', '내용 검수에서 수정 또는 거절 사유가 확인되었습니다. 게시 전에 다시 검수해주세요.');
+  const duplicate = await findSimilarChallenge(challenge.owner_id, { title: challenge.title, summary: challenge.summary,
+    description: challenge.description, successCriteria: challenge.success_criteria, paymentTrigger: challenge.payment_trigger,
+    evidenceRequirements: challenge.evidence_requirements, category: challenge.category, region: challenge.region }, challengeId, env);
+  if (duplicate) return problem(409, 'DUPLICATE_MISSION', '같은 내용의 진행 중인 미션이 있습니다. 기존 미션을 확인해주세요.');
+  if (isHighValueReview(challenge) && Number(challenge.reward_amount) < HIGH_REWARD_REVIEW_AMOUNT) {
+    return problem(409, 'REVIEW_CHANGED', '보상금 기준이 변경되었습니다. 미션을 다시 검수해주세요.');
+  }
   const visibility = ['public', 'unlisted', 'private'].includes(challenge.submitted_visibility) ? challenge.submitted_visibility : 'public';
-  const updated = await env.DB.prepare(`UPDATE challenges SET status = 'OPEN', visibility = ?, moderation_decision = 'ADMIN_APPROVED', moderation_reviewed_by = ?, moderation_reviewed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'REVIEW'`)
-    .bind(visibility, admin.id, challengeId).run();
+  const updated = await env.DB.prepare(`UPDATE challenges SET status = 'OPEN', visibility = ?, moderation_decision = 'ADMIN_APPROVED', moderation_reviewed_by = ?, moderation_reviewed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'REVIEW' AND title = ? AND summary = ? AND description = ? AND success_criteria = ? AND payment_trigger = ? AND evidence_requirements = ? AND reward_amount = ?`)
+    .bind(visibility, admin.id, challengeId, challenge.title, challenge.summary, challenge.description, challenge.success_criteria, challenge.payment_trigger, challenge.evidence_requirements, challenge.reward_amount).run();
   if (Number(updated.meta?.changes) !== 1) {
     const current = await fetchChallenge(challengeId, env);
     if (current?.status === 'OPEN' && current.moderation_reviewed_at) {
@@ -2047,7 +2079,7 @@ async function moderationQueue(request, env) {
   const result = await env.DB.prepare(`SELECT c.id, c.title, c.reward_amount, c.deadline, c.created_at, c.moderation_reasons_json, c.moderation_decision, c.moderation_risk_score, c.moderation_action, c.moderation_policy_version,
     (SELECT note FROM moderation_review_notes n WHERE n.challenge_id = c.id ORDER BY n.created_at DESC LIMIT 1) AS latest_note,
     (SELECT requested_approval_at FROM moderation_review_notes n WHERE n.challenge_id = c.id AND n.requested_approval_at IS NOT NULL ORDER BY n.created_at DESC LIMIT 1) AS requested_approval_at
-    FROM challenges c WHERE EXISTS (SELECT 1 FROM moderation_appeals a WHERE a.challenge_id = c.id AND a.status IN ('OPEN','REVIEWING')) ORDER BY c.created_at ASC LIMIT 30`).all();
+    FROM challenges c WHERE c.status = 'REVIEW' OR EXISTS (SELECT 1 FROM moderation_appeals a WHERE a.challenge_id = c.id AND a.status IN ('OPEN','REVIEWING')) ORDER BY c.created_at ASC LIMIT 30`).all();
   return json({ challenges: (result.results || []).map((item) => ({ ...item, moderationReasons: safeJsonParse(item.moderation_reasons_json, []) })) });
 }
 
@@ -2060,11 +2092,12 @@ async function autoReviewModerationQueue(request, env) {
 async function autoReviewPendingChallenges(env, actorId = null) {
   const pending = await env.DB.prepare(`SELECT c.id, c.owner_id, c.title, c.summary, c.description, c.success_criteria, c.payment_trigger, c.evidence_requirements, c.category, c.region, c.reward_amount, c.submitted_visibility, u.email_verified
     FROM challenges c JOIN users u ON u.id = c.owner_id
-    WHERE c.status = 'REVIEW' AND c.moderation_decision = 'ADMIN_REVIEW'
+    WHERE c.status = 'REVIEW' AND c.moderation_decision = 'ADMIN_REVIEW' AND (c.moderation_guidance_json IS NULL OR c.moderation_guidance_json NOT LIKE '%"HIGH_VALUE_REVIEW"%')
     ORDER BY c.created_at ASC LIMIT 100`).all();
   let autoApproved = 0;
   let changesRequired = 0;
   let autoRejected = 0;
+  let adminReview = 0;
   for (const challenge of pending.results || []) {
     let moderation = await evaluateChallengeModeration({
       title: challenge.title,
@@ -2083,11 +2116,12 @@ async function autoReviewPendingChallenges(env, actorId = null) {
     });
     const visibility = ['public', 'unlisted', 'private'].includes(challenge.submitted_visibility) ? challenge.submitted_visibility : 'public';
     const outcome = moderationOutcome(moderation, visibility);
-    const updated = await env.DB.prepare(`UPDATE challenges SET status = ?, visibility = ?, moderation_reasons_json = ?, moderation_decision = ?, moderation_risk_score = ?, moderation_auto_reviewed_at = CURRENT_TIMESTAMP, moderation_action = ?, moderation_policy_version = ?, moderation_guidance_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'REVIEW' AND moderation_decision = 'ADMIN_REVIEW'`)
-      .bind(outcome.status, outcome.visibility, JSON.stringify(moderation.reasons), outcome.legacyDecision, moderation.riskScore, moderation.action, MODERATION_POLICY_VERSION, JSON.stringify(moderation.guidance), challenge.id).run();
+    const updated = await env.DB.prepare(`UPDATE challenges SET status = ?, visibility = ?, moderation_reasons_json = ?, moderation_decision = ?, moderation_risk_score = ?, moderation_auto_reviewed_at = CURRENT_TIMESTAMP, moderation_action = ?, moderation_policy_version = ?, moderation_guidance_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'REVIEW' AND moderation_decision = 'ADMIN_REVIEW' AND (moderation_guidance_json IS NULL OR moderation_guidance_json NOT LIKE '%"HIGH_VALUE_REVIEW"%')`)
+      .bind(outcome.status, outcome.visibility, JSON.stringify(moderation.reasons), outcome.legacyDecision, moderation.riskScore, storedModerationAction(moderation.action), MODERATION_POLICY_VERSION, JSON.stringify(moderation.guidance), challenge.id).run();
     if (Number(updated.meta?.changes) !== 1) continue;
     if (moderation.action === 'AUTO_APPROVED') autoApproved += 1;
     else if (moderation.action === 'CHANGES_REQUIRED') changesRequired += 1;
+    else if (moderation.action === 'HIGH_VALUE_REVIEW') adminReview += 1;
     else autoRejected += 1;
     await env.DB.batch([
       env.DB.prepare(`INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, from_status, to_status, metadata_json) VALUES (?, ?, ?, ?, 'REVIEW', ?, ?)`)
@@ -2095,13 +2129,13 @@ async function autoReviewPendingChallenges(env, actorId = null) {
       auditStatement(env, actorId, `CHALLENGE_MODERATION_${moderation.action}`, 'challenge', challenge.id, { status: 'REVIEW' }, { status: outcome.status, visibility: outcome.visibility, recheck: true }),
     ]);
     await sendPushNotification(env, challenge.owner_id, {
-      title: moderation.action === 'AUTO_APPROVED' ? '미션 자동 검수가 완료되었습니다' : moderation.action === 'CHANGES_REQUIRED' ? '미션 내용을 수정해주세요' : '미션 자동 검수 결과를 확인해주세요',
-      body: moderation.action === 'AUTO_APPROVED' ? '안전 기준을 통과해 등록한 공개범위로 공개되었습니다.' : moderation.action === 'CHANGES_REQUIRED' ? '구체적인 수정 사유를 확인한 뒤 고치면 즉시 자동 재검수됩니다.' : '금지 또는 고위험 항목으로 비공개 보관되었습니다. 오탐이면 이의신청할 수 있습니다.',
+      title: moderation.action === 'AUTO_APPROVED' ? '미션 자동 검수가 완료되었습니다' : moderation.action === 'HIGH_VALUE_REVIEW' ? '고액 미션 검토가 접수되었습니다' : moderation.action === 'CHANGES_REQUIRED' ? '미션 내용을 수정해주세요' : '미션 자동 검수 결과를 확인해주세요',
+      body: moderation.action === 'AUTO_APPROVED' ? '안전 기준을 통과해 등록한 공개범위로 공개되었습니다.' : moderation.action === 'HIGH_VALUE_REVIEW' ? '500만 원 이상 미션은 비공개로 보관하고 관리자 확인 후 게시합니다.' : moderation.action === 'CHANGES_REQUIRED' ? '구체적인 수정 사유를 확인한 뒤 고치면 즉시 자동 재검수됩니다.' : '금지 또는 고위험 항목으로 비공개 보관되었습니다. 오탐이면 이의신청할 수 있습니다.',
       route: 'challenge',
       challengeId: challenge.id,
     });
   }
-  return { checked: (pending.results || []).length, autoApproved, changesRequired, autoRejected, adminReview: 0 };
+  return { checked: (pending.results || []).length, autoApproved, changesRequired, autoRejected, adminReview };
 }
 
 async function createModerationAppeal(challengeId, request, env) {
@@ -2913,7 +2947,7 @@ async function adminOverview(request, env) {
     env.DB.prepare(`SELECT id, title, reward_amount, deadline, created_at
       FROM challenges WHERE status = 'DRAFT' AND visibility = 'private'
       ORDER BY created_at DESC LIMIT 20`),
-    env.DB.prepare(`SELECT id, title, reward_amount, deadline, created_at, moderation_reasons_json, moderation_decision, moderation_risk_score,
+    env.DB.prepare(`SELECT id, title, reward_amount, deadline, created_at, moderation_reasons_json, moderation_decision, moderation_risk_score, moderation_action,
       (SELECT note FROM moderation_review_notes n WHERE n.challenge_id = challenges.id ORDER BY n.created_at DESC LIMIT 1) AS latest_note,
       (SELECT requested_approval_at FROM moderation_review_notes n WHERE n.challenge_id = challenges.id AND n.requested_approval_at IS NOT NULL ORDER BY n.created_at DESC LIMIT 1) AS requested_approval_at
       FROM challenges WHERE status = 'REVIEW'
@@ -3427,8 +3461,8 @@ function publicChallenge(c) {
     ownerSubjectType: c.owner_subject_type || 'individual',
     ownerVerification: publicVerificationSnapshot(c.owner_verification_snapshot_json),
     ...publicModerationFeedback(c),
-    moderationPending: false,
-    moderationAction: c.moderation_action || (c.moderation_decision === 'ADMIN_REVIEW' ? 'CHANGES_REQUIRED' : c.moderation_decision === 'ARCHIVED' ? 'AUTO_REJECTED' : 'AUTO_APPROVED'),
+    moderationPending: c.status === 'REVIEW' && c.moderation_decision === 'ADMIN_REVIEW',
+    moderationAction: isHighValueReview(c) ? 'HIGH_VALUE_REVIEW' : c.moderation_action || (c.moderation_decision === 'ADMIN_REVIEW' ? 'CHANGES_REQUIRED' : c.moderation_decision === 'ARCHIVED' ? 'AUTO_REJECTED' : 'AUTO_APPROVED'),
     moderationDecision: c.moderation_decision || (c.status === 'REVIEW' ? 'ADMIN_REVIEW' : 'AUTO_APPROVED'),
     moderationAutoReviewedAt: c.moderation_auto_reviewed_at || null,
     moderationReviewedAt: c.moderation_reviewed_at || null,

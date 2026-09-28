@@ -85,9 +85,11 @@ for (const rewardAmount of [9999, 100000001, 10000.5]) {
 pass('create and edit reject below minimum, above maximum, and fractional reward');
 for (const rewardAmount of [10000,3000000,100000000]) {
  const valid=await req('/api/challenges/'+cid,{...challengeInput,rewardAmount},b.cookie,'PUT');assert.equal(valid.status,200,JSON.stringify(valid.body));assert.equal(valid.body.challenge.rewardAmount,rewardAmount);
- if(rewardAmount>=500000){assert.equal(valid.body.moderationAction,'AUTO_APPROVED');assert.equal((await req('/api/challenges/'+cid)).status,200)}
+ assert.equal(valid.body.moderationAction,rewardAmount>=5000000?'HIGH_VALUE_REVIEW':'AUTO_APPROVED');
+ assert.equal((await req('/api/challenges/'+cid)).status,rewardAmount>=5000000?404:200);
 }
-pass('edit accepts minimum, 3 million, maximum; high reward alone remains automatically approved');
+pass('edit accepts minimum, 3 million, maximum; 5 million and above remains private for review');
+assert.equal((await req('/api/challenges/'+cid,{...challengeInput,rewardAmount:100000},b.cookie,'PUT')).status,200);
 const highCreate=await req('/api/challenges',{...challengeInput,title:'전국 공공시설 디자인 개선 제안',rewardAmount:3000000},b.cookie,'POST',env,{'Idempotency-Key':'reward-high-create-001'});assert.equal(highCreate.status,201);assert.equal(highCreate.body.moderationAction,'AUTO_APPROVED');assert.equal(sql.prepare('SELECT moderation_risk_score FROM challenges WHERE id=?').get(highCreate.body.challenge.id).moderation_risk_score,0);assert.equal(Object.hasOwn(highCreate.body,'moderationRiskScore'),false);assert.equal((await req('/api/challenges/'+highCreate.body.challenge.id)).status,200);pass('safe 3 million mission automatically publishes without an amount penalty');
 assert.equal((await req('/api/challenges/'+highCreate.body.challenge.id,undefined,(await req('/api/auth/login',{email:'a@test.invalid',passwordVerifier:material.passwordVerifier})).cookie,'GET')).body.context.canApply,true);pass('approved high reward mission remains open to applications');
 const changesCreate=await req('/api/challenges',{...challengeInput,title:'고객 연락처 수집 업무 요청',description:'고객 전화번호와 연락처를 정리하여 합법적인 동의 절차와 함께 제출해주세요.'},b.cookie,'POST',env,{'Idempotency-Key':'moderation-changes-001'});assert.equal(changesCreate.status,201);assert.equal(changesCreate.body.moderationAction,'CHANGES_REQUIRED');assert.equal(changesCreate.body.challenge.status,'DRAFT');assert.equal((await req('/api/challenges/'+changesCreate.body.challenge.id)).status,404);pass('medium risk mission receives automatic change request and remains private');
@@ -236,7 +238,7 @@ try {
  assert.equal((await req('/api/me/push-subscriptions',subscription,b.cookie,'POST',pushEnv)).body.subscribed,true);pass('push unsubscribe and re-enable maintain account registration');
 } finally {globalThis.fetch=transport}
 const beforeData=sql.prepare('SELECT count(*) n FROM users').get().n;
-assert.equal((await req('/api/config')).body.serviceName,'모두의클리어');assert.equal((await req('/api/config')).body.internalCode,'MODU_CHALLENGE');assert.equal((await req('/api/config')).body.moderationRewardThreshold,500000);assert.equal(sql.prepare('SELECT count(*) n FROM users').get().n,beforeData);pass('new public brand retains internal identifier, moderation threshold and accounts');
+assert.equal((await req('/api/config')).body.serviceName,'모두의클리어');assert.equal((await req('/api/config')).body.internalCode,'MODU_CHALLENGE');assert.equal((await req('/api/config')).body.moderationRewardThreshold,5000000);assert.equal(sql.prepare('SELECT count(*) n FROM users').get().n,beforeData);pass('new public brand retains internal identifier, moderation threshold and accounts');
 assert.equal(legacyNotificationText('모두의 챌린지에서 챌린지를 확인하세요'),'모두의클리어에서 미션을 확인하세요');pass('legacy system notification display migrates without changing stored content');
 
 const storedNotice='모두의 챌린지에서 챌린지를 확인하세요';

@@ -8,7 +8,7 @@ const validKey=value=>typeof value==='string'&&/^[\w-]{16,100}$/.test(value);
 const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
 const fingerprint=body=>JSON.stringify(canonical(Object.fromEntries(Object.entries(body).filter(([key])=>key!=='requestId'))));
 const sourceSQL=`SELECT c.*,t.id AS source_teaser_id,t.solver_id AS source_solver_id,t.status AS source_teaser_status,
- o.status AS owner_status,o.email_verified AS owner_email_verified,u.status AS solver_status,u.email_verified AS solver_email_verified
+ o.status AS owner_status,o.email_verified AS owner_email_verified,u.status AS solver_status,u.email_verified AS solver_email_verified,u.display_name AS source_solver_name
  FROM challenges c JOIN teasers t ON t.challenge_id=c.id JOIN users o ON o.id=c.owner_id JOIN users u ON u.id=t.solver_id`;
 const validSourceSQL=`c.owner_id=? AND c.reward_amount=? AND c.status IN ('OPEN','REVIEW','SHORTLISTED') AND c.funding_status='POSTED'
  AND c.payment_due_at IS NULL AND (c.selected_solver_id IS NULL OR c.selected_solver_id=t.solver_id)
@@ -32,7 +32,11 @@ const expose=(row,blockedReason=null)=>{
  revision:row.revision,createdAt:row.created_at,updatedAt:row.updated_at,mode:'MISSION_SIMULATION',actualCharge:0,
  active:!blockedReason&&!row.closed_at,blockedReason};
 };
-async function publicRecord(env,row){return expose(row,sourceProblem(await loadSource(env,row.challenge_id,row.teaser_id),row));}
+async function publicRecord(env,row){
+ const source=await loadSource(env,row.challenge_id,row.teaser_id);
+ const displayName=String(source?.source_solver_name||'').trim();
+ return {...expose(row,sourceProblem(source,row)),solverDisplayName:displayName&&!/^(?:usr_|user_)/i.test(displayName)&&!displayName.includes('@')?displayName:'선정 수행자'};
+}
 export async function readMissionSimulationContext(env,challenge,user){
  if(!user)return null;
  const row=await latest(env,challenge.id);
@@ -87,8 +91,8 @@ export async function missionSimulationApi(request,env,user,challengeId,body=nul
   const candidate={owner_id:user.id,solver_id:source?.source_solver_id,teaser_id:tid,source_reward:Number(challenge.reward_amount)};
   if(candidate.solver_id===user.id||sourceProblem(source,candidate))return fail(409,'SIMULATION_SOURCE_CHANGED','현재 유효한 후보와 이메일 인증·미션 상태를 확인해주세요. 실제 지급 단계의 미션은 가상 시작할 수 없습니다.');
   const sid=uid('msim'),eid=uid('msev'),now=new Date().toISOString();
-  const event={id:eid,action:'START',role:'owner',at:now,label:'가상 최종 수행자 확정 · 실제 결제 0원'};
-  const state={mode:'MISSION_SIMULATION',actualCharge:0,title:source.title,rewardAmount:candidate.source_reward,...calculateSettlement(candidate.source_reward,.1),stage:'FUNDING_REQUIRED',paymentStatus:'NONE',payoutStatus:'NONE',executionStarted:false,proof:null,proofHistory:[],reviewReason:'',transactions:[],events:[event],lastEventId:eid};
+  const event={id:eid,action:'START',role:'owner',at:now,label:'후보에게 가상 진행 요청 · 실제 결제 0원'};
+  const state={mode:'MISSION_SIMULATION',actualCharge:0,title:source.title,rewardAmount:candidate.source_reward,...calculateSettlement(candidate.source_reward,.1),stage:'CANDIDATE_ACCEPTANCE',acceptanceStatus:'PENDING',termsConfirmed:false,paymentStatus:'NONE',payoutStatus:'NONE',executionStarted:false,proof:null,proofHistory:[],reviewReason:'',transactions:[],events:[event],lastEventId:eid};
   try{
    await env.DB.batch([
     env.DB.prepare(`INSERT INTO mission_simulations(id,challenge_id,owner_id,solver_id,teaser_id,source_reward,create_request_key,start_fingerprint,state_json)
@@ -113,14 +117,23 @@ export async function missionSimulationApi(request,env,user,challengeId,body=nul
  const s=JSON.parse(row.state_json),source=await loadSource(env,challengeId,row.teaser_id),blocked=sourceProblem(source,row);
  const cancelling=body.action==='CANCEL'&&role==='owner'&&!row.closed_at&&s.payoutStatus!=='PAID';
  if(row.closed_at||blocked&&!cancelling)return fail(409,'SIMULATION_SOURCE_CHANGED','미션·후보·계정 상태가 변경되어 가상 진행을 계속할 수 없습니다.');
- const ownerActions=['PAY_APPROVE','PAY_FAIL','PAY_CANCEL','REVIEW_ACCEPT','REVIEW_REJECT','PAYOUT_SUCCESS','PAYOUT_FAIL','CANCEL'];
- if(!ownerActions.includes(body.action)&&!['BEGIN','SUBMIT_PROOF'].includes(body.action))return fail(400,'INVALID_ACTION','지원하지 않는 가상 진행 요청입니다.');
+ const ownerActions=['CONFIRM_TERMS','PAY_APPROVE','PAY_FAIL','PAY_CANCEL','REVIEW_ACCEPT','REVIEW_REJECT','PAYOUT_SUCCESS','PAYOUT_FAIL','CANCEL'];
+ if(!ownerActions.includes(body.action)&&!['ACCEPT','DECLINE','BEGIN','SUBMIT_PROOF'].includes(body.action))return fail(400,'INVALID_ACTION','지원하지 않는 가상 진행 요청입니다.');
  if((ownerActions.includes(body.action)?'owner':'solver')!==role)return fail(403,'SIMULATION_ROLE_REQUIRED','해당 단계의 담당 계정으로 로그인해주세요.');
  const invalid=()=>fail(409,'INVALID_SIMULATION_STAGE','현재 단계에서 실행할 수 없습니다. 진행상황을 확인해주세요.');
  if(s.events.length>=300&&body.action!=='CANCEL')return fail(409,'EVENT_LIMIT','가상 진행 기록 한도에 도달했습니다. 이 진행을 취소해주세요.');
  const eid=uid('msev'),now=new Date().toISOString();let label='';
  const receipt=(kind,status,amount)=>s.transactions.push({id:uid('mvirt'),kind,status,amount,currency:'KRW',at:now,actualCharge:0,mode:'MISSION_SIMULATION'});
  switch(body.action){
+  case 'ACCEPT':case 'DECLINE':
+   if(s.stage!=='CANDIDATE_ACCEPTANCE')return invalid();
+   s.acceptanceStatus=body.action==='ACCEPT'?'ACCEPTED':'DECLINED';
+   s.acceptedAt=body.action==='ACCEPT'?now:null;
+   s.stage=body.action==='ACCEPT'?'TERMS_CONFIRMATION':'CANCELLED';
+   label=body.action==='ACCEPT'?'수행자가 미션 조건 확인 후 가상 진행 수락':'수행자가 가상 진행 거절 · 기존 미션과 티저 보존';break;
+  case 'CONFIRM_TERMS':
+   if(s.stage!=='TERMS_CONFIRMATION'||s.acceptanceStatus!=='ACCEPTED')return invalid();
+   s.termsConfirmed=true;s.termsConfirmedAt=now;s.stage='FUNDING_REQUIRED';label='의뢰자가 조건 확인 · 가상 거래 확정';break;
   case 'PAY_APPROVE':case 'PAY_FAIL':case 'PAY_CANCEL':
    if(s.stage!=='FUNDING_REQUIRED'||s.paymentStatus==='APPROVED')return invalid();
    s.paymentStatus=body.action==='PAY_APPROVE'?'APPROVED':body.action==='PAY_FAIL'?'FAILED':'CANCELLED';

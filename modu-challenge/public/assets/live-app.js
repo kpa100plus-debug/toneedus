@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=81';
-import { legacyNotificationText } from './brand.js?v=81';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=81';
-import { calculateSettlement } from './business-rules.js?v=81';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=81';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=82';
+import { legacyNotificationText } from './brand.js?v=82';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=82';
+import { calculateSettlement } from './business-rules.js?v=82';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=82';
 
 /**
  * 모두의클리어 live frontend
@@ -24,6 +24,8 @@ let modalScrollY = 0;
 let deferredInstallPrompt = null;
 let modalHistoryEntry = false;
 let emailStateRevision = 0;
+let exploreRequest = 0;
+let exploreSearchTimer = null;
 
 const state = {
   activityFocus: null,
@@ -32,6 +34,9 @@ const state = {
   health: null,
   user: null,
   challenges: [],
+  challengeTotal: null,
+  challengesHasMore: false,
+  challengesLoading: false,
   activity: null,
   trustProfile: null,
   verifications: null,
@@ -109,6 +114,8 @@ async function init() {
     state.config = bootstrap.config;
     state.health = bootstrap.health;
     state.challenges = bootstrap.challenges || [];
+    state.challengeTotal = bootstrap.total ?? null;
+    state.challengesHasMore = Boolean(bootstrap.hasMore);
     if (['home','explore','how','trust'].includes(state.route)) {
       state.loading = false;
       render();
@@ -148,7 +155,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=81').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=82').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -196,13 +203,40 @@ async function loadBootstrapData() {
       apiClient.health(),
       apiClient.listChallenges({ limit: 50, sort: state.sort }),
     ]);
-    return { config, health, challenges: challengeData.challenges || [] };
+    return { config, health, ...challengeData };
   }
 }
 
-async function loadChallenges() {
-  const result = await apiClient.listChallenges({ limit: 50, sort: state.sort });
-  state.challenges = result.challenges || [];
+async function loadChallenges(append = false) {
+  const revision = ++exploreRequest;
+  const search = state.search, category = state.category, sort = state.sort;
+  state.challengesLoading = true;
+  renderExplorePagination();
+  try {
+    const result = await apiClient.listChallenges({ limit:50, offset:append ? state.challenges.length : 0, sort, q:search, category:category === 'ALL' ? '' : category });
+    if (revision !== exploreRequest || search !== state.search || category !== state.category || sort !== state.sort) return;
+    const records = append ? [...state.challenges,...(result.challenges || [])] : result.challenges || [];
+    state.challenges = [...new Map(records.map(item => [item.id,item])).values()];
+    state.challengeTotal = result.total ?? null;
+    state.challengesHasMore = Boolean(result.hasMore);
+  } finally {
+    if (revision === exploreRequest) { state.challengesLoading = false; renderExploreGridOnly(); }
+  }
+}
+
+function scheduleExploreSearch() {
+  clearTimeout(exploreSearchTimer);
+  ++exploreRequest;
+  state.challengeTotal = null;
+  state.challengesHasMore = false;
+  renderExploreGridOnly();
+  exploreSearchTimer = setTimeout(() => loadChallenges().catch(showError),250);
+}
+
+function renderExplorePagination() {
+  const target = document.querySelector('#explore-pagination');
+  if (target) target.innerHTML = state.challengesHasMore || state.challengesLoading
+    ? `<button type="button" class="btn btn-outline btn-block" data-action="load-more-missions" ${state.challengesLoading ? 'disabled' : ''}>${state.challengesLoading ? '미션 불러오는 중' : '미션 더 보기'}</button>` : '';
 }
 
 async function loadRouteData() {
@@ -307,6 +341,7 @@ function bindGlobalEvents() {
       state.category = categoryButton.dataset.category;
       if (state.route !== 'explore') navigate('explore');
       else render();
+      scheduleExploreSearch();
       return;
     }
 
@@ -344,7 +379,7 @@ function bindGlobalEvents() {
     }
     if (event.target.id === 'explore-search') {
       state.search = event.target.value;
-      renderExploreGridOnly();
+      scheduleExploreSearch();
     }
     if (event.target.closest?.('#challenge-create-form')) {
       saveCreateDraft();
@@ -373,7 +408,7 @@ function bindGlobalEvents() {
     }
     if (event.target.id === 'explore-sort') {
       state.sort = event.target.value;
-      renderExploreGridOnly();
+      scheduleExploreSearch();
     }
     if (event.target.closest?.('.criteria-check-builder')) updateCriteriaFromChecks();
     if (event.target.closest?.('#challenge-create-form')) { saveCreateDraft(); updateCreatePreview(); }
@@ -401,6 +436,7 @@ function bindGlobalEvents() {
 
 async function handleAction(action, data, button) {
   try {
+    if (action === 'load-more-missions') return state.challengesLoading ? undefined : await loadChallenges(true);
     if (action === 'close-modal') return dismissModal();
     if (action === 'new-simulation') return requireLogin(openSimulationCreate);
     if (action === 'quick-start-simulation') {
@@ -945,7 +981,7 @@ function renderHow() {
         ${renderStep('02', '도전하기', '재능·기술·경험·정보·인맥·시간·실행력을 담은 티저로 제안합니다.')}
         ${renderStep('03', '수행자 후보 선택', '의뢰자가 제안과 신뢰 이력을 비교해 수행자 후보를 선택합니다. 후보 선택은 최종 거래 확정과 구분됩니다.')}
       </div>
-      <div class="notice-box"><span>i</span><div><strong>현재 이용 가능한 서비스</strong><p>이메일 인증 후 미션 등록·수정, 티저 제출·수정, 수행자 후보 선택을 이용할 수 있습니다. 최종 거래 확정과 실제 결제·지급은 현재 제공하지 않습니다.</p></div></div>
+      <div class="notice-box"><span>i</span><div><strong>현재 이용 가능한 서비스</strong><p>이메일 인증 후 미션 등록·수정, 티저 제출·수정, 수행자 후보 선택을 이용할 수 있습니다. 선택한 후보와 가상 진행을 요청하고, 수행자 수락 → 의뢰자 조건 확인·확정 → 가상 보상금 확보 → 수행·결과 제출 → 검수·보완 → 가상 지급까지 확인할 수 있습니다. 실제 계약·청구·송금은 제공하지 않습니다.</p></div></div>
       <div class="cta-inner"><div><span class="eyebrow">START</span><h2>원하는 방식으로 시작하세요</h2><p>문제를 올리거나 공개된 미션에 TEASER로 도전할 수 있습니다.</p></div><div class="cta-actions"><button class="btn btn-primary btn-lg" data-route="create">미션 등록</button><button class="btn btn-outline btn-lg" data-route="explore">미션 찾기</button></div></div>
     </div></section>`;
 }
@@ -983,8 +1019,9 @@ function renderExplore() {
         <select id="explore-sort" aria-label="정렬"><option value="new">최신순</option><option value="reward">보상금 높은순</option><option value="deadline">마감임박순</option><option value="popular">인기순</option></select>
       </div>
       <div class="category-tabs">${Object.entries(CATEGORY_META).map(([key, meta]) => `<button type="button" class="${state.category === key ? 'active' : ''} category-${key.toLowerCase()}" data-category="${key}" style="--category-color:${meta.color}"><span>${meta.icon}</span>${meta.label}</button>`).join('')}</div>
-      <div class="result-head"><strong id="explore-result-count">${filtered.length}개 미션</strong><span>보상금 상태와 의뢰자 TRUST를 확인한 뒤 참가하세요.</span></div>
+      <div class="result-head"><strong id="explore-result-count">${state.challengeTotal ?? filtered.length}개 미션</strong><span>보상금 상태와 의뢰자 TRUST를 확인한 뒤 참가하세요.</span></div>
       <div id="explore-grid">${filtered.length ? `<div class="challenge-grid">${filtered.map(renderChallengeCard).join('')}</div>` : renderEmpty('검색 결과가 없습니다', '다른 검색어나 카테고리를 선택해보세요.')}</div>
+      <div id="explore-pagination" style="margin-top:24px">${state.challengesHasMore ? '<button type="button" class="btn btn-outline btn-block" data-action="load-more-missions">미션 더 보기</button>' : ''}</div>
     </div></section>`;
 }
 
@@ -1149,14 +1186,14 @@ function generateChallengeDraft(button) {
   const evidenceText = { official: '공식자료와 원본 출처 링크', contact: '상대방 동의와 연락·미팅 완료 기록', file: '최종 원본 파일, 미리보기와 사용권 확인', photo: '날짜와 장소를 확인할 수 있는 사진·영상', report: '검증 가능한 출처가 표시된 비교표와 분석자료' }[evidence];
   const action = ['FIND', 'CONNECT'].includes(purpose) ? '찾아주세요' : purpose === 'ACTION' ? '제작해주세요' : '제안해주세요';
   form.elements.title.value = `${subject} ${action}`.slice(0, 90);
-  form.elements.summary.value = `${subject}에 대해 ${resultMeta[1]}을(를) 요청합니다.`.slice(0, 180);
-  form.elements.description.value = `${subject}이(가) 필요합니다. 단순한 소개가 아니라 실제 확인 가능한 ${resultMeta[0]}을(를) 받고 싶습니다. 참가자는 개인정보와 영업비밀을 가린 TEASER로 접근방법과 경험을 먼저 제시해주세요. 최종 선정 후 합의된 범위와 일정에 따라 결과를 제출합니다.`;
+  form.elements.summary.value = `${subject} 관련 요청입니다. 필요한 결과: ${resultMeta[1]}.`.slice(0, 180);
+  form.elements.description.value = `${subject} 관련 의뢰입니다. 단순한 소개를 넘어 실제 확인 가능한 결과가 필요합니다. 결과 형태: ${resultMeta[0]}. 참가자는 개인정보와 영업비밀을 가린 TEASER로 접근방법과 경험을 먼저 제시해주세요. 최종 선정 후 합의된 범위와 일정에 따라 결과를 제출합니다.`;
   form.elements.category.value = purpose;
   form.elements.region.value = form.elements.wizardRegion.value === '지역 직접 입력' ? '' : form.elements.wizardRegion.value;
   form.elements.rewardAmount.value = Math.min(Number(form.elements.wizardReward.value), rewardBoundsForUser().max);
   const deadline = new Date(Date.now() + Number(form.elements.wizardDays.value || 14) * 86400000);
   form.elements.deadline.value = deadline.toISOString().slice(0, 10);
-  form.elements.successCriteria.value = `${resultMeta[1]}이(가) 제출되고, 사전에 공개한 조건을 충족했는지 의뢰자가 객관적으로 확인한 시점을 성공으로 봅니다.`;
+  form.elements.successCriteria.value = `제출 기준: ${resultMeta[1]}. 의뢰자가 사전에 공개한 조건 충족 여부를 객관적으로 확인한 시점을 성공으로 봅니다.`;
   form.elements.paymentTrigger.value = '의뢰자가 TEASER를 검토하고 최종 수행자를 선정한 뒤, 실제 수행을 시작하기 전 보상금 준비 절차를 진행합니다.';
   form.elements.evidenceRequirements.value = evidenceText;
   updateCreatePreview();
@@ -1649,7 +1686,7 @@ function missionSimulationRole(simulation) {
 
 function missionSimulationLabel(simulation) {
   if (simulation.payoutStatus === 'PAID') return '가상 지급 완료';
-  return ({ FUNDING_REQUIRED:'가상 보상금 확보 대기', EXECUTING:simulation.executionStarted === undefined ? '가상 수행 단계' : simulation.executionStarted ? '가상 수행 중' : '가상 수행 시작 대기', PROOF_SUBMITTED:'가상 결과 검수 대기', SUCCESS:simulation.payoutStatus === 'FAILED' ? '가상 지급 재시도 대기' : '가상 지급 대기', CANCELLED:'가상 진행 취소' })[simulation.stage] || '가상 진행';
+  return ({ CANDIDATE_ACCEPTANCE:'수행자 수락 대기', TERMS_CONFIRMATION:'의뢰자 거래 확정 대기', FUNDING_REQUIRED:'가상 보상금 확보 대기', EXECUTING:simulation.executionStarted === undefined ? '가상 수행 단계' : simulation.executionStarted ? '가상 수행 중' : '가상 수행 시작 대기', PROOF_SUBMITTED:'가상 결과 검수 대기', SUCCESS:simulation.payoutStatus === 'FAILED' ? '가상 지급 재시도 대기' : '가상 지급 대기', CANCELLED:'가상 진행 취소' })[simulation.stage] || '가상 진행';
 }
 
 function missionSimulationBlockedMessage(reason) {
@@ -1660,8 +1697,8 @@ function missionSimulationZeroNotice() {
   return '<div class="mission-simulation-zero"><strong>VIRTUAL · 실제 청구 및 송금 0원</strong><p>이 미션의 의뢰자와 선정 수행자가 함께 진행하는 가상 거래입니다. 실제 결제·지급·본인확인 또는 운영 실적으로 반영되지 않습니다.</p></div>';
 }
 
-function selectedSolverNotice(headline) {
-  return `<p class="mission-selected-id"><strong>선정된 수행자</strong><span>${headline ? `TEASER · ${escapeHTML(headline)}` : '선정된 TEASER에서 확인하세요'}</span></p>`;
+function selectedSolverNotice(headline, displayName) {
+  return `<p class="mission-selected-id"><strong>${escapeHTML(displayName || '선정된 수행자')}</strong><span>${headline ? `TEASER · ${escapeHTML(headline)}` : '선정된 TEASER에서 확인하세요'}</span></p>`;
 }
 
 function renderMissionSimulation(challenge, simulation, selectedHeadline) {
@@ -1670,7 +1707,13 @@ function renderMissionSimulation(challenge, simulation, selectedHeadline) {
   const disabled = simulation.active === false || Boolean(simulation.blockedReason);
   const button = (action, label, className = 'btn-primary') => `<button type="button" class="btn ${className}" data-action="mission-simulation-step" data-step="${action}" data-challenge-id="${escapeAttribute(challenge.id)}" ${(action === 'CANCEL' ? simulation.stage === 'CANCELLED' || simulation.payoutStatus === 'PAID' : disabled) ? 'disabled' : ''}>${label}</button>`;
   let message = '', actions = '';
-  if (simulation.stage === 'FUNDING_REQUIRED') {
+  if (simulation.stage === 'CANDIDATE_ACCEPTANCE') {
+    message = role === 'owner' ? '수행자에게 가상 진행을 요청했습니다. 상대방이 자신의 계정에서 미션 조건을 확인하고 수락하면 거래를 확정할 수 있습니다.' : '미션 내용·성공조건·보상금을 확인한 뒤 가상 진행을 수락하거나 거절하세요. 실제 계약·결제·지급은 발생하지 않습니다.';
+    if (role === 'solver') actions = button('ACCEPT', '조건 확인 · 가상 진행 수락') + button('DECLINE', '가상 진행 거절', 'btn-outline');
+  } else if (simulation.stage === 'TERMS_CONFIRMATION') {
+    message = role === 'owner' ? '수행자가 수락했습니다. 미션 내용·성공조건·보상금을 확인하고 가상 거래를 확정하세요.' : '수락이 완료되었습니다. 의뢰자가 조건 확인 후 가상 거래를 확정할 때까지 기다려주세요.';
+    if (role === 'owner') actions = button('CONFIRM_TERMS', '조건 확인 · 가상 거래 확정');
+  } else if (simulation.stage === 'FUNDING_REQUIRED') {
     message = role === 'owner' ? '가상 최종 수행자가 확정되었습니다. 가상 보상금을 확보하면 수행자가 시작할 수 있습니다.' : '가상 최종 수행자로 선정되었습니다. 의뢰자의 가상 보상금 확보를 기다려주세요.';
     if (role === 'owner') actions = button('PAY_APPROVE', ['FAILED','CANCELLED'].includes(simulation.paymentStatus) ? '가상 결제 재시도 · 승인' : '가상 보상금 확보') + button('PAY_FAIL', '가상 결제 실패 체험', 'btn-outline') + button('PAY_CANCEL', '가상 결제 취소 체험', 'btn-outline') + button('CANCEL', '가상 진행 취소', 'btn-ghost');
   } else if (simulation.stage === 'EXECUTING') {
@@ -1688,7 +1731,7 @@ function renderMissionSimulation(challenge, simulation, selectedHeadline) {
   const proof = simulation.proof;
   let evidenceUrl = '';
   try { if (proof?.evidenceUrl && new URL(proof.evidenceUrl).protocol === 'https:') evidenceUrl = proof.evidenceUrl; } catch { /* Invalid evidence links remain plain text. */ }
-  return `<section class="mission-simulation-panel" data-mission-simulation="${escapeAttribute(simulation.id)}" aria-label="이 미션의 가상 진행">${missionSimulationZeroNotice()}<div class="mission-simulation-heading"><div><span class="activity-badge">${role === 'owner' ? '의뢰자' : '선정 수행자'} 계정</span><h3>${escapeHTML(missionSimulationLabel(simulation))}</h3></div><button type="button" class="btn btn-outline btn-small" data-action="open-mission-simulation" data-challenge-id="${escapeAttribute(challenge.id)}">진행 새로고침</button></div>${selectedSolverNotice(selectedHeadline)}<p>${message}</p>${simulation.blockedReason ? `<p class="workflow-blocked">${escapeHTML(missionSimulationBlockedMessage(simulation.blockedReason))}</p>` : ''}${simulation.reviewReason ? `<div class="notice-box warning"><span>!</span><div><strong>의뢰자의 보완 요청</strong><p>${escapeHTML(simulation.reviewReason)}</p></div></div>` : ''}${proof ? `<div class="mission-simulation-proof"><h4>제출된 가상 수행 결과</h4><p>${nl2br(proof.description)}</p>${evidenceUrl ? `<a href="${escapeAttribute(evidenceUrl)}" target="_blank" rel="noopener noreferrer">증빙 링크 열기</a>` : ''}</div>` : ''}<div class="mission-simulation-actions">${actions}</div><div class="mission-simulation-amounts"><div><span>가상 보상금</span><strong>${formatWon(simulation.rewardAmount)}</strong></div><div><span>가상 수수료 10%</span><strong>${formatWon(simulation.platformFee)}</strong></div><div><span>가상 수행자 수령액 90%</span><strong>${formatWon(simulation.solverPayout)}</strong></div><div><span>실제 청구·송금</span><strong>0원</strong></div></div><details><summary>가상 진행 기록</summary><ol class="mission-simulation-events">${(simulation.events || []).slice(-12).map(event => `<li>${escapeHTML(event.label || event.action || '진행 상태 변경')}${event.at ? ` <small>${escapeHTML(formatDateTime(event.at))}</small>` : ''}</li>`).join('') || '<li>가상 최종 수행자 확정</li>'}</ol></details><p class="form-hint">상세 화면은 8초마다 갱신됩니다. 상대방은 자신의 계정에서 같은 미션의 진행상황을 확인할 수 있습니다.</p></section>`;
+  return `<section class="mission-simulation-panel" data-mission-simulation="${escapeAttribute(simulation.id)}" aria-label="이 미션의 가상 진행">${missionSimulationZeroNotice()}<div class="mission-simulation-heading"><div><span class="activity-badge">${role === 'owner' ? '의뢰자' : '선정 수행자'} 계정</span><h3>${escapeHTML(missionSimulationLabel(simulation))}</h3></div><button type="button" class="btn btn-outline btn-small" data-action="open-mission-simulation" data-challenge-id="${escapeAttribute(challenge.id)}">진행 새로고침</button></div>${selectedSolverNotice(selectedHeadline, simulation.solverDisplayName)}<p>${message}</p>${simulation.blockedReason ? `<p class="workflow-blocked">${escapeHTML(missionSimulationBlockedMessage(simulation.blockedReason))}</p>` : ''}${simulation.reviewReason ? `<div class="notice-box warning"><span>!</span><div><strong>의뢰자의 보완 요청</strong><p>${escapeHTML(simulation.reviewReason)}</p></div></div>` : ''}${proof ? `<div class="mission-simulation-proof"><h4>제출된 가상 수행 결과</h4><p>${nl2br(proof.description)}</p>${evidenceUrl ? `<a href="${escapeAttribute(evidenceUrl)}" target="_blank" rel="noopener noreferrer">증빙 링크 열기</a>` : ''}</div>` : ''}<div class="mission-simulation-actions">${actions}</div><div class="mission-simulation-amounts"><div><span>가상 보상금</span><strong>${formatWon(simulation.rewardAmount)}</strong></div><div><span>가상 수수료 10%</span><strong>${formatWon(simulation.platformFee)}</strong></div><div><span>가상 수행자 수령액 90%</span><strong>${formatWon(simulation.solverPayout)}</strong></div><div><span>실제 청구·송금</span><strong>0원</strong></div></div><details><summary>가상 진행 기록</summary><ol class="mission-simulation-events">${(simulation.events || []).slice(-12).map(event => `<li>${escapeHTML(event.label || event.action || '진행 상태 변경')}${event.at ? ` <small>${escapeHTML(formatDateTime(event.at))}</small>` : ''}</li>`).join('') || '<li>가상 최종 수행자 확정</li>'}</ol></details><p class="form-hint">상세 화면은 8초마다 갱신됩니다. 상대방은 자신의 계정에서 같은 미션의 진행상황을 확인할 수 있습니다.</p></section>`;
 }
 
 async function openMissionSimulation(challengeId, teaserId) {
@@ -1698,7 +1741,7 @@ async function openMissionSimulation(challengeId, teaserId) {
   if (!access.canStart || access.viewerRole !== 'owner') throw new ApiError(missionSimulationBlockedMessage(access.blockedReason) || '의뢰자가 수행자 후보를 선택한 뒤 가상 진행을 시작할 수 있습니다.');
   const candidate = teaserId || access.candidateTeaserId;
   if (!candidate || candidate !== access.candidateTeaserId) throw new ApiError('현재 수행자 후보를 다시 확인해주세요.');
-  openModal(`<form id="mission-simulation-start-form" data-challenge-id="${escapeAttribute(challengeId)}" data-teaser-id="${escapeAttribute(candidate)}">${missionSimulationZeroNotice()}<h3>현재 후보를 가상 최종 수행자로 확정합니다</h3><p>후보선정과 별도로 가상 진행의 수행자 한 명을 정합니다. 의뢰자는 가상 보상금 확보·검수·지급을, 선정 수행자는 자신의 계정에서 수행 시작·결과 제출을 진행합니다.</p><label class="check-row"><input name="consent" type="checkbox" required><span>실제 돈이 오가지 않는 가상 진행이며, 원래 미션·티저와 실명 인증 상태는 바뀌지 않음을 확인했습니다.</span></label><button type="submit" class="btn btn-primary btn-block">가상 최종 수행자 확정 · 시작</button></form>`, { title: '이 미션에서 가상 진행 시작' });
+  openModal(`<form id="mission-simulation-start-form" data-challenge-id="${escapeAttribute(challengeId)}" data-teaser-id="${escapeAttribute(candidate)}">${missionSimulationZeroNotice()}<h3>현재 후보에게 가상 진행을 요청합니다</h3><p>후보선정과 별도로 수행자가 자신의 계정에서 조건을 확인하고 수락합니다. 이후 의뢰자가 가상 거래를 확정하고 보상금 확보·검수·지급을, 수행자가 수행 시작·결과 제출을 진행합니다.</p><label class="check-row"><input name="consent" type="checkbox" required><span>실제 돈이 오가지 않는 가상 진행이며, 원래 미션·티저와 실명 인증 상태는 바뀌지 않음을 확인했습니다.</span></label><button type="submit" class="btn btn-primary btn-block">가상 진행 요청 · 수행자 수락받기</button></form>`, { title: '이 미션에서 가상 진행 시작' });
 }
 
 function currentMissionSimulation(challengeId) {
@@ -2778,7 +2821,8 @@ function renderExploreGridOnly() {
   const count = document.querySelector('#explore-result-count');
   if (!grid || !count) return;
   const filtered = getFilteredChallenges();
-  count.textContent = `${filtered.length}개 미션`;
+  count.textContent = `${state.challengeTotal ?? filtered.length}개 미션`;
+  renderExplorePagination();
   grid.innerHTML = filtered.length ? `<div class="challenge-grid">${filtered.map(renderChallengeCard).join('')}</div>` : renderEmpty('검색 결과가 없습니다', '다른 검색어나 카테고리를 선택해보세요.');
 }
 
@@ -2793,7 +2837,7 @@ function getFilteredChallenges() {
 function sortChallenges(challenges, sort) {
   if (sort === 'reward') return challenges.sort((a, b) => b.rewardAmount - a.rewardAmount);
   if (sort === 'deadline') return challenges.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
-  if (sort === 'popular') return challenges.sort((a, b) => (b.viewCount + b.teaserCount * 6) - (a.viewCount + a.teaserCount * 6));
+  if (sort === 'popular') return challenges.sort((a, b) => (b.viewCount + b.teaserCount * 5) - (a.viewCount + a.teaserCount * 5));
   return challenges.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 

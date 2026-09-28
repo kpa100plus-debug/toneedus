@@ -117,7 +117,7 @@ try {
   assert.equal(current.solverPayout, 9000000);
   assert.equal(current.mode, 'MISSION_SIMULATION');
   assert.equal(current.actualCharge, 0);
-  assert.equal(current.stage, 'FUNDING_REQUIRED');
+  assert.equal(current.stage, 'CANDIDATE_ACCEPTANCE');
   assert.equal(current.ownerId, ids.owner);
   assert.equal(current.solverId, ids.solver);
   assert.equal(status(await request(mission.path, initial), 200).simulation.id, current.id);
@@ -136,6 +136,18 @@ try {
   status((await action(mission, 'BEGIN', 'solver')).response, 409);
   pass('real session determines role; solver cannot fund/review/pay out, owner cannot perform/submit, spoofed role and out-of-order actions denied');
 
+  status((await action(mission, 'PAY_APPROVE', 'owner')).response, 409);
+  status((await action(mission, 'ACCEPT', 'owner')).response, 403);
+  status((await action(mission, 'CONFIRM_TERMS', 'owner')).response, 409);
+  const acceptance=await action(mission,'ACCEPT','solver');status(acceptance.response,200);
+  assert.equal(current.stage,'TERMS_CONFIRMATION');
+  status(await request(mission.path,acceptance.body,'solver'),200);
+  status((await action(mission,'ACCEPT','solver')).response,409);
+  status((await action(mission,'CONFIRM_TERMS','solver')).response,403);
+  status((await action(mission,'PAY_APPROVE','owner')).response,409);
+  status((await action(mission,'CONFIRM_TERMS','owner')).response,200);
+  assert.equal(current.stage,'FUNDING_REQUIRED');
+  pass('candidate acceptance and owner terms confirmation are required, role-checked, ordered and retry-safe before funding');
   status((await action(mission, 'PAY_FAIL', 'owner')).response, 200);
   assert.equal(current.paymentStatus, 'FAILED');
   status((await action(mission, 'PAY_CANCEL', 'owner')).response, 200);
@@ -233,13 +245,15 @@ try {
   const starts = await Promise.all(starters.map(body => request(race.path, body)));
   assert.deepEqual(starts.map(reply => reply.status).sort(), [201, 409]);
   current = starts.find(reply => reply.status === 201).body.simulation;
+  status((await action(race,'ACCEPT','solver')).response,200);
+  status((await action(race,'CONFIRM_TERMS','owner')).response,200);
   const sameRevision = current.revision;
   const conflicting = await Promise.all(['PAY_APPROVE', 'PAY_FAIL'].map(name => request(race.path, { action: name, requestId: key(), revision: sameRevision })));
   assert.deepEqual(conflicting.map(reply => reply.status).sort(), [200, 409]);
   current = status(await request(race.path), 200).simulation;
   assert.equal(current.revision, sameRevision + 1);
   status(await request(race.path, { action: 'CANCEL', requestId: key(), revision: sameRevision }), 409);
-  assert.equal(sql.prepare('SELECT COUNT(*) n FROM mission_simulation_events WHERE simulation_id=?').get(current.id).n, 2);
+  assert.equal(sql.prepare('SELECT COUNT(*) n FROM mission_simulation_events WHERE simulation_id=?').get(current.id).n, 4);
   pass('concurrent START reserves one attempt and concurrent updates use revision CAS with exactly one immutable event');
 
   for (const query of ["UPDATE challenges SET reward_amount=20000000 WHERE id=?", "UPDATE challenges SET status='CANCELLED' WHERE id=?", "UPDATE challenges SET selected_solver_id='mission_outsider' WHERE id=?"]) {
@@ -267,6 +281,15 @@ try {
   status((await action(race, 'CANCEL', 'owner')).response, 200);
   pass('source lifecycle/candidate is locked until virtual cancellation; canceled history persists and restart uses the current candidate with prior solver access revoked');
 
+  const declined=seedMission();
+  current=status(await request(declined.path,startBody(declined)),201).simulation;
+  status((await action(declined,'DECLINE','owner')).response,403);
+  status((await action(declined,'DECLINE','solver')).response,200);
+  assert.equal(current.stage,'CANCELLED');assert.equal(current.acceptanceStatus,'DECLINED');
+  assert.equal(current.transactions.length,0);
+  assert.ok(sql.prepare('SELECT closed_at FROM mission_simulations WHERE id=?').get(current.id).closed_at);
+  assert.equal(status(await request(declined.path),200).canStart,true);
+  pass('solver may decline before funding; no payment exists, source and history survive and a fresh request is possible');
   const availability = seedMission();
   current = status(await request(availability.path, startBody(availability)), 201).simulation;
   sql.prepare("UPDATE users SET status='suspended' WHERE id=?").run(ids.solver);
@@ -291,6 +314,8 @@ try {
 
   const suspendedOwner = seedMission();
   current = status(await request(suspendedOwner.path, startBody(suspendedOwner)), 201).simulation;
+  status((await action(suspendedOwner,'ACCEPT','solver')).response,200);
+  status((await action(suspendedOwner,'CONFIRM_TERMS','owner')).response,200);
   status((await action(suspendedOwner, 'PAY_APPROVE', 'owner')).response, 200);
   const financeTables = ['settlements', 'proofs', 'reviews', 'strikes', 'member_verifications', 'verified_identities', 'payout_sellers', 'transaction_orders', 'transaction_events', 'transaction_ledger', 'provider_operations'];
   const financialSnapshot = () => JSON.stringify(financeTables.map(table => [table, sql.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));

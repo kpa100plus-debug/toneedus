@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { CATEGORY_META, STATUS_META, FUNDING_META } from '../public/assets/data.js';
@@ -140,7 +140,7 @@ const linkedBase = {
   id: 'linked-run-one', challengeId: baseChallenge.id, teaserId: 'candidate-teaser',
   ownerId: 'actual-owner', solverId: 'actual-solver', revision: 0,
   title: baseChallenge.title, rewardAmount: 100000, platformFee: 10000, solverPayout: 90000,
-  feeRate: 0.1, stage: 'FUNDING_REQUIRED', paymentStatus: 'NONE', payoutStatus: 'NONE',
+  feeRate: 0.1, stage: 'CANDIDATE_ACCEPTANCE', paymentStatus: 'NONE', payoutStatus: 'NONE',
   executionStarted: false, proof: null, proofHistory: [], reviewReason: '', events: [],
   mode: 'MISSION_SIMULATION', actualCharge: 0, active: true, blockedReason: null,
 };
@@ -214,10 +214,10 @@ expectedAction = { action: 'START', payload: { teaserId: candidate.id, consent: 
 await run('handleForm(document.querySelector("#mission-simulation-start-form"))');
 assert.equal(requests.length, 1);
 assert.equal(requests[0].actorId, 'actual-owner');
-assert.match(doc.querySelector('.mission-simulation-panel').textContent, /가상 최종 수행자가 확정/);
+assert.match(doc.querySelector('.mission-simulation-panel').textContent, /수행자에게 가상 진행을 요청/);
 assert.match(doc.querySelector('.mission-simulation-panel').textContent, /TEASER · 현장 보행동선 개선 제안/);
 assert.doesNotMatch(doc.querySelector('.mission-simulation-panel').textContent, /actual-solver|usr_|계정 ID/);
-assert.ok(doc.querySelector('[data-step=PAY_APPROVE]'));
+assert.equal(doc.querySelector('[data-step=PAY_APPROVE]'),null);
 assert.equal(doc.querySelector('[data-step=BEGIN]'), null);
 assert.equal(run('state.selectedChallenge.challenge.status'), 'SHORTLISTED');
 pass('linked start requires explicit consent, creates its own final solver state and retains the original mission candidate status');
@@ -232,6 +232,22 @@ async function clickStep(action) {
   await run(`handleAction('mission-simulation-step',{challengeId:'mission-linked',step:${JSON.stringify(action)}},document.querySelector('[data-step=${action}]'))`);
   assert.equal(expectedAction, null, `the ${action} mock reply was consumed`);
 }
+setActor('actual-solver');
+await run('openMissionSimulation("mission-linked")');
+if(process.env.MODU_QA_DIR) {
+  mkdirSync(process.env.MODU_QA_DIR,{recursive:true});
+  const copy=doc.documentElement.cloneNode(true);copy.querySelectorAll('script').forEach(node=>node.remove());
+  writeFileSync(process.env.MODU_QA_DIR+'/candidate.html','<!doctype html>'+copy.outerHTML);
+}
+assert.ok(doc.querySelector('[data-step=ACCEPT]'));assert.ok(doc.querySelector('[data-step=DECLINE]'));
+assert.equal(doc.querySelector('[data-step=CONFIRM_TERMS]'),null);
+expectStep('ACCEPT',{stage:'TERMS_CONFIRMATION',acceptanceStatus:'ACCEPTED'});await clickStep('ACCEPT');
+assert.equal(doc.querySelector('[data-step=PAY_APPROVE]'),null);
+setActor('actual-owner');await run('openMissionSimulation("mission-linked")');
+assert.ok(doc.querySelector('[data-step=CONFIRM_TERMS]'));
+expectStep('CONFIRM_TERMS',{stage:'FUNDING_REQUIRED',termsConfirmed:true});await clickStep('CONFIRM_TERMS');
+assert.ok(doc.querySelector('[data-step=PAY_APPROVE]'));
+pass('solver acceptance and owner confirmation are exposed only to their own account before funding');
 function assertZeroMoney() {
   const panel = doc.querySelector('.mission-simulation-panel');
   assert.ok(panel);
@@ -373,7 +389,7 @@ run('main.innerHTML=renderMissionSimulation(testDetail.challenge,{...privateSimu
 assert.ok([...doc.querySelectorAll('[data-action=mission-simulation-step]:not([data-step=CANCEL])')].every(button => button.disabled));
 pass('unselected candidates, anonymous users and unrelated administrators cannot inherit participant UI or relabel actual money as VIRTUAL');
 
-win.emailBlockedSimulation = { ...structuredClone(linkedBase), active: false, blockedReason: 'EMAIL_REQUIRED' };
+win.emailBlockedSimulation = { ...structuredClone(linkedBase), stage:'FUNDING_REQUIRED', active: false, blockedReason: 'EMAIL_REQUIRED' };
 run('main.innerHTML=renderMissionSimulation(testDetail.challenge,emailBlockedSimulation);');
 assert.equal(doc.querySelector('#main [data-step=CANCEL]').disabled, false);
 for (const action of ['PAY_APPROVE', 'PAY_FAIL', 'PAY_CANCEL']) assert.equal(doc.querySelector(`#main [data-step=${action}]`).disabled, true);
@@ -397,5 +413,20 @@ assert.match(doc.querySelector('.mission-simulation-proof').textContent, /<scrip
 pass('participant proof and rejection text are escaped and non-HTTPS evidence does not become an executable link');
 
 run('clearTimeout(systemNoticeTimer);clearInterval(emailCountdownTimer);if(activityPollTimer)clearInterval(activityPollTimer);if(missionDetailPollTimer)clearInterval(missionDetailPollTimer);');
+run('state.challenges=[];state.category="ALL";state.search="";state.sort="new";');
+win.pageCalls=[];
+win.pageReply={challenges:[{id:'page-one',category:'IDEA',title:'첫 페이지'}],total:2,hasMore:true};
+run('apiClient.listChallenges=async(params)=>{pageCalls.push(params);return pageReply;};');
+await run('loadChallenges()');
+assert.equal(run('state.challengeTotal'),2);assert.equal(run('state.challengesHasMore'),true);
+win.pageReply={challenges:[{id:'page-two',category:'IDEA',title:'다음 페이지'}],total:2,hasMore:false};
+await run('loadChallenges(true)');
+assert.equal(win.pageCalls.at(-1).offset,1);assert.equal(run('state.challenges.length'),2);
+assert.equal(run('state.challengesHasMore'),false);
+run('state.search="이전 페이지 밖 검색";state.category="IDEA";state.sort="reward";');
+await run('loadChallenges()');
+assert.equal(win.pageCalls.at(-1).q,'이전 페이지 밖 검색');assert.equal(win.pageCalls.at(-1).category,'IDEA');assert.equal(win.pageCalls.at(-1).sort,'reward');
+assert.equal(win.pageCalls.at(-1).offset,0);
+pass('load-more appends without duplicates and search/category/sort query the server from page zero');
 win.close();
 console.log(`${passed} mission linked UI checks passed (mocked frontend only)`);

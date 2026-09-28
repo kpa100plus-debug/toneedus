@@ -50,16 +50,17 @@ const DB = {
     args: [], bind(...args) { this.args = args; return this; },
     async first() { return sql.prepare(query).get(...this.args) || null; },
     async all() { return { results: sql.prepare(query).all(...this.args) }; },
-    async run() {
+    execute() {
       if (/\bRETURNING\b/i.test(query)) return { results: sql.prepare(query).all(...this.args), meta: { changes: Number(sql.prepare('SELECT changes() n').get().n) } };
-      if (/^\s*SELECT/i.test(query)) return this.all();
+      if (/^\s*SELECT/i.test(query)) return {results:sql.prepare(query).all(...this.args)};
       const result = sql.prepare(query).run(...this.args);
       return { success: true, meta: { changes: Number(result.changes) } };
     },
+    async run() { return this.execute(); },
   }; },
   async batch(statements) {
     sql.exec('BEGIN');
-    try { const output = []; for (const statement of statements) output.push(await statement.run()); sql.exec('COMMIT'); return output; }
+    try { const output = statements.map(statement => statement.execute()); sql.exec('COMMIT'); return output; }
     catch (error) { sql.exec('ROLLBACK'); throw error; }
   },
 };
@@ -287,5 +288,43 @@ assert.equal(sql.prepare("SELECT COUNT(*) n FROM trust_policy_items WHERE weight
 assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(), []);
 assert.equal(sql.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
 pass('all mission records and legacy TRUST values survive; new trust weights remain unset');
+// Exercise the full API concurrently; D1 batches are atomic, reads may overlap.
+for (const [suffix, amount, expected] of [['below',4999999,'AUTO_APPROVED'],['exact',5000000,'HIGH_VALUE_REVIEW'],['above',10000000,'HIGH_VALUE_REVIEW']]) {
+  const item=await req('/api/challenges',{...mission,title:'승인 경계값 확인 '+suffix,rewardAmount:amount},otherOwner.cookie);
+  assert.equal(item.status,201,JSON.stringify(item.body));
+  assert.equal(item.body.moderationAction,expected);
+  assert.equal((await req('/api/challenges/'+item.body.challenge.id)).status,amount>=5000000?404:200);
+  if(suffix==='below') {
+    const raised=await req('/api/challenges/'+item.body.challenge.id,{...mission,title:'승인 경계값 확인 '+suffix,rewardAmount:5000000},otherOwner.cookie,'PUT');
+    assert.equal(raised.status,200);assert.equal(raised.body.moderationAction,'HIGH_VALUE_REVIEW');
+    assert.equal((await req('/api/challenges/'+item.body.challenge.id)).status,404);
+  }
+}
+pass('4,999,999 / 5,000,000 / 10,000,000 KRW boundaries and reward increase require private approval');
+const raceInput={...mission,title:'동시등록 원자성 검증 미션'};
+const races=await Promise.all([req('/api/challenges',raceInput,otherOwner.cookie),req('/api/challenges',raceInput,otherOwner.cookie)]);
+assert.deepEqual(races.map(r=>r.status).sort(),[201,409],JSON.stringify(races));
+const won=races.find(r=>r.status===201).body.challenge.id;
+assert.equal(races.find(r=>r.status===409).body.existingMission.id,won);
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges WHERE title=?').get(raceInput.title).n,1);
+const sameInput={...mission,title:'동시요청 재전송 검증 미션'};
+const headers={'Idempotency-Key':'same-request-concurrent-20260928'};
+const same=await Promise.all([req('/api/challenges',sameInput,otherOwner.cookie,'POST',headers),req('/api/challenges',sameInput,otherOwner.cookie,'POST',headers)]);
+assert.deepEqual(same.map(r=>r.status).sort(),[200,201],JSON.stringify(same));
+assert.equal(same[0].body.challenge.id,same[1].body.challenge.id);
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges WHERE title=?').get(sameInput.title).n,1);
+pass('concurrent distinct keys yield one mission and a linked 409; concurrent same-key retry returns the original with no extra record');
+for(let i=0;i<55;i++) {
+  enqueue('page-check-'+i,owner.body.user.id,'페이지 검사 '+String(i).padStart(2,'0'));
+  sql.prepare("UPDATE challenges SET status='OPEN',visibility='public',reward_amount=?,region='제주페이지검사' WHERE id=?").run(10000+i,'page-check-'+i);
+}
+const page1=await req('/api/challenges?limit=50&q=페이지%20검사');
+const page2=await req('/api/challenges?limit=50&offset=50&q=페이지%20검사');
+assert.equal(page1.body.total,55);assert.equal(page1.body.challenges.length,50);assert.equal(page1.body.hasMore,true);
+assert.equal(page2.body.challenges.length,5);assert.equal(page2.body.hasMore,false);
+assert.equal(new Set([...page1.body.challenges,...page2.body.challenges].map(c=>c.id)).size,55);
+const regional=await req('/api/challenges?q=제주페이지검사&sort=reward&limit=1');
+assert.equal(regional.body.total,55);assert.equal(regional.body.challenges[0].rewardAmount,10054);
+pass('server pagination reaches all 55 records without overlap and regional search/sort covers the complete collection');
 sql.close();
 console.log(`${checks} moderation policy checks passed`);

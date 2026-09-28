@@ -1513,16 +1513,16 @@ async function queryChallenges(url, env) {
     ? url.searchParams.get('sort')
     : 'new';
   const limit = Math.min(parsePositiveInt(url.searchParams.get('limit'), 24), 50);
-  const offset = Math.max(Number(url.searchParams.get('offset') || 0), 0);
+  const offset = Math.min(parsePositiveInt(url.searchParams.get('offset'), 0), 1000000);
 
   const where = ["c.visibility = 'public'", "c.status NOT IN ('DRAFT', 'CANCELLED', 'REJECTED')"];
   const binds = [];
   if (CATEGORIES.has(category)) { where.push('c.category = ?'); binds.push(category); }
   if (status) { where.push('c.status = ?'); binds.push(status); }
   if (q) {
-    where.push('(c.title LIKE ? OR c.summary LIKE ? OR c.description LIKE ?)');
+    where.push('(c.title LIKE ? OR c.summary LIKE ? OR c.description LIKE ? OR c.region LIKE ?)');
     const like = `%${q}%`;
-    binds.push(like, like, like);
+    binds.push(like, like, like, like);
   }
 
   const orderBy = {
@@ -1539,12 +1539,12 @@ async function queryChallenges(url, env) {
     FROM challenges c
     JOIN users u ON u.id = c.owner_id
     WHERE ${where.join(' AND ')}
-    ORDER BY ${orderBy}
+    ORDER BY ${orderBy}, c.id DESC
     LIMIT ? OFFSET ?
   `).bind(...binds, limit, offset);
 
-  const result = await statement.all();
-  return { challenges: result.results.map(publicChallenge), limit, offset };
+  const [result, count] = await Promise.all([statement.all(), env.DB.prepare(`SELECT COUNT(*) total FROM challenges c JOIN users u ON u.id=c.owner_id WHERE ${where.join(' AND ')}`).bind(...binds).first()]);
+  return { challenges: result.results.map(publicChallenge), limit, offset, total:Number(count?.total || 0), hasMore:offset + result.results.length < Number(count?.total || 0) };
 }
 
 function rewardBounds(env) {
@@ -1775,8 +1775,9 @@ async function createChallenge(request, env) {
   const moderationPending = outcome.status === 'REVIEW';
   const initialStatus = outcome.status;
   const initialVisibility = outcome.visibility;
+  const contentFingerprint = await sha256(JSON.stringify([title, summary, description, successCriteria, paymentTrigger, evidenceRequirements, category, region].map(value => String(value || '').normalize('NFKC').replace(/\s+/gu, '').toLowerCase())));
   const autoReviewedAt = new Date().toISOString();
-  await env.DB.batch([
+  try { await env.DB.batch([
     env.DB.prepare(`
       INSERT INTO challenges (
         id, owner_id, title, summary, description, category, region,
@@ -1785,13 +1786,13 @@ async function createChallenge(request, env) {
         submitted_visibility, moderation_reasons_json, moderation_decision,
         moderation_risk_score, moderation_auto_reviewed_at, moderation_action,
         moderation_policy_version, moderation_guidance_json, owner_subject_type,
-        owner_actor_profile_id, owner_verification_snapshot_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        owner_actor_profile_id, owner_verification_snapshot_json, content_fingerprint
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(id, user.id, title, summary, description, category, region,
       rewardAmount, feeRate, successCriteria, paymentTrigger, evidenceRequirements, deadline, initialStatus,
       initialVisibility, visibility, JSON.stringify(moderationReasons), outcome.legacyDecision,
       moderation.riskScore, autoReviewedAt, storedModerationAction(moderation.action), MODERATION_POLICY_VERSION,
-      JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot)),
+      JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), contentFingerprint),
     env.DB.prepare(`
       INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, to_status, metadata_json)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -1805,7 +1806,16 @@ async function createChallenge(request, env) {
       (id, user_id, activity_role, subject_type, actor_profile_id, challenge_id, verification_snapshot_json)
       VALUES (?, ?, 'OWNER', ?, ?, ?, ?)`)
       .bind(makeId('aqf'), user.id, subjectType, verification.profile.id, id, JSON.stringify(verification.snapshot)),
-  ]);
+  ]); } catch (error) {
+    if (!/DUPLICATE_MISSION|UNIQUE constraint failed: challenge_create_requests/.test(String(error))) throw error;
+    const replay = await env.DB.prepare('SELECT challenge_id FROM challenge_create_requests WHERE owner_id=? AND idempotency_key=?').bind(user.id, idempotencyKey).first();
+    if (replay) {
+      const challenge = publicChallenge(await fetchChallenge(replay.challenge_id, env));
+      return json({ challenge, duplicatePrevented:true, moderationAction:challenge.moderationAction, moderationReasons:challenge.moderationReasons, moderationGuidance:challenge.moderationGuidance }, 200);
+    }
+    const existing = await findSimilarChallenge(user.id, {title,summary,description,successCriteria,paymentTrigger,evidenceRequirements,category,region}, null, env);
+    return json({error:{code:'DUPLICATE_MISSION',message:'동일한 내용의 진행 중 미션이 이미 있습니다. 기존 미션을 확인해주세요.'},existingMission:existing ? {id:existing.id,title:existing.title} : null},409);
+  }
 
   const challenge = publicChallenge(await fetchChallenge(id, env));
   return json({ challenge, moderationPending, existingMission: moderation.existingMission || null, moderationAction: challenge.moderationAction, moderationDecision: challenge.moderationDecision, moderationReasons: challenge.moderationReasons, moderationGuidance: challenge.moderationGuidance, verificationAdvisory: !verification.eligible }, 201);
@@ -1850,14 +1860,20 @@ async function updateChallenge(challengeId, request, env) {
   const outcome = moderationOutcome(moderation, submittedVisibility);
   const status = outcome.status;
   const visibility = outcome.visibility;
+  const contentFingerprint = await sha256(JSON.stringify([title, summary, description, successCriteria, paymentTrigger, evidenceRequirements, category, region].map(value => String(value || '').normalize('NFKC').replace(/\s+/gu, '').toLowerCase())));
   const autoReviewedAt = new Date().toISOString();
-  await env.DB.batch([
-    env.DB.prepare(`UPDATE challenges SET title = ?, summary = ?, description = ?, category = ?, region = ?, reward_amount = ?, success_criteria = ?, payment_trigger = ?, evidence_requirements = ?, deadline = ?, status = ?, visibility = ?, submitted_visibility = ?, moderation_reasons_json = ?, moderation_decision = ?, moderation_risk_score = ?, moderation_auto_reviewed_at = ?, moderation_action = ?, moderation_policy_version = ?, moderation_guidance_json = ?, owner_subject_type = ?, owner_actor_profile_id = ?, owner_verification_snapshot_json = ?, moderation_reviewed_by = NULL, moderation_reviewed_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-      .bind(title, summary, description, category, region, rewardAmount, successCriteria, paymentTrigger, evidenceRequirements, deadline, status, visibility, submittedVisibility, JSON.stringify(moderationReasons), outcome.legacyDecision, moderation.riskScore, autoReviewedAt, storedModerationAction(moderation.action), MODERATION_POLICY_VERSION, JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), challengeId),
+  try { await env.DB.batch([
+    env.DB.prepare(`UPDATE challenges SET title = ?, summary = ?, description = ?, category = ?, region = ?, reward_amount = ?, success_criteria = ?, payment_trigger = ?, evidence_requirements = ?, deadline = ?, status = ?, visibility = ?, submitted_visibility = ?, moderation_reasons_json = ?, moderation_decision = ?, moderation_risk_score = ?, moderation_auto_reviewed_at = ?, moderation_action = ?, moderation_policy_version = ?, moderation_guidance_json = ?, owner_subject_type = ?, owner_actor_profile_id = ?, owner_verification_snapshot_json = ?, content_fingerprint = ?, moderation_reviewed_by = NULL, moderation_reviewed_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+      .bind(title, summary, description, category, region, rewardAmount, successCriteria, paymentTrigger, evidenceRequirements, deadline, status, visibility, submittedVisibility, JSON.stringify(moderationReasons), outcome.legacyDecision, moderation.riskScore, autoReviewedAt, storedModerationAction(moderation.action), MODERATION_POLICY_VERSION, JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), contentFingerprint, challengeId),
     env.DB.prepare(`INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, from_status, to_status, metadata_json) VALUES (?, ?, ?, 'CHALLENGE_UPDATED', ?, ?, ?)`)
       .bind(makeId('evt'), challengeId, user.id, current.status, status, JSON.stringify({ moderationAction: moderation.action, moderationRiskScore: moderation.riskScore, moderationReasons, policyVersion: MODERATION_POLICY_VERSION })),
     auditStatement(env, user.id, 'CHALLENGE_UPDATE', 'challenge', challengeId, { status: current.status }, { status, moderationAction: moderation.action, moderationRiskScore: moderation.riskScore, moderationReasons, policyVersion: MODERATION_POLICY_VERSION }),
-  ]);
+  ]); } catch (error) {
+    if (String(error).includes('CHALLENGE_EDIT_LOCKED')) return problem(409,'CHALLENGE_EDIT_LOCKED','제안 접수 또는 진행이 시작되었습니다. 최신 상태를 확인해주세요.');
+    if (!String(error).includes('DUPLICATE_MISSION')) throw error;
+    const existing = await findSimilarChallenge(user.id,{title,summary,description,successCriteria,paymentTrigger,evidenceRequirements,category,region},challengeId,env);
+    return json({error:{code:'DUPLICATE_MISSION',message:'동일한 내용의 진행 중 미션이 이미 있습니다. 기존 미션을 확인해주세요.'},existingMission:existing ? {id:existing.id,title:existing.title} : null},409);
+  }
   const challenge = publicChallenge(await fetchChallenge(challengeId, env));
   return json({ challenge, moderationPending: challenge.moderationPending, moderationAction: challenge.moderationAction, moderationDecision: challenge.moderationDecision, moderationReasons: challenge.moderationReasons, moderationGuidance: challenge.moderationGuidance, verificationAdvisory: !verification.eligible });
 }

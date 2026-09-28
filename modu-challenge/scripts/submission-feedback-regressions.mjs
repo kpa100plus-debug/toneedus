@@ -96,4 +96,10 @@ assert.equal(win.document.querySelector('[data-action="edit-saved-challenge"]').
 assert.match(run(`renderProgressNotice(saved,{isOwner:true,existingMission:{id:'original-one',title:'기존 의뢰'}})`),/data-challenge-id="original-one"/);
 assert.doesNotMatch(run(`renderProgressNotice(saved,{isOwner:false,existingMission:{id:'original-one',title:'기존 의뢰'}})`),/original-one/);
 pass('duplicate result and saved draft link to the original, preserve the editable copy and escape its title');
+run(`state.user.isAdmin=true;state.adminOverview={role:'primary',moderationChallenges:[{id:'high-pending',title:'천만 원 미션',reward_amount:10000000,moderation_action:'ADMIN_OVERRIDE',moderationReasons:[]}]};`);
+const adminHtml=run('renderAdmin()');
+assert.match(adminHtml,/관리자 검토 대기/);
+assert.match(adminHtml,/500만 원 이상 금액 검토/);
+assert.match(adminHtml,/data-action="approve-moderation" data-challenge-id="high-pending"/);
+pass('primary administrator can see and act on the private high-value review queue');
 run('clearInterval(emailCountdownTimer);if(activityPollTimer)clearInterval(activityPollTimer)');win.close();console.log(`${count} submission feedback checks passed`);

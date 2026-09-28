@@ -1706,6 +1706,7 @@ async function getChallenge(challengeId, request, env) {
       settlement,
       latestProof,
       missionSimulation: await readMissionSimulationContext(env, challenge, viewerAuth),
+      existingMission: await existingDuplicateForOwner(challenge, viewerAuth, env),
     };
   }
 
@@ -1732,7 +1733,7 @@ async function createChallenge(request, env) {
     const existingChallenge = await fetchChallenge(existingRequest.challenge_id, env);
     if (existingChallenge) {
       const challenge = publicChallenge(existingChallenge);
-      return json({ challenge, duplicatePrevented: true, moderationAction: challenge.moderationAction,
+      return json({ challenge, existingMission: await existingDuplicateForOwner(existingChallenge, user, env), duplicatePrevented: true, moderationAction: challenge.moderationAction,
         moderationReasons: challenge.moderationReasons, moderationGuidance: challenge.moderationGuidance }, 200);
     }
   }
@@ -1803,7 +1804,7 @@ async function createChallenge(request, env) {
   ]);
 
   const challenge = publicChallenge(await fetchChallenge(id, env));
-  return json({ challenge, moderationPending, moderationAction: challenge.moderationAction, moderationDecision: challenge.moderationDecision, moderationReasons: challenge.moderationReasons, moderationGuidance: challenge.moderationGuidance, verificationAdvisory: !verification.eligible }, 201);
+  return json({ challenge, moderationPending, existingMission: moderation.existingMission || null, moderationAction: challenge.moderationAction, moderationDecision: challenge.moderationDecision, moderationReasons: challenge.moderationReasons, moderationGuidance: challenge.moderationGuidance, verificationAdvisory: !verification.eligible }, 201);
 }
 
 async function updateChallenge(challengeId, request, env) {
@@ -1853,7 +1854,7 @@ async function updateChallenge(challengeId, request, env) {
     auditStatement(env, user.id, 'CHALLENGE_UPDATE', 'challenge', challengeId, { status: current.status }, { status, moderationAction: moderation.action, moderationRiskScore: moderation.riskScore, moderationReasons, policyVersion: MODERATION_POLICY_VERSION }),
   ]);
   const challenge = publicChallenge(await fetchChallenge(challengeId, env));
-  return json({ challenge, moderationPending: false, moderationAction: challenge.moderationAction, moderationDecision: challenge.moderationDecision, moderationReasons: challenge.moderationReasons, moderationGuidance: challenge.moderationGuidance, verificationAdvisory: !verification.eligible });
+  return json({ challenge, moderationPending: false, existingMission: moderation.existingMission || null, moderationAction: challenge.moderationAction, moderationDecision: challenge.moderationDecision, moderationReasons: challenge.moderationReasons, moderationGuidance: challenge.moderationGuidance, verificationAdvisory: !verification.eligible });
 }
 
 function assessChallengeModeration({ title, summary, description, successCriteria, paymentTrigger = '', evidenceRequirements = '' }) {
@@ -1888,8 +1889,21 @@ function assessChallengeModeration({ title, summary, description, successCriteri
 async function evaluateChallengeModeration(input, ownerId, excludeId, env) {
   let moderation = assessChallengeModeration(input);
   const duplicate = await findSimilarChallenge(ownerId, input, excludeId, env);
-  if (duplicate) moderation = addModerationFinding(moderation, { code: 'POSSIBLE_DUPLICATE', label: '진행 중인 동일 내용 미션 중복 등록', score: 30, prohibited: false });
+  if (duplicate) {
+    moderation = addModerationFinding(moderation, { code: 'POSSIBLE_DUPLICATE', label: '진행 중인 동일 내용 미션 중복 등록', score: 30, prohibited: false });
+    moderation.existingMission = { id: duplicate.id, title: duplicate.title };
+  }
   return moderation;
+}
+
+async function existingDuplicateForOwner(challenge, user, env) {
+  if (!user || user.id !== challenge.owner_id || challenge.status !== 'DRAFT') return null;
+  const match = await findSimilarChallenge(user.id, {
+    title: challenge.title, summary: challenge.summary, description: challenge.description,
+    successCriteria: challenge.success_criteria, paymentTrigger: challenge.payment_trigger,
+    evidenceRequirements: challenge.evidence_requirements, category: challenge.category, region: challenge.region,
+  }, challenge.id, env);
+  return match ? { id: match.id, title: match.title } : null;
 }
 
 async function findSimilarChallenge(ownerId, input, excludeId, env) {

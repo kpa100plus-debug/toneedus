@@ -71,6 +71,12 @@ const baseDetail = { challenge: baseChallenge, context: { isOwner: true, isAdmin
 win.testDetail = structuredClone(baseDetail);
 win.refreshReads = [];
 run(`state.user={id:'actual-owner',emailVerified:true,isAdmin:false};state.selectedChallenge=testDetail;renderChallengeModal(testDetail);apiClient.getChallenge=async(id,options)=>{refreshReads.push({id,refresh:options?.refresh});return testDetail;};`);
+assert.equal(doc.querySelectorAll('[data-action="open-mission-simulation"]').length, 2);
+assert.match(doc.querySelector('.workflow-notice').textContent, /보상금 확보부터 결과 제출·검수·지급 완료/);
+assert.match(doc.querySelector('.workflow-notice').textContent, /실제 청구·송금은 0원/);
+assert.doesNotMatch(run('renderLiveActions(testDetail.challenge,{isOwner:false,isAdmin:false})'), /open-mission-simulation/);
+assert.doesNotMatch(run('renderLiveActions({...testDetail.challenge,status:"OPEN"},{isOwner:true})'), /open-mission-simulation/);
+pass('shortlisted owner has direct simulation entry in progress notice and sidebar, other members and unselected missions do not');
 const unchangedDetail = doc.querySelector('[data-mission-detail]');
 await run('refreshMissionDetail()');
 assert.equal(doc.querySelector('[data-mission-detail]'), unchangedDetail);

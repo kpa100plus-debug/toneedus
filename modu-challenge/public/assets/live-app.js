@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=77';
-import { legacyNotificationText } from './brand.js?v=77';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=77';
-import { calculateSettlement } from './business-rules.js?v=77';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=77';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=78';
+import { legacyNotificationText } from './brand.js?v=78';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=78';
+import { calculateSettlement } from './business-rules.js?v=78';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=78';
 
 /**
  * 모두의클리어 live frontend
@@ -148,7 +148,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=77').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=78').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -1054,7 +1054,7 @@ function renderCreate() {
           </div>
         </div>
         <div class="form-section"><div class="form-section-head"><span>2</span><div><h2>보상금과 일정</h2><p>등록 시에는 표시되고, FINALIST 선정 후 Funding 단계가 시작됩니다.</p></div></div>
-          <div class="form-grid reward-schedule-grid"><div class="field"><label>보상금 <span class="required">*</span></label><input name="rewardAmount" type="number" min="${min}" max="${max}" step="1" required value="100000" /><small>최소 ${formatWon(min)} · 최대 ${formatWon(max)} · 고액 보상금도 전체 위험요소를 종합해 자동 판정</small></div><div class="field"><label>마감일 <span class="required">*</span></label><input name="deadline" type="date" min="${minDate}" required /></div></div>
+          <div class="form-grid reward-schedule-grid"><div class="field"><label>보상금 <span class="required">*</span></label><input name="rewardAmount" type="number" min="${min}" max="${max}" step="1" required value="100000" /><small>최소 ${formatWon(min)} · 최대 ${formatWon(max)} · 계정별 표시 한도 적용. 금액만으로 관리자 승인을 요구하지 않습니다. 표시 보상금은 실제 확보된 돈이 아니며 현재 실제 청구·송금은 0원입니다.</small></div><div class="field"><label>마감일 <span class="required">*</span></label><input name="deadline" type="date" min="${minDate}" required /></div></div>
         </div>
         <div class="form-section"><div class="form-section-head"><span>3</span><div><h2>성공·보상금 준비 기준</h2><p>분쟁을 막는 가장 중요한 약속 정보입니다.</p></div></div>
           ${easy ? renderCriteriaCheckBuilder() : ''}
@@ -1739,6 +1739,7 @@ function renderLiveActions(challenge, context) {
   if (context.isAdmin) buttons.push(`<button class="btn btn-outline btn-block" data-action="open-admin">관리기록 보기</button>`);
   if (context.isAdmin && challenge.moderationPending) buttons.push(`<button class="btn btn-primary btn-block" data-action="approve-moderation" data-challenge-id="${challenge.id}">검토 승인 후 공개</button>`);
   if (context.isOwner) {
+    if (challenge.status === 'SHORTLISTED' && challenge.fundingStatus === 'POSTED' && !context.missionSimulation) buttons.push(`<button type="button" class="btn btn-primary btn-block" data-action="open-mission-simulation" data-challenge-id="${escapeAttribute(challenge.id)}">가상 진행 시작 · 보상금 확보 테스트</button><p class="action-explanation">선택한 후보와 결과 제출·검수·지급 완료까지 테스트합니다. 실제 청구·송금은 0원입니다.</p>`);
     const canEdit = context.canEdit || (Number(challenge.teaserCount || 0) === 0 && challenge.fundingStatus === 'POSTED' && ['OPEN', 'REVIEW', 'DRAFT'].includes(challenge.status));
     if (canEdit) buttons.push(`<button class="btn btn-outline btn-block" data-action="edit-challenge" data-challenge-id="${challenge.id}">미션 수정</button>`);
     if (challenge.moderationAction === 'AUTO_REJECTED') buttons.push(`<button class="btn btn-outline btn-block" data-action="appeal-moderation" data-challenge-id="${challenge.id}">자동판정 이의신청</button>`);
@@ -2233,7 +2234,9 @@ function showChallengeSubmissionResult(result) {
   const visibility = challenge.publicationVisibility || challenge.visibility;
   const message = blocked ? '비공개 저장 · 사유를 확인해주세요' : visibility === 'private' ? '비공개로 등록했습니다' : visibility === 'unlisted' ? '링크 공개로 등록했습니다' : '미션이 공개되었습니다';
   const id = escapeAttribute(challenge.id);
-  openModal(`<section class="submission-result"><p class="submission-result-title">${escapeHTML(challenge.title)}</p>${blocked ? renderModerationFeedback(challenge) : `<p>내용 검수를 통과했습니다. ${visibility === 'private' ? '선택한 비공개 설정이 유지됩니다.' : visibility === 'unlisted' ? '링크를 아는 사람에게 공개됩니다.' : '미션 목록에서 확인할 수 있습니다.'}</p>`}${blocked ? `<button class="btn btn-primary btn-lg btn-block" type="button" data-action="edit-saved-challenge" data-challenge-id="${id}">이 미션 수정하기</button>` : ''}<button class="btn btn-outline btn-block" type="button" data-challenge-id="${id}">저장한 미션 상세 보기</button><button class="btn btn-outline btn-block" type="button" data-route="dashboard">내 클리어에서 기존 미션 확인</button><p class="form-hint">실제 결제·지급은 아직 제공하지 않습니다.</p></section>`, { title: message });
+  const existing = result.existingMission;
+  const existingLink = blocked && existing?.id ? `<div class="notice-box"><div><strong>이미 진행 중인 미션: ${escapeHTML(existing.title)}</strong><p>이번 작성본은 비공개로 보존했습니다. 같은 의뢰를 이어가려면 기존 미션을 여세요. 별개의 의뢰라면 이번 작성본의 대상·범위·성공조건을 수정해주세요.</p><button type="button" class="btn btn-primary btn-block" data-challenge-id="${escapeAttribute(existing.id)}">중복으로 확인된 기존 미션 열기</button></div></div>` : '';
+  openModal(`<section class="submission-result"><p class="submission-result-title">${escapeHTML(challenge.title)}</p>${blocked ? renderModerationFeedback(challenge) : `<p>내용 검수를 통과했습니다. ${visibility === 'private' ? '선택한 비공개 설정이 유지됩니다.' : visibility === 'unlisted' ? '링크를 아는 사람에게 공개됩니다.' : '미션 목록에서 확인할 수 있습니다.'}</p>`}${existingLink}${blocked ? `<button class="btn btn-primary btn-lg btn-block" type="button" data-action="edit-saved-challenge" data-challenge-id="${id}">이 미션 수정하기</button>` : ''}<button class="btn btn-outline btn-block" type="button" data-challenge-id="${id}">저장한 미션 상세 보기</button><button class="btn btn-outline btn-block" type="button" data-route="dashboard">내 클리어에서 기존 미션 확인</button><p class="form-hint">보상금은 의뢰 시 표시한 금액이며 실제 확보된 돈이 아닙니다. 금액만으로 관리자 승인을 요구하지 않으며, 계정별 표시 한도와 내용 검수를 적용합니다. 실제 결제·지급은 아직 제공하지 않습니다.</p></section>`, { title: message });
 }
 
 async function submitChallenge(form) {
@@ -2907,7 +2910,10 @@ function renderProgressNotice(challenge, context = {}) {
   let action = context.isOwner && !challenge.moderationPending && ['OPEN','REVIEW','SHORTLISTED'].includes(challenge.status) ? 'review-candidates' : '';
   let label = '티저 검토 · 후보선정';
   const blocked = !isMoneyFlowAvailable();
-  if (challenge.status === 'DRAFT') { title = '비공개 초안'; message = '아직 공개되지 않은 미션입니다. 공개 후 티저 접수를 시작할 수 있습니다.'; }
+  if (challenge.status === 'DRAFT') {
+    title = '비공개 초안'; message = '아직 공개되지 않은 미션입니다. 공개 후 티저 접수를 시작할 수 있습니다.';
+    if (context.isOwner && context.existingMission?.id) return `<section class="workflow-notice" aria-label="현재 진행상황"><strong>동일한 의뢰가 이미 진행 중입니다</strong><p>이번 작성본은 비공개로 보존했습니다. 기존 미션: ${escapeHTML(context.existingMission.title)}</p><button type="button" class="btn btn-primary" data-challenge-id="${escapeAttribute(context.existingMission.id)}">중복으로 확인된 기존 미션 열기</button><p>별개의 의뢰라면 이번 작성본의 대상·범위·성공조건을 수정해주세요.</p></section>`;
+  }
   else if (challenge.moderationPending) { title = '공개 검토 대기'; message = '관리자가 등록 내용을 검토한 뒤 티저 접수가 시작됩니다.'; }
   else if (challenge.status === 'SHORTLISTED') {
     title = context.viewerTeaser?.status === 'SHORTLISTED' ? '수행자 후보로 선택되었습니다' : '수행자 후보 선택 · 최종 확정 대기';
@@ -2915,7 +2921,10 @@ function renderProgressNotice(challenge, context = {}) {
     label = '후보 확인 · 최종 확정';
     if (blocked) {
       message += ' 실제 결제·지급 연동은 준비 중입니다.';
-      if (context.isOwner) message += ' 후보 확인 화면에서 선택한 후보와 가상 진행을 시작할 수 있습니다. 실제 청구·송금은 0원입니다.';
+      if (context.isOwner) {
+        message += ' 아래 버튼으로 선택한 후보와 보상금 확보부터 결과 제출·검수·지급 완료까지 가상으로 진행하세요. 실제 청구·송금은 0원입니다.';
+        action = 'open-mission-simulation'; label = '가상 진행 시작 · 보상금 확보 테스트';
+      }
       else if (context.isAdmin) message += ' 운영 관리자는 아래 ‘가상 거래로 복제해 테스트’에서 별도 테스트를 할 수 있습니다.';
     }
   } else if (challenge.status === 'FUNDING_REQUIRED') {

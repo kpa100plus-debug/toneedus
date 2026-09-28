@@ -78,4 +78,12 @@ for(const [region,quantity] of [['전국·온라인','3'],['서울·수도권','
 assert.equal(submittedScopes.length,2);assert.equal(submittedScopes[0].title,submittedScopes[1].title);
 assert.notEqual(submittedScopes[0].region,submittedScopes[1].region);assert.notEqual(submittedScopes[0].successCriteria,submittedScopes[1].successCriteria);
 pass('same-title easy missions retain distinct region/quantity payloads and show the server-approved result without a client duplicate warning');
+run(`showChallengeSubmissionResult({challenge:saved,existingMission:{id:'original-one',title:'기존 <img src=x onerror=alert(1)> 미션'}});`);
+assert.equal(win.document.querySelector('.notice-box button').dataset.challengeId,'original-one');
+assert.equal(win.document.querySelector('.notice-box img'),null);
+assert.match(win.document.querySelector('.submission-result').textContent,/실제 확보된 돈이 아닙니다/);
+assert.equal(win.document.querySelector('[data-action="edit-saved-challenge"]').dataset.challengeId,'saved-one');
+assert.match(run(`renderProgressNotice(saved,{isOwner:true,existingMission:{id:'original-one',title:'기존 의뢰'}})`),/data-challenge-id="original-one"/);
+assert.doesNotMatch(run(`renderProgressNotice(saved,{isOwner:false,existingMission:{id:'original-one',title:'기존 의뢰'}})`),/original-one/);
+pass('duplicate result and saved draft link to the original, preserve the editable copy and escape its title');
 run('clearInterval(emailCountdownTimer);if(activityPollTimer)clearInterval(activityPollTimer)');win.close();console.log(`${count} submission feedback checks passed`);

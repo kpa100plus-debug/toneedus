@@ -88,7 +88,18 @@ assert.equal(high.status, 201, JSON.stringify(high.body)); assert.equal(high.bod
 assert.equal(sql.prepare('SELECT moderation_risk_score FROM challenges WHERE id=?').get(high.body.challenge.id).moderation_risk_score, 0); assert.equal((await req(`/api/challenges/${high.body.challenge.id}`)).status, 200);
 pass('safe maximum reward publishes through the API when external services are unavailable');
 
+for (const amount of [100000001, 100000000.5, 9999]) {
+  const invalid = await req('/api/challenges', { ...mission, rewardAmount: amount }, owner.cookie);
+  assert.equal(invalid.status, 400); assert.equal(invalid.body.error.code, 'INVALID_REWARD');
+}
+pass('server rejects amounts above 100 million, fractional amounts and amounts below the minimum');
 const duplicate = await req('/api/challenges', mission, owner.cookie);
+assert.deepEqual(duplicate.body.existingMission, {id:high.body.challenge.id,title:mission.title});
+const savedDuplicate = await req(`/api/challenges/${duplicate.body.challenge.id}?refresh=1`, undefined, owner.cookie);
+assert.deepEqual(savedDuplicate.body.context.existingMission, duplicate.body.existingMission);
+assert.equal((await req(`/api/challenges/${duplicate.body.challenge.id}`, undefined, pendingOwner.cookie)).status, 404);
+assert.equal((await req(`/api/challenges/${high.body.challenge.id}`, undefined, pendingOwner.cookie)).body.context.existingMission, null);
+pass('duplicate recovery points to the exact original for its owner without exposing private copies to another member');
 assert.equal(duplicate.body.moderationAction, 'CHANGES_REQUIRED'); assert.equal(duplicate.body.challenge.publicationVisibility, 'private');
 assert.equal((await req(`/api/challenges/${duplicate.body.challenge.id}`)).status, 404);
 assert.ok(duplicate.body.moderationGuidance.some((item) => /기존 미션을 수정/.test(item.message)));

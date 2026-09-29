@@ -49,6 +49,7 @@ pass('selection-only edits, consent and duplicate-prevention key restore after r
 
 form = doc.querySelector('#challenge-create-form');
 form.elements.wizardSubject.value = '보행환경 개선방안';
+form.elements.wizardSpecifics.value = '서울 중구 횡단보도 3곳의 경사로를 조사해주세요';
 form.elements.wizardRegion.value = '서울·수도권';
 form.elements.wizardQuantity.value = '10';
 run("generateChallengeDraft(document.querySelector('[data-action=generate-challenge-draft]'))");
@@ -56,12 +57,20 @@ const generatedFields = ['title', 'summary', 'description', 'category', 'region'
 const generatedValues = Object.fromEntries(generatedFields.map(name => [name, form.elements[name].value]));
 assert.equal(generatedValues.title, '보행환경 개선방안 찾아주세요');
 assert.match(generatedValues.successCriteria, /10개의/);
+assert.match(generatedValues.description, /서울 중구 횡단보도 3곳/);
 run('state.createDraft=null;main.innerHTML=renderCreate();hydratePage();');
 form = doc.querySelector('#challenge-create-form');
 for (const name of generatedFields) assert.equal(form.elements[name].value, generatedValues[name], name);
 assert.equal(form.elements.wizardRegion.value, '서울·수도권');
 assert.equal(form.elements.wizardQuantity.value, '10');
+assert.equal(form.elements.wizardSpecifics.value, '서울 중구 횡단보도 3곳의 경사로를 조사해주세요');
 pass('easy-generated mission fields restore from session immediately without another input or submit');
+form.elements.wizardSpecifics.value = '부산 동구 횡단보도 5곳의 경사로를 조사해주세요';
+run("generateChallengeDraft(document.querySelector('[data-action=generate-challenge-draft]'))");
+assert.equal(form.elements.title.value, generatedValues.title);
+assert.notEqual(form.elements.description.value, generatedValues.description);
+assert.notEqual(form.elements.successCriteria.value, generatedValues.successCriteria);
+pass('same easy selections with a different real scope produce distinct work and acceptance terms');
 
 run(`state.user={id:'member-a',emailVerified:true};state.selectedChallenge={challenge:{id:'mission-a',ownerSubjectType:'individual',title:'수정 대상 미션',summary:'기존 요약 정보입니다',description:'기존 상세 설명을 보존합니다',category:'FIND',rewardAmount:100000,deadline:'2026-12-31T14:59:59Z',successCriteria:'수량과 규격 확인',paymentTrigger:'작업 시작 전 보상금 확보',evidenceRequirements:'최종 원본 파일',visibility:'public'},context:{canEdit:true}};openChallengeEditForm('mission-a');`);
 form = doc.querySelector('#challenge-edit-form');

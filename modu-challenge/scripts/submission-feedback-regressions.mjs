@@ -73,7 +73,7 @@ run('apiClient.createChallenge=async payload=>acceptDistinctScope(payload);');
 for(const [region,quantity] of [['전국·온라인','3'],['서울·수도권','10']]) {
  run(`closeModal();state.route='create';history.replaceState(null,'','#/create');main.innerHTML=renderCreate();`);
  const easyForm=win.document.querySelector('#challenge-create-form');
- easyForm.elements.wizardSubject.value='보행환경 개선방안';easyForm.elements.wizardRegion.value=region;easyForm.elements.wizardQuantity.value=quantity;
+ easyForm.elements.wizardSubject.value='보행환경 개선방안';easyForm.elements.wizardSpecifics.value=region==='서울·수도권'?'서울 중구 횡단보도 3곳':'전국 공공시설 10곳';easyForm.elements.wizardRegion.value=region;easyForm.elements.wizardQuantity.value=quantity;
  run("generateChallengeDraft(document.querySelector('[data-action=generate-challenge-draft]'))");
  await run("submitChallenge(document.querySelector('#challenge-create-form'))");
  assert.equal(win.document.querySelector('.modal-header h2').textContent,'미션이 공개되었습니다');

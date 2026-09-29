@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=85';
-import { legacyNotificationText } from './brand.js?v=85';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=85';
-import { calculateSettlement } from './business-rules.js?v=85';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=85';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=86';
+import { legacyNotificationText } from './brand.js?v=86';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=86';
+import { calculateSettlement } from './business-rules.js?v=86';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=86';
 
 /**
  * 모두의클리어 live frontend
@@ -155,7 +155,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=85').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=86').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -1159,7 +1159,8 @@ function renderEasyCreateWizard(max) {
       <div class="field"><label>⑤ 활동 지역은?</label><select name="wizardRegion"><option>전국·온라인</option><option>서울·수도권</option><option>지역 직접 입력</option></select></div>
       <div class="field"><label>⑥ 추천 보상금은?</label><select name="wizardReward">${rewardOptions.map((amount) => `<option value="${amount}" ${amount === 100_000 ? 'selected' : ''}>${formatWon(amount)}</option>`).join('')}</select></div>
       <div class="field"><label>⑦ 모집 기간은?</label><select name="wizardDays"><option value="7">7일</option><option value="14" selected>14일</option><option value="30">30일</option><option value="60">60일</option></select></div>
-      <div class="field full"><label>⑧ 핵심 대상이나 주제를 한 문장으로 적어주세요</label><input name="wizardSubject" minlength="2" maxlength="100" placeholder="예: 친환경 포장재를 소량 생산할 수 있는 국내 제조사" /></div>
+      <div class="field full"><label>⑧ 핵심 대상이나 주제를 한 문장으로 적어주세요</label><input name="wizardSubject" required minlength="2" maxlength="100" placeholder="예: 친환경 포장재를 소량 생산할 수 있는 국내 제조사" /></div>
+      <div class="field full"><label>⑨ 이번 의뢰만의 조건은 무엇인가요?</label><input name="wizardSpecifics" required minlength="5" maxlength="160" placeholder="예: 월 500개 생산, 서울 납품, 재활용 소재 사용" /><small>대상·장소·수량·결과물 중 실제로 구분되는 조건을 적어주세요. 같은 의뢰를 반복 등록할 수는 없습니다.</small></div>
     </div>
     <div class="example-chips"><span>⑧ 입력 예시:</span><button type="button" data-action="select-create-example" data-example="manufacturer">제조사 찾기</button><button type="button" data-action="select-create-example" data-example="design">로고·디자인</button><button type="button" data-action="select-create-example" data-example="local">지역문제 개선</button><button type="button" data-action="select-create-example" data-example="expert">전문가 연결</button></div>
     <button class="btn btn-soft btn-lg btn-block wizard-generate" type="button" data-action="generate-challenge-draft">선택한 내용으로 미션 글 자동 작성</button>
@@ -1179,6 +1180,11 @@ function generateChallengeDraft(button) {
     form.elements.wizardSubject.focus();
     return toast('핵심 대상이나 주제를 적어주세요', '짧은 한 문장이면 충분합니다.', 'warning');
   }
+  const specifics = form.elements.wizardSpecifics.value.trim();
+  if (specifics.length < 5) {
+    form.elements.wizardSpecifics.focus();
+    return toast('이번 의뢰만의 조건을 적어주세요', '대상·장소·수량·결과물 중 하나를 구체적으로 적으면 됩니다.', 'warning');
+  }
   const resultMeta = {
     list: ['후보 목록', `${quantity}개의 조건 적합 후보와 비교정보`], meeting: ['담당자 연결', '연결 수락과 공식 미팅 완료'], proposal: ['해결 제안서', `${quantity}개의 실행 가능한 개선안`],
     design: ['완성 디자인', '즉시 활용 가능한 최종 원본'], execution: ['실행 결과', '요청한 활동의 완료 결과'], report: ['조사 보고서', '근거가 포함된 비교·분석 보고서'],
@@ -1187,13 +1193,13 @@ function generateChallengeDraft(button) {
   const action = ['FIND', 'CONNECT'].includes(purpose) ? '찾아주세요' : purpose === 'ACTION' ? '제작해주세요' : '제안해주세요';
   form.elements.title.value = `${subject} ${action}`.slice(0, 90);
   form.elements.summary.value = `${subject} 관련 요청입니다. 필요한 결과: ${resultMeta[1]}.`.slice(0, 180);
-  form.elements.description.value = `${subject} 관련 의뢰입니다. 단순한 소개를 넘어 실제 확인 가능한 결과가 필요합니다. 결과 형태: ${resultMeta[0]}. 참가자는 개인정보와 영업비밀을 가린 TEASER로 접근방법과 경험을 먼저 제시해주세요. 최종 선정 후 합의된 범위와 일정에 따라 결과를 제출합니다.`;
+  form.elements.description.value = `${subject} 관련 의뢰입니다. 이번 의뢰의 구체적 조건: ${specifics}. 단순한 소개를 넘어 실제 확인 가능한 결과가 필요합니다. 결과 형태: ${resultMeta[0]}. 참가자는 개인정보와 영업비밀을 가린 TEASER로 접근방법과 경험을 먼저 제시해주세요. 최종 선정 후 합의된 범위와 일정에 따라 결과를 제출합니다.`;
   form.elements.category.value = purpose;
   form.elements.region.value = form.elements.wizardRegion.value === '지역 직접 입력' ? '' : form.elements.wizardRegion.value;
   form.elements.rewardAmount.value = Math.min(Number(form.elements.wizardReward.value), rewardBoundsForUser().max);
   const deadline = new Date(Date.now() + Number(form.elements.wizardDays.value || 14) * 86400000);
   form.elements.deadline.value = deadline.toISOString().slice(0, 10);
-  form.elements.successCriteria.value = `제출 기준: ${resultMeta[1]}. 의뢰자가 사전에 공개한 조건 충족 여부를 객관적으로 확인한 시점을 성공으로 봅니다.`;
+  form.elements.successCriteria.value = `제출 기준: ${resultMeta[1]}. 이번 의뢰의 조건(${specifics})을 충족해야 합니다. 의뢰자가 제출 자료를 기준으로 객관적으로 확인한 시점을 성공으로 봅니다.`;
   form.elements.paymentTrigger.value = '의뢰자가 TEASER를 검토하고 최종 수행자를 선정한 뒤, 실제 수행을 시작하기 전 보상금 준비 절차를 진행합니다.';
   form.elements.evidenceRequirements.value = evidenceText;
   updateCreatePreview();
@@ -1215,7 +1221,8 @@ function selectCreateExample(example, button) {
   form.elements.wizardSubject.value = subjects[example];
   form.querySelectorAll('.example-chips button').forEach((item) => item.classList.toggle('selected', item === button));
   saveCreateDraft();
-  toast('⑧ 핵심 주제에 예시를 넣었습니다', '전체 글은 자동 작성 버튼을 눌러야 작성됩니다.', 'success');
+  form.elements.wizardSpecifics.focus();
+  toast('⑧ 핵심 주제에 예시를 넣었습니다', '⑨ 이번 의뢰만의 조건을 적고 자동 작성하세요.', 'success');
 }
 
 function renderDashboard() {

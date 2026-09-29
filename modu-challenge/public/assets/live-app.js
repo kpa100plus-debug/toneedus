@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=86';
-import { legacyNotificationText } from './brand.js?v=86';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=86';
-import { calculateSettlement } from './business-rules.js?v=86';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=86';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=87';
+import { legacyNotificationText } from './brand.js?v=87';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=87';
+import { calculateSettlement } from './business-rules.js?v=87';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=87';
 
 /**
  * 모두의클리어 live frontend
@@ -155,7 +155,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=86').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=87').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -2291,8 +2291,13 @@ function showChallengeSubmissionResult(result) {
   const message = blocked ? '비공개 저장 · 사유를 확인해주세요' : pending ? '500만 원 이상 · 비공개 초안 저장 · 관리자 승인 대기' : visibility === 'private' ? '비공개로 등록했습니다' : visibility === 'unlisted' ? '링크 공개로 등록했습니다' : '미션이 공개되었습니다';
   const id = escapeAttribute(challenge.id);
   const existing = result.existingMission;
-  const existingLink = blocked && existing?.id ? `<div class="notice-box"><div><strong>이미 진행 중인 미션: ${escapeHTML(existing.title)}</strong><p>이번 작성본은 비공개로 보존했습니다. 같은 의뢰를 이어가려면 기존 미션을 여세요. 별개의 의뢰라면 이번 작성본의 대상·범위·성공조건을 수정해주세요.</p><button type="button" class="btn btn-primary btn-block" data-challenge-id="${escapeAttribute(existing.id)}">중복으로 확인된 기존 미션 열기</button></div></div>` : '';
-  openModal(`<section class="submission-result"><p class="submission-result-title">${escapeHTML(challenge.title)}</p>${blocked ? renderModerationFeedback(challenge) : pending ? '<p>내용 자동검수는 통과했지만 500만 원 이상 미션은 비공개로 보관하고 관리자 확인 후 게시합니다. 아직 공개되지 않았습니다.</p>' : `<p>내용 검수를 통과했습니다. ${visibility === 'private' ? '선택한 비공개 설정이 유지됩니다.' : visibility === 'unlisted' ? '링크를 아는 사람에게 공개됩니다.' : '미션 목록에서 확인할 수 있습니다.'}</p>`}${existingLink}${blocked ? `<button class="btn btn-primary btn-lg btn-block" type="button" data-action="edit-saved-challenge" data-challenge-id="${id}">이 미션 수정하기</button>` : ''}<button class="btn btn-outline btn-block" type="button" data-challenge-id="${id}">저장한 미션 상세 보기</button><button class="btn btn-outline btn-block" type="button" data-route="dashboard">내 클리어에서 기존 미션 확인</button><p class="form-hint">보상금은 의뢰 시 표시한 금액이며 실제 확보된 돈이 아닙니다. 500만 원 이상은 비공개 검토를 거치며, 실제 결제·지급은 아직 제공하지 않습니다.</p></section>`, { title: message });
+  const submissionState = blocked ? 'blocked' : pending ? 'pending' : visibility === 'public' ? 'published' : 'limited';
+  const statusLabel = blocked ? '내용 확인 필요' : pending ? '승인 대기 · 비공개' : visibility === 'public' ? '공개 완료' : '비공개 등록';
+  const primaryAction = blocked
+    ? `<button class="btn btn-primary btn-lg btn-block" type="button" data-action="edit-saved-challenge" data-challenge-id="${id}">이 미션 수정하기</button>`
+    : `<button class="btn btn-primary btn-lg btn-block" type="button" data-challenge-id="${id}">${pending ? '승인 대기 미션 보기' : visibility === 'public' ? '공개된 미션 보기' : '등록한 미션 보기'}</button>`;
+  const existingLink = blocked && existing?.id ? `<div class="notice-box"><div><strong>이미 진행 중인 미션: ${escapeHTML(existing.title)}</strong><p>같은 의뢰라면 기존 미션을 확인해주세요.</p><button type="button" class="btn btn-outline btn-block" data-challenge-id="${escapeAttribute(existing.id)}">기존 미션 열기</button></div></div>` : '';
+  openModal(`<section class="submission-result" data-submission-state="${submissionState}"><span class="submission-status">${statusLabel}</span><p class="submission-result-title">${escapeHTML(challenge.title)}</p>${blocked ? renderModerationFeedback(challenge) : pending ? '<p>내용 검수는 통과했습니다. 관리자 승인 후 공개됩니다. 아직 모집하지 않습니다.</p>' : `<p>내용 검수를 통과했습니다. ${visibility === 'private' ? '선택한 비공개 설정이 유지됩니다.' : visibility === 'unlisted' ? '링크를 아는 사람에게 공개됩니다.' : '미션 목록에서 확인할 수 있습니다.'}</p>`}${existingLink}<div class="submission-result-actions">${primaryAction}<button class="btn btn-outline btn-block" type="button" data-route="dashboard">내 클리어로 이동</button></div><p class="form-hint">보상금은 의뢰 시 표시한 금액이며 실제 확보된 돈이 아닙니다. 500만 원 이상은 비공개 검토를 거치며, 실제 결제·지급은 아직 제공하지 않습니다.</p></section>`, { title: message });
 }
 
 function showDuplicateMissionError(error) {

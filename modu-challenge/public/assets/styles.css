@@ -2357,6 +2357,14 @@ body[data-home-theme]:not([data-home-theme="original"]) .page-section.admin-them
 .submission-feedback li + li { margin-top: 14px; }
 .submission-feedback p { margin: 8px 0; }
 .submission-result .btn, .submission-email-prompt .btn { margin-top: 12px; min-height: 48px; white-space: normal; text-align: center; justify-content: center; }
+.submission-result-actions { display: grid; gap: 10px; margin: 24px 0 16px; }
+.submission-result-actions .btn { margin-top: 0; }
+.submission-status { display: inline-flex; align-items: center; min-height: 30px; padding: 4px 11px; border-radius: 999px; font-size: .78rem; font-weight: 700; color: #176a43; background: #e5f6ec; }
+.submission-result[data-submission-state="pending"] .submission-status { color: #87500c; background: #fff0d4; }
+.submission-result[data-submission-state="pending"] .submission-result-actions .btn-primary { color: #fff; background: #a75a13; border-color: #a75a13; box-shadow: 0 10px 24px rgba(167,90,19,.2); }
+.submission-result[data-submission-state="pending"] .submission-result-actions .btn-primary:hover { background: #88470c; border-color: #88470c; }
+.submission-result[data-submission-state="blocked"] .submission-status { color: #a43135; background: #fff0ef; }
+.submission-result[data-submission-state="limited"] .submission-status { color: #5551b5; background: #eeedff; }
 .submission-result-title { font-weight: 700; line-height: 1.6; overflow-wrap: anywhere; }
 body.modal-open .app-install-banner { display: none !important; }
 

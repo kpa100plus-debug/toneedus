@@ -45,11 +45,18 @@ pass('rejection explanation escapes untrusted text');
 for(const [visibility,message] of [['private','비공개로 등록했습니다'],['unlisted','링크 공개로 등록했습니다'],['public','미션이 공개되었습니다']]) {
  run(`showChallengeSubmissionResult({challenge:{...saved,status:'OPEN',moderationAction:'AUTO_APPROVED',moderationReasons:[],visibility:${JSON.stringify(visibility)},publicationVisibility:${JSON.stringify(visibility)}}})`);
  assert.equal(win.document.querySelector('.modal-header h2').textContent,message);
+ const panel=win.document.querySelector('.submission-result');
+ assert.equal(panel.dataset.submissionState,visibility==='public'?'published':'limited');
+ assert.equal(panel.querySelector('.submission-result-actions .btn-primary').textContent.trim(),visibility==='public'?'공개된 미션 보기':'등록한 미션 보기');
+ assert.equal(panel.querySelector('.submission-result-actions .btn-outline').textContent.trim(),'내 클리어로 이동');
 }
 pass('successful result accurately distinguishes public, unlisted and private publication');
 run(`showChallengeSubmissionResult({challenge:{...saved,status:'REVIEW',moderationPending:true,moderationAction:'HIGH_VALUE_REVIEW',rewardAmount:10000000}})`);
 assert.match(win.document.querySelector('.modal-header h2').textContent,/비공개 초안 저장 · 관리자 승인 대기/);
-assert.match(win.document.querySelector('[role=dialog]').textContent,/아직 공개되지 않았습니다/);
+assert.equal(win.document.querySelector('.submission-result').dataset.submissionState,'pending');
+assert.match(win.document.querySelector('[role=dialog]').textContent,/아직 모집하지 않습니다/);
+assert.equal(win.document.querySelector('.submission-result-actions .btn-primary').textContent.trim(),'승인 대기 미션 보기');
+assert.equal(win.document.querySelector('.submission-result-actions .btn-outline').textContent.trim(),'내 클리어로 이동');
 pass('10 million reward shows private pending review instead of a published-success message');
 run(`state.selectedChallenge={challenge:{...saved,category:'FIND',rewardAmount:500000,deadline:'2026-12-31T14:59:59Z',description:'기존 내용',summary:'기존 요약',successCriteria:'성공조건',paymentTrigger:'보상금 준비',evidenceRequirements:'공식자료'},context:{canEdit:true,isOwner:true}};openChallengeEditForm('saved-one');`);
 assert.ok(win.document.querySelector('#challenge-edit-form .submission-feedback'));

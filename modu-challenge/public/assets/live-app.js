@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=84';
-import { legacyNotificationText } from './brand.js?v=84';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=84';
-import { calculateSettlement } from './business-rules.js?v=84';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=84';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=85';
+import { legacyNotificationText } from './brand.js?v=85';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=85';
+import { calculateSettlement } from './business-rules.js?v=85';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=85';
 
 /**
  * 모두의클리어 live frontend
@@ -155,7 +155,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=84').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=85').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -2924,7 +2924,7 @@ function hydrateLiveChallengeRotation() {
     if (!board || !current) return;
     current.outerHTML = renderHeroChallenge(ranked[index], true);
     index = (index + 1) % ranked.length;
-  }, 5000);
+  }, 3000);
 }
 
 function hydrateImpactCounters() {

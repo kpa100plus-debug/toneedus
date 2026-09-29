@@ -2356,7 +2356,7 @@ body[data-home-theme]:not([data-home-theme="original"]) .page-section.admin-them
 .submission-feedback ul { padding-left: 20px; }
 .submission-feedback li + li { margin-top: 14px; }
 .submission-feedback p { margin: 8px 0; }
-.submission-result .btn, .submission-email-prompt .btn { margin-top: 12px; min-height: 48px; white-space: normal; }
+.submission-result .btn, .submission-email-prompt .btn { margin-top: 12px; min-height: 48px; white-space: normal; text-align: center; justify-content: center; }
 .submission-result-title { font-weight: 700; line-height: 1.6; overflow-wrap: anywhere; }
 body.modal-open .app-install-banner { display: none !important; }
 

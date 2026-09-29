@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=83';
-import { legacyNotificationText } from './brand.js?v=83';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=83';
-import { calculateSettlement } from './business-rules.js?v=83';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=83';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=84';
+import { legacyNotificationText } from './brand.js?v=84';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=84';
+import { calculateSettlement } from './business-rules.js?v=84';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=84';
 
 /**
  * 모두의클리어 live frontend
@@ -155,7 +155,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=83').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=84').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -2291,7 +2291,7 @@ function showChallengeSubmissionResult(result) {
 function showDuplicateMissionError(error) {
   if (error?.code !== 'DUPLICATE_MISSION') return false;
   const existing = error.details?.existingMission;
-  openModal(`<section class="submission-result"><p>같은 내용과 조건의 진행 중인 미션은 다시 등록할 수 없습니다. 작성 중인 내용은 보존했습니다. 별개의 의뢰라면 대상·범위·결과물을 구체적으로 구분해 수정해주세요.</p>${existing?.id ? `<button type="button" class="btn btn-primary btn-block" data-challenge-id="${escapeAttribute(existing.id)}">기존 미션 열기: ${escapeHTML(existing.title || '')}</button>` : ''}<button type="button" class="btn btn-outline btn-block" data-route="create">작성 화면으로 돌아가기</button></section>`, { title: '중복 미션 등록 차단' });
+  openModal(`<section class="submission-result"><p>이미 등록된 미션입니다. 작성 내용은 보존했습니다.</p>${existing?.id ? `<button type="button" class="btn btn-primary btn-block" data-challenge-id="${escapeAttribute(existing.id)}">기존 미션 열기</button>` : ''}<button type="button" class="btn btn-outline btn-block" data-route="create">작성 화면으로 돌아가기</button></section>`, { title: '중복 미션 등록 차단' });
   return true;
 }
 

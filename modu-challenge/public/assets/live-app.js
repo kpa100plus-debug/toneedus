@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=82';
-import { legacyNotificationText } from './brand.js?v=82';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=82';
-import { calculateSettlement } from './business-rules.js?v=82';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=82';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=83';
+import { legacyNotificationText } from './brand.js?v=83';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=83';
+import { calculateSettlement } from './business-rules.js?v=83';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=83';
 
 /**
  * 모두의클리어 live frontend
@@ -155,7 +155,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=82').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=83').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -2278,10 +2278,10 @@ function showChallengeSubmissionResult(result) {
   const challenge = { ...result.challenge };
   challenge.moderationAction ||= result.moderationAction;
   challenge.moderationReasons ||= result.moderationReasons || [];
-  const blocked = ['CHANGES_REQUIRED', 'AUTO_REJECTED'].includes(challenge.moderationAction) || challenge.status === 'DRAFT';
   const pending = challenge.moderationAction === 'HIGH_VALUE_REVIEW' || challenge.moderationPending === true;
+  const blocked = !pending && (['CHANGES_REQUIRED', 'AUTO_REJECTED'].includes(challenge.moderationAction) || challenge.status === 'DRAFT');
   const visibility = challenge.publicationVisibility || challenge.visibility;
-  const message = blocked ? '비공개 저장 · 사유를 확인해주세요' : pending ? '500만 원 이상 · 비공개 검토 접수' : visibility === 'private' ? '비공개로 등록했습니다' : visibility === 'unlisted' ? '링크 공개로 등록했습니다' : '미션이 공개되었습니다';
+  const message = blocked ? '비공개 저장 · 사유를 확인해주세요' : pending ? '500만 원 이상 · 비공개 초안 저장 · 관리자 승인 대기' : visibility === 'private' ? '비공개로 등록했습니다' : visibility === 'unlisted' ? '링크 공개로 등록했습니다' : '미션이 공개되었습니다';
   const id = escapeAttribute(challenge.id);
   const existing = result.existingMission;
   const existingLink = blocked && existing?.id ? `<div class="notice-box"><div><strong>이미 진행 중인 미션: ${escapeHTML(existing.title)}</strong><p>이번 작성본은 비공개로 보존했습니다. 같은 의뢰를 이어가려면 기존 미션을 여세요. 별개의 의뢰라면 이번 작성본의 대상·범위·성공조건을 수정해주세요.</p><button type="button" class="btn btn-primary btn-block" data-challenge-id="${escapeAttribute(existing.id)}">중복으로 확인된 기존 미션 열기</button></div></div>` : '';

@@ -1772,10 +1772,11 @@ async function createChallenge(request, env) {
   if (moderation.existingMission) return json({ error: { code: 'DUPLICATE_MISSION', message: '동일한 내용의 진행 중 미션이 이미 있습니다. 기존 미션을 확인해주세요.' }, existingMission: moderation.existingMission }, 409);
   const moderationReasons = moderation.reasons;
   const outcome = moderationOutcome(moderation, visibility);
-  const moderationPending = outcome.status === 'REVIEW';
+  const moderationPending = moderation.action === 'HIGH_VALUE_REVIEW' || outcome.status === 'REVIEW';
   const initialStatus = outcome.status;
   const initialVisibility = outcome.visibility;
-  const contentFingerprint = await sha256(JSON.stringify([title, summary, description, successCriteria, paymentTrigger, evidenceRequirements, category, region].map(value => String(value || '').normalize('NFKC').replace(/\s+/gu, '').toLowerCase())));
+  const contentFingerprint = await challengeFingerprint({title,summary,description,successCriteria,paymentTrigger,evidenceRequirements,category,region});
+  const coreFingerprint = await challengeCoreFingerprint({title,description,successCriteria});
   const autoReviewedAt = new Date().toISOString();
   try { await env.DB.batch([
     env.DB.prepare(`
@@ -1786,13 +1787,13 @@ async function createChallenge(request, env) {
         submitted_visibility, moderation_reasons_json, moderation_decision,
         moderation_risk_score, moderation_auto_reviewed_at, moderation_action,
         moderation_policy_version, moderation_guidance_json, owner_subject_type,
-        owner_actor_profile_id, owner_verification_snapshot_json, content_fingerprint
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        owner_actor_profile_id, owner_verification_snapshot_json, content_fingerprint, core_fingerprint
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(id, user.id, title, summary, description, category, region,
       rewardAmount, feeRate, successCriteria, paymentTrigger, evidenceRequirements, deadline, initialStatus,
       initialVisibility, visibility, JSON.stringify(moderationReasons), outcome.legacyDecision,
       moderation.riskScore, autoReviewedAt, storedModerationAction(moderation.action), MODERATION_POLICY_VERSION,
-      JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), contentFingerprint),
+      JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), contentFingerprint, coreFingerprint),
     env.DB.prepare(`
       INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, to_status, metadata_json)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -1860,11 +1861,12 @@ async function updateChallenge(challengeId, request, env) {
   const outcome = moderationOutcome(moderation, submittedVisibility);
   const status = outcome.status;
   const visibility = outcome.visibility;
-  const contentFingerprint = await sha256(JSON.stringify([title, summary, description, successCriteria, paymentTrigger, evidenceRequirements, category, region].map(value => String(value || '').normalize('NFKC').replace(/\s+/gu, '').toLowerCase())));
+  const contentFingerprint = await challengeFingerprint({title,summary,description,successCriteria,paymentTrigger,evidenceRequirements,category,region});
+  const coreFingerprint = await challengeCoreFingerprint({title,description,successCriteria});
   const autoReviewedAt = new Date().toISOString();
   try { await env.DB.batch([
-    env.DB.prepare(`UPDATE challenges SET title = ?, summary = ?, description = ?, category = ?, region = ?, reward_amount = ?, success_criteria = ?, payment_trigger = ?, evidence_requirements = ?, deadline = ?, status = ?, visibility = ?, submitted_visibility = ?, moderation_reasons_json = ?, moderation_decision = ?, moderation_risk_score = ?, moderation_auto_reviewed_at = ?, moderation_action = ?, moderation_policy_version = ?, moderation_guidance_json = ?, owner_subject_type = ?, owner_actor_profile_id = ?, owner_verification_snapshot_json = ?, content_fingerprint = ?, moderation_reviewed_by = NULL, moderation_reviewed_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-      .bind(title, summary, description, category, region, rewardAmount, successCriteria, paymentTrigger, evidenceRequirements, deadline, status, visibility, submittedVisibility, JSON.stringify(moderationReasons), outcome.legacyDecision, moderation.riskScore, autoReviewedAt, storedModerationAction(moderation.action), MODERATION_POLICY_VERSION, JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), contentFingerprint, challengeId),
+    env.DB.prepare(`UPDATE challenges SET title = ?, summary = ?, description = ?, category = ?, region = ?, reward_amount = ?, success_criteria = ?, payment_trigger = ?, evidence_requirements = ?, deadline = ?, status = ?, visibility = ?, submitted_visibility = ?, moderation_reasons_json = ?, moderation_decision = ?, moderation_risk_score = ?, moderation_auto_reviewed_at = ?, moderation_action = ?, moderation_policy_version = ?, moderation_guidance_json = ?, owner_subject_type = ?, owner_actor_profile_id = ?, owner_verification_snapshot_json = ?, content_fingerprint = ?, core_fingerprint = ?, moderation_reviewed_by = NULL, moderation_reviewed_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+      .bind(title, summary, description, category, region, rewardAmount, successCriteria, paymentTrigger, evidenceRequirements, deadline, status, visibility, submittedVisibility, JSON.stringify(moderationReasons), outcome.legacyDecision, moderation.riskScore, autoReviewedAt, storedModerationAction(moderation.action), MODERATION_POLICY_VERSION, JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), contentFingerprint, coreFingerprint, challengeId),
     env.DB.prepare(`INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, from_status, to_status, metadata_json) VALUES (?, ?, ?, 'CHALLENGE_UPDATED', ?, ?, ?)`)
       .bind(makeId('evt'), challengeId, user.id, current.status, status, JSON.stringify({ moderationAction: moderation.action, moderationRiskScore: moderation.riskScore, moderationReasons, policyVersion: MODERATION_POLICY_VERSION })),
     auditStatement(env, user.id, 'CHALLENGE_UPDATE', 'challenge', challengeId, { status: current.status }, { status, moderationAction: moderation.action, moderationRiskScore: moderation.riskScore, moderationReasons, policyVersion: MODERATION_POLICY_VERSION }),
@@ -1944,6 +1946,7 @@ async function findSimilarChallenge(ownerId, input, excludeId, env) {
   ];
   const normalized = fields.map(([key]) => normalize(input[key]));
   if (normalized.some((value) => !value)) return null;
+  const core = ['title','description','successCriteria'].map(key => normalize(input[key]));
   // Reward or deadline changes alone do not create a different task. Prefer a
   // published original over an older private draft with identical content.
   const candidates = await env.DB.prepare(`SELECT id, title, summary, description, success_criteria, payment_trigger, evidence_requirements, category, region
@@ -1956,7 +1959,16 @@ async function findSimilarChallenge(ownerId, input, excludeId, env) {
           OR (status = 'REVIEW' AND moderation_decision = 'ADMIN_REVIEW' AND moderation_guidance_json LIKE '%"HIGH_VALUE_REVIEW"%'))))
     ORDER BY CASE WHEN status = 'DRAFT' THEN 1 ELSE 0 END, created_at DESC`)
     .bind(excludeId, ownerId).all();
-  return (candidates.results || []).find((item) => fields.every(([, column], index) => normalize(item[column]) === normalized[index])) || null;
+  return (candidates.results || []).find((item) => fields.every(([, column], index) => normalize(item[column]) === normalized[index]) ||
+    ['title','description','success_criteria'].every((column, index) => normalize(item[column]) === core[index])) || null;
+}
+
+const normalizeMissionContent = (value) => String(value || '').normalize('NFKC').replace(/\s+/gu, '').toLowerCase();
+async function challengeFingerprint(input) {
+  return sha256(JSON.stringify(['title','summary','description','successCriteria','paymentTrigger','evidenceRequirements','category','region'].map(key => normalizeMissionContent(input[key]))));
+}
+async function challengeCoreFingerprint(input) {
+  return sha256(JSON.stringify(['title','description','successCriteria'].map(key => normalizeMissionContent(input[key]))));
 }
 
 function addModerationFinding(moderation, finding) {
@@ -1978,7 +1990,7 @@ function addModerationFinding(moderation, finding) {
 
 function moderationOutcome(moderation, submittedVisibility) {
   if (moderation.action === 'AUTO_APPROVED') return { status: 'OPEN', visibility: submittedVisibility, legacyDecision: 'AUTO_APPROVED' };
-  if (moderation.action === 'HIGH_VALUE_REVIEW') return { status: 'REVIEW', visibility: 'private', legacyDecision: 'ADMIN_REVIEW' };
+  if (moderation.action === 'HIGH_VALUE_REVIEW') return { status: 'DRAFT', visibility: 'private', legacyDecision: 'ADMIN_REVIEW' };
   if (moderation.action === 'CHANGES_REQUIRED') return { status: 'DRAFT', visibility: 'private', legacyDecision: 'ADMIN_REVIEW' };
   return { status: 'DRAFT', visibility: 'private', legacyDecision: 'ARCHIVED' };
 }
@@ -1988,7 +2000,7 @@ function moderationOutcome(moderation, submittedVisibility) {
 function storedModerationAction(action) { return action === 'HIGH_VALUE_REVIEW' ? 'ADMIN_OVERRIDE' : action; }
 function isHighValueReview(challenge) {
   return challenge?.moderation_action === 'ADMIN_OVERRIDE' && challenge?.moderation_decision === 'ADMIN_REVIEW'
-    && challenge?.status === 'REVIEW' && safeJsonParse(challenge?.moderation_guidance_json, []).some(item => item.code === 'HIGH_VALUE_REVIEW');
+    && ['REVIEW','DRAFT'].includes(challenge?.status) && safeJsonParse(challenge?.moderation_guidance_json, []).some(item => item.code === 'HIGH_VALUE_REVIEW');
 }
 
 function analyzeChallengeForModeration(input) {
@@ -2003,7 +2015,7 @@ async function approveModerationChallenge(challengeId, request, env) {
   if (challenge.status === 'OPEN' && challenge.moderation_reviewed_at) {
     return json({ challenge: publicChallenge(challenge), idempotent: true });
   }
-  if (challenge.status !== 'REVIEW') return problem(409, 'MODERATION_NOT_PENDING', '관리자 검토 대기 상태의 미션만 승인할 수 있습니다.');
+  if (!(challenge.status === 'REVIEW' || isHighValueReview(challenge))) return problem(409, 'MODERATION_NOT_PENDING', '관리자 검토 대기 상태의 미션만 승인할 수 있습니다.');
   const owner = await env.DB.prepare('SELECT email_verified FROM users WHERE id = ?').bind(challenge.owner_id).first();
   if (!owner?.email_verified) return problem(409, 'OWNER_EMAIL_UNVERIFIED', '등록자의 이메일 인증이 완료되지 않아 공개할 수 없습니다.');
   const currentModeration = assessChallengeModeration({ title: challenge.title, summary: challenge.summary, description: challenge.description,
@@ -2017,8 +2029,8 @@ async function approveModerationChallenge(challengeId, request, env) {
     return problem(409, 'REVIEW_CHANGED', '보상금 기준이 변경되었습니다. 미션을 다시 검수해주세요.');
   }
   const visibility = ['public', 'unlisted', 'private'].includes(challenge.submitted_visibility) ? challenge.submitted_visibility : 'public';
-  const updated = await env.DB.prepare(`UPDATE challenges SET status = 'OPEN', visibility = ?, moderation_decision = 'ADMIN_APPROVED', moderation_reviewed_by = ?, moderation_reviewed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'REVIEW' AND title = ? AND summary = ? AND description = ? AND success_criteria = ? AND payment_trigger = ? AND evidence_requirements = ? AND reward_amount = ?`)
-    .bind(visibility, admin.id, challengeId, challenge.title, challenge.summary, challenge.description, challenge.success_criteria, challenge.payment_trigger, challenge.evidence_requirements, challenge.reward_amount).run();
+  const updated = await env.DB.prepare(`UPDATE challenges SET status = 'OPEN', visibility = ?, moderation_decision = 'ADMIN_APPROVED', moderation_reviewed_by = ?, moderation_reviewed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = ? AND moderation_decision = 'ADMIN_REVIEW' AND title = ? AND summary = ? AND description = ? AND success_criteria = ? AND payment_trigger = ? AND evidence_requirements = ? AND reward_amount = ?`)
+    .bind(visibility, admin.id, challengeId, challenge.status, challenge.title, challenge.summary, challenge.description, challenge.success_criteria, challenge.payment_trigger, challenge.evidence_requirements, challenge.reward_amount).run();
   if (Number(updated.meta?.changes) !== 1) {
     const current = await fetchChallenge(challengeId, env);
     if (current?.status === 'OPEN' && current.moderation_reviewed_at) {
@@ -2027,9 +2039,9 @@ async function approveModerationChallenge(challengeId, request, env) {
     return problem(409, 'MODERATION_CHANGED', '다른 관리자가 먼저 검토 상태를 변경했습니다. 목록을 새로고침해주세요.');
   }
   await env.DB.batch([
-    env.DB.prepare(`INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, from_status, to_status, metadata_json) VALUES (?, ?, ?, 'CHALLENGE_MODERATION_APPROVED', 'REVIEW', 'OPEN', ?)`)
-      .bind(makeId('evt'), challengeId, admin.id, JSON.stringify({ visibility, moderationReasons: safeJsonParse(challenge.moderation_reasons_json, []) })),
-    auditStatement(env, admin.id, 'CHALLENGE_MODERATION_APPROVE', 'challenge', challengeId, { status: 'REVIEW' }, { status: 'OPEN', visibility }),
+    env.DB.prepare(`INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, from_status, to_status, metadata_json) VALUES (?, ?, ?, 'CHALLENGE_MODERATION_APPROVED', ?, 'OPEN', ?)`)
+      .bind(makeId('evt'), challengeId, admin.id, challenge.status, JSON.stringify({ visibility, moderationReasons: safeJsonParse(challenge.moderation_reasons_json, []) })),
+    auditStatement(env, admin.id, 'CHALLENGE_MODERATION_APPROVE', 'challenge', challengeId, { status: challenge.status }, { status: 'OPEN', visibility }),
   ]);
   await sendPushNotification(env, challenge.owner_id, {
     title: '미션 검토가 완료되었습니다',
@@ -2048,13 +2060,13 @@ async function archiveModerationChallenge(challengeId, request, env) {
   if (challenge.status === 'DRAFT' && challenge.visibility === 'private' && challenge.moderation_reviewed_at) {
     return json({ challenge: publicChallenge(challenge), idempotent: true });
   }
-  if (challenge.status !== 'REVIEW') return problem(409, 'MODERATION_NOT_PENDING', '관리자 검토 대기 상태의 미션만 비공개 보관할 수 있습니다.');
+  if (!(challenge.status === 'REVIEW' || isHighValueReview(challenge))) return problem(409, 'MODERATION_NOT_PENDING', '관리자 검토 대기 상태의 미션만 비공개 보관할 수 있습니다.');
   const body = await readJson(request);
   if (body instanceof Response) return body;
   const reason = cleanText(body.reason, 5, 500);
   if (!reason) return problem(400, 'MODERATION_ARCHIVE_REASON_REQUIRED', '비공개 보관 사유를 5자 이상 입력해주세요.');
-  const updated = await env.DB.prepare(`UPDATE challenges SET status = 'DRAFT', visibility = 'private', submitted_visibility = 'private', moderation_decision = 'ARCHIVED', moderation_reviewed_by = ?, moderation_reviewed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'REVIEW'`)
-    .bind(admin.id, challengeId).run();
+  const updated = await env.DB.prepare(`UPDATE challenges SET status = 'DRAFT', visibility = 'private', submitted_visibility = 'private', moderation_decision = 'ARCHIVED', moderation_reviewed_by = ?, moderation_reviewed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = ? AND moderation_decision = 'ADMIN_REVIEW'`)
+    .bind(admin.id, challengeId, challenge.status).run();
   if (Number(updated.meta?.changes) !== 1) {
     const current = await fetchChallenge(challengeId, env);
     if (current?.status === 'DRAFT' && current.visibility === 'private' && current.moderation_reviewed_at) {
@@ -2063,9 +2075,9 @@ async function archiveModerationChallenge(challengeId, request, env) {
     return problem(409, 'MODERATION_CHANGED', '다른 관리자가 먼저 검토 상태를 변경했습니다. 목록을 새로고침해주세요.');
   }
   await env.DB.batch([
-    env.DB.prepare(`INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, from_status, to_status, metadata_json) VALUES (?, ?, ?, 'CHALLENGE_MODERATION_ARCHIVED', 'REVIEW', 'DRAFT', ?)`)
-      .bind(makeId('evt'), challengeId, admin.id, JSON.stringify({ reason, preserved: true })),
-    auditStatement(env, admin.id, 'CHALLENGE_MODERATION_ARCHIVE', 'challenge', challengeId, { status: 'REVIEW' }, { status: 'DRAFT', visibility: 'private', reason, preserved: true }),
+    env.DB.prepare(`INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, from_status, to_status, metadata_json) VALUES (?, ?, ?, 'CHALLENGE_MODERATION_ARCHIVED', ?, 'DRAFT', ?)`)
+      .bind(makeId('evt'), challengeId, admin.id, challenge.status, JSON.stringify({ reason, preserved: true })),
+    auditStatement(env, admin.id, 'CHALLENGE_MODERATION_ARCHIVE', 'challenge', challengeId, { status: challenge.status }, { status: 'DRAFT', visibility: 'private', reason, preserved: true }),
   ]);
   await sendPushNotification(env, challenge.owner_id, {
     title: '미션 검토 결과를 확인해주세요',
@@ -2099,7 +2111,7 @@ async function moderationQueue(request, env) {
   const result = await env.DB.prepare(`SELECT c.id, c.title, c.reward_amount, c.deadline, c.created_at, c.moderation_reasons_json, c.moderation_decision, c.moderation_risk_score, c.moderation_action, c.moderation_policy_version,
     (SELECT note FROM moderation_review_notes n WHERE n.challenge_id = c.id ORDER BY n.created_at DESC LIMIT 1) AS latest_note,
     (SELECT requested_approval_at FROM moderation_review_notes n WHERE n.challenge_id = c.id AND n.requested_approval_at IS NOT NULL ORDER BY n.created_at DESC LIMIT 1) AS requested_approval_at
-    FROM challenges c WHERE c.status = 'REVIEW' OR EXISTS (SELECT 1 FROM moderation_appeals a WHERE a.challenge_id = c.id AND a.status IN ('OPEN','REVIEWING')) ORDER BY c.created_at ASC LIMIT 30`).all();
+    FROM challenges c WHERE c.status = 'REVIEW' OR (c.status = 'DRAFT' AND c.moderation_decision = 'ADMIN_REVIEW' AND c.moderation_guidance_json LIKE '%"HIGH_VALUE_REVIEW"%') OR EXISTS (SELECT 1 FROM moderation_appeals a WHERE a.challenge_id = c.id AND a.status IN ('OPEN','REVIEWING')) ORDER BY c.created_at ASC LIMIT 30`).all();
   return json({ challenges: (result.results || []).map((item) => ({ ...item, moderationReasons: safeJsonParse(item.moderation_reasons_json, []) })) });
 }
 
@@ -2970,7 +2982,7 @@ async function adminOverview(request, env) {
     env.DB.prepare(`SELECT id, title, reward_amount, deadline, created_at, moderation_reasons_json, moderation_decision, moderation_risk_score, moderation_action,
       (SELECT note FROM moderation_review_notes n WHERE n.challenge_id = challenges.id ORDER BY n.created_at DESC LIMIT 1) AS latest_note,
       (SELECT requested_approval_at FROM moderation_review_notes n WHERE n.challenge_id = challenges.id AND n.requested_approval_at IS NOT NULL ORDER BY n.created_at DESC LIMIT 1) AS requested_approval_at
-      FROM challenges WHERE status = 'REVIEW'
+      FROM challenges WHERE status = 'REVIEW' OR (status = 'DRAFT' AND moderation_decision = 'ADMIN_REVIEW' AND moderation_guidance_json LIKE '%"HIGH_VALUE_REVIEW"%')
       ORDER BY created_at ASC LIMIT 30`),
     env.DB.prepare(`SELECT (SELECT COUNT(*) FROM push_subscriptions) subscribed,
       (SELECT COUNT(*) FROM push_delivery_logs WHERE status = 'accepted' AND created_at >= datetime('now', '-7 days')) accepted,
@@ -3481,7 +3493,7 @@ function publicChallenge(c) {
     ownerSubjectType: c.owner_subject_type || 'individual',
     ownerVerification: publicVerificationSnapshot(c.owner_verification_snapshot_json),
     ...publicModerationFeedback(c),
-    moderationPending: c.status === 'REVIEW' && c.moderation_decision === 'ADMIN_REVIEW',
+    moderationPending: (c.status === 'REVIEW' && c.moderation_decision === 'ADMIN_REVIEW') || isHighValueReview(c),
     moderationAction: isHighValueReview(c) ? 'HIGH_VALUE_REVIEW' : c.moderation_action || (c.moderation_decision === 'ADMIN_REVIEW' ? 'CHANGES_REQUIRED' : c.moderation_decision === 'ARCHIVED' ? 'AUTO_REJECTED' : 'AUTO_APPROVED'),
     moderationDecision: c.moderation_decision || (c.status === 'REVIEW' ? 'ADMIN_REVIEW' : 'AUTO_APPROVED'),
     moderationAutoReviewedAt: c.moderation_auto_reviewed_at || null,

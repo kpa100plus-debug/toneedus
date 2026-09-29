@@ -88,6 +88,8 @@ const high = await req('/api/challenges', highInput, owner.cookie, 'POST', { 'Id
 globalThis.fetch = fetchBefore;
 assert.equal(high.status, 201, JSON.stringify(high.body)); assert.equal(high.body.moderationAction, 'HIGH_VALUE_REVIEW');
 assert.equal(high.body.challenge.moderationPending, true);
+assert.equal(high.body.challenge.status, 'DRAFT');
+assert.equal(high.body.challenge.publicationVisibility, 'private');
 assert.equal(sql.prepare('SELECT moderation_risk_score FROM challenges WHERE id=?').get(high.body.challenge.id).moderation_risk_score, 0); assert.equal((await req(`/api/challenges/${high.body.challenge.id}`)).status, 404);
 assert.equal((await req(`/api/challenges/${high.body.challenge.id}`, undefined, owner.cookie)).status, 200);
 pass('safe maximum reward is privately queued, with zero content risk and no external provider dependency');
@@ -130,18 +132,25 @@ const edited = originalEdit;
 
 for (const [field, value] of [
   ['title', '부산 공원 안내판 디자인 제안'],
-  ['summary', '이 미션에서는 공원의 입구 위치를 안내할 별도 안내판을 요청합니다.'],
   ['description', '출입구 전용 안내판을 설계하고 휠체어 접근 경로를 표시한 원본을 납품해주세요.'],
   ['successCriteria', '대형 안내판 다섯 개의 원본과 최종 인쇄 규격을 제출해주세요.'],
-  ['paymentTrigger', '최종 시안 검토와 수행계획을 확인한 뒤 보상금 준비를 진행합니다.'],
-  ['evidenceRequirements', '실제 설치위치를 표시한 도면과 현장사진 제출'],
-  ['category', 'PUBLIC'], ['region', '부산'],
 ]) {
   const distinct = await req('/api/challenges', { ...mission, [field]: value }, owner.cookie);
   assert.equal(distinct.status, 201, JSON.stringify(distinct.body));
   assert.equal(distinct.body.moderationAction, 'AUTO_APPROVED', `distinct ${field} must not be blocked by the title`);
 }
-pass('title prefix, substantive fields, category and region distinguish different missions in real create requests');
+pass('different title, work description or success criteria can define a separate mission');
+for (const [field, value] of [
+  ['summary', '이 미션에서는 공원의 입구 위치를 안내할 별도 안내판을 요청합니다.'],
+  ['paymentTrigger', '최종 시안 검토와 수행계획을 확인한 뒤 보상금 준비를 진행합니다.'],
+  ['evidenceRequirements', '실제 설치위치를 표시한 도면과 현장사진 제출'],
+  ['category', 'PUBLIC'], ['region', '부산'],
+]) {
+  const duplicateVariant = await req('/api/challenges', { ...mission, [field]: value }, owner.cookie);
+  assert.equal(duplicateVariant.status, 409, field);
+  assert.equal(duplicateVariant.body.existingMission.id, original.body.challenge.id);
+}
+pass('summary, payment wording, evidence, category and region changes cannot duplicate the same work');
 
 const recoveryInput = { ...mission, description: '같은 제목을 사용하지만 이번 의뢰는 공원 동쪽 입구의 점자 안내판 세 개를 설계하는 별도 작업입니다.' };
 enqueue('legacy-title-only', owner.body.user.id, recoveryInput.title);
@@ -267,14 +276,14 @@ sql.prepare("UPDATE challenges SET category='LOCAL' WHERE id='cron-category'").r
 enqueue('cron-region', owner.body.user.id, mission.title);
 sql.prepare("UPDATE challenges SET region='대전' WHERE id='cron-region'").run();
 const reviewed = await req('/api/admin/moderation/auto-review', {}, owner.cookie);
-assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body)); assert.equal(reviewed.body.adminReview, 3); assert.equal(reviewed.body.changesRequired, 2); assert.equal(reviewed.body.autoRejected, 0);
+assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body)); assert.equal(reviewed.body.adminReview, 1); assert.equal(reviewed.body.changesRequired, 4); assert.equal(reviewed.body.autoRejected, 0);
 const result = (id) => sql.prepare('SELECT * FROM challenges WHERE id=?').get(id);
 assert.equal(result('cron-duplicate').moderation_action, 'CHANGES_REQUIRED');
 assert.equal(result('cron-duplicate').visibility, 'private');
 assert.ok(JSON.parse(result('cron-duplicate').moderation_reasons_json).some((item) => item.code === 'POSSIBLE_DUPLICATE'));
-assert.equal(result('cron-safe').moderation_action, 'ADMIN_OVERRIDE'); assert.equal(result('cron-safe').status, 'REVIEW'); assert.equal(result('cron-safe').moderation_risk_score, 0);
-assert.equal(result('cron-category').moderation_action, 'ADMIN_OVERRIDE');
-assert.equal(result('cron-region').moderation_action, 'ADMIN_OVERRIDE');
+assert.equal(result('cron-safe').moderation_action, 'ADMIN_OVERRIDE'); assert.equal(result('cron-safe').status, 'DRAFT'); assert.equal(result('cron-safe').moderation_risk_score, 0);
+assert.equal(result('cron-category').moderation_action, 'CHANGES_REQUIRED');
+assert.equal(result('cron-region').moderation_action, 'CHANGES_REQUIRED');
 assert.equal(result('cron-email').status, 'DRAFT'); assert.equal(result('cron-email').visibility, 'private');
 assert.ok(JSON.parse(result('cron-email').moderation_guidance_json).some((item) => /이메일 인증/.test(item.message)));
 const auditCount = sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action LIKE 'CHALLENGE_MODERATION_%'").get().n;
@@ -283,7 +292,7 @@ assert.equal(sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action LIKE 'C
 pass('Cron preserves high-value private review, enforces email, and does not repeat decisions');
 
 assert.deepEqual(sql.prepare('SELECT id,trust_score FROM users ORDER BY id').all(), trustBefore);
-assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges').get().n, 19);
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges').get().n, 14);
 assert.equal(sql.prepare("SELECT COUNT(*) n FROM trust_policy_items WHERE weight IS NOT NULL").get().n, 0);
 assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(), []);
 assert.equal(sql.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');

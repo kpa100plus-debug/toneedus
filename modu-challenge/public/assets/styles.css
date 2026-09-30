@@ -2443,3 +2443,23 @@ body[data-home-theme="command"] .studio-mission-icon { color:color-mix(in srgb,v
 .mission-selected-id span { overflow-wrap: anywhere; min-width: 0; max-width: 100%; }
 .mission-selected-id small { flex-basis: 100%; }
 .mission-start-entry { white-space: nowrap; word-break: keep-all; }
+
+/* Mission card travels across the complete hero, including its background. */
+@keyframes heroBannerTravel {
+  0%, 100% { transform: translate3d(var(--hero-travel-x), var(--hero-travel-y), 0); }
+  25% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(var(--hero-travel-x), 0, 0); }
+  75% { transform: translate3d(0, var(--hero-travel-y), 0); }
+}
+.hero > .hero-board-travel {
+  position: absolute; inset: 16px auto auto 16px; z-index: 5;
+  width: min(350px, calc(100% - 32px));
+  animation: heroBannerTravel 12s linear infinite;
+}
+.hero > .hero-board-travel:hover, .hero > .hero-board-travel:focus-within { animation-play-state: paused; }
+@media (max-width: 760px) {
+  .hero > .hero-board-travel { width: min(260px, calc(100% - 32px)); animation-duration: 10s; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero > .hero-board-travel { animation: none; transform: translate3d(var(--hero-travel-x), var(--hero-travel-y), 0); }
+}

@@ -242,7 +242,7 @@ for (let repeat = 0; repeat < 2; repeat++) {
 assert.ok(run('savedSimulationReads') >= 2);
 pass('reopening the same saved simulation query URL keeps the normalized route and reloads its completed record');
 
-run('clearInterval(emailCountdownTimer);clearInterval(activityPollTimer);clearInterval(heroRotationTimer)');win.close();
+run('clearInterval(emailCountdownTimer);clearInterval(activityPollTimer);clearInterval(heroRotationTimer)');
 
 const clientSource = readFileSync(new URL('../public/assets/api-client.js', import.meta.url), 'utf8').replace(/^export /gm, '');
 let deadline, cleared = 0;
@@ -265,15 +265,19 @@ clientContext.fetch = async () => ({ ok: true, status: 200, headers: { get: () =
 await assert.rejects(vm.runInContext("api('/api/bootstrap')", clientContext), error => error.code === 'INVALID_RESPONSE');
 pass('invalid JSON produces an explicit retryable failure instead of null success');
 const heroCss = readFileSync(new URL('../public/assets/styles.css', import.meta.url), 'utf8');
-const desktopFloat = heroCss.split('@keyframes heroBoardFloat {')[1].split('@keyframes heroBoardFloatMobile')[0];
-const poses = [...desktopFloat.matchAll(/translate3d\(([^,]+),\s*([^,]+),\s*([^\)]+)\)/g)].map(match => match.slice(1).map(Number.parseFloat));
-assert.equal(poses.length, 4);
-// Recorded live desktop geometry: copy right=692, visual left=746, width=518,
-// board width=350/right=-18. All interpolated keyframes must stay in its column.
-for (const [x,y,z] of poses) {
-  assert.ok(x >= -10 && x <= 10); assert.equal(z, 0); assert.ok(y >= -14 && y <= 0);
-  const left = 746 + 518 + 18 - 350 + x;
-  assert.ok(left >= 746 && left > 692, 'floating mission must never cross into headline column');
-}
-pass('desktop floating mission remains inside the visual column for the full animation and cannot cover the headline');
+assert.ok(heroCss.includes('heroBannerTravel 12s linear infinite'));
+assert.ok(heroCss.includes('var(--hero-travel-x), var(--hero-travel-y)'));
+assert.ok(heroCss.includes('animation-duration: 10s'));
+vm.runInContext("document.body.innerHTML='<section class=hero><div class=hero-visual><div class=hero-board></div></div></section>'", ctx);
+Object.defineProperty(doc.querySelector('.hero'), 'clientWidth', {value:1440});
+Object.defineProperty(doc.querySelector('.hero'), 'clientHeight', {value:650});
+Object.defineProperty(doc.querySelector('.hero-board'), 'offsetWidth', {value:350});
+Object.defineProperty(doc.querySelector('.hero-board'), 'offsetHeight', {value:260});
+vm.runInContext("hydrateHeroTravel()", ctx);
+assert.equal(doc.querySelector('.hero-board').style.getPropertyValue('--hero-travel-x'),'1058px');
+assert.equal(doc.querySelector('.hero-board').style.getPropertyValue('--hero-travel-y'),'358px');
+assert.ok(vm.runInContext("document.querySelector('.hero > .hero-board-travel') !== null", ctx));
+pass('mission card is attached to the whole hero with a diagonal full-banner route and responsive travel bounds');
 console.log(`${passed} frontend state regression groups passed`);
+
+win.close();

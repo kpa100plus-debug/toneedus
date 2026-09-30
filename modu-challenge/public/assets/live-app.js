@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=88';
-import { legacyNotificationText } from './brand.js?v=88';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=88';
-import { calculateSettlement } from './business-rules.js?v=88';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=88';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=89';
+import { legacyNotificationText } from './brand.js?v=89';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=89';
+import { calculateSettlement } from './business-rules.js?v=89';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=89';
 
 /**
  * 모두의클리어 live frontend
@@ -155,7 +155,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=88').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=89').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -2938,7 +2938,27 @@ function restoreCreateDraft() {
   if (state.createDraft.__requestKey) form.dataset.idempotencyKey = state.createDraft.__requestKey;
 }
 
+let heroMotionObserver;
+function hydrateHeroTravel() {
+  heroMotionObserver?.disconnect();
+  const hero = document.querySelector('.hero');
+  const board = hero?.querySelector('.hero-board');
+  if (!hero || !board) return;
+  hero.appendChild(board);
+  board.classList.add('hero-board-travel');
+  const update = () => {
+    board.style.setProperty('--hero-travel-x', `${Math.max(0, hero.clientWidth - board.offsetWidth - 32)}px`);
+    board.style.setProperty('--hero-travel-y', `${Math.max(0, hero.clientHeight - board.offsetHeight - 32)}px`);
+  };
+  update();
+  if (typeof ResizeObserver !== 'undefined') {
+    heroMotionObserver = new ResizeObserver(update);
+    heroMotionObserver.observe(hero);
+    heroMotionObserver.observe(board);
+  }
+}
 function hydrateLiveChallengeRotation() {
+  hydrateHeroTravel();
   if (state.route !== 'home') return;
   const ranked = sortChallenges(state.challenges.filter((challenge) => !['FAILED', 'CANCELLED'].includes(challenge.status)), 'reward');
   if (ranked.length < 2) return;

@@ -5,6 +5,7 @@ import { readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 const runtimePaths = [
   'migrations/0028_atomic_mission_duplicates.sql',
   'migrations/0029_mission_core_fingerprint.sql',
+  'migrations/0030_test_member_delete_guard.sql',
   'migrations/0001_init.sql',
   'migrations/0002_admin_roles.sql',
   'migrations/0008_challenge_moderation.sql',

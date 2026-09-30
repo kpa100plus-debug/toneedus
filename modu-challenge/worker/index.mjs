@@ -322,6 +322,9 @@ async function route(request, env, ctx, url) {
   match = path.match(/^\/api\/admin\/members\/([^/]+)$/);
   if (match && method === 'GET') return getAdminMemberDetail(match[1], request, env);
 
+  match = path.match(/^\/api\/admin\/members\/([^/]+)\/delete-test$/);
+  if (match && method === 'POST') return deleteTestMember(match[1], request, env);
+
   match = path.match(/^\/api\/admin\/members\/([^/]+)\/status$/);
   if (match && method === 'POST') return updateAdminMemberStatus(match[1], request, env);
 
@@ -3096,6 +3099,29 @@ async function getAdminMemberDetail(userId, request, env) {
       memberVerifications: (memberVerifications.results || []).map(publicVerification),
     },
   });
+}
+
+async function deleteTestMember(userId, request, env) {
+  const primary = await requirePrimaryAdmin(request, env);
+  if (primary instanceof Response) return primary;
+  const body = await readJson(request);
+  if (body instanceof Response) return body;
+  const target = await env.DB.prepare('SELECT id,email,is_admin FROM users WHERE id=?').bind(userId).first();
+  if (!target) return problem(404,'USER_NOT_FOUND','가입회원을 찾을 수 없습니다.');
+  if (target.is_admin || target.id === primary.id) return problem(409,'ADMIN_PROTECTED','관리자 계정은 삭제할 수 없습니다.');
+  if (body.confirmTestAccount !== true || normalizeEmail(body.email) !== normalizeEmail(target.email)) return problem(400,'DELETE_CONFIRMATION_REQUIRED','테스트 회원 확인과 가입 이메일 입력이 필요합니다.');
+  try {
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM email_otp_challenges WHERE user_id=?').bind(userId),
+      env.DB.prepare('DELETE FROM email_otp_send_locks WHERE user_id=?').bind(userId),
+      env.DB.prepare('DELETE FROM users WHERE id=? AND email=? AND is_admin=0').bind(userId,target.email),
+      auditStatement(env,primary.id,'TEST_MEMBER_DELETED','user',userId,null,{ testAccountConfirmed:true, rejoinAllowed:true }),
+    ]);
+  } catch (error) {
+    if (/TEST_MEMBER_HISTORY|FOREIGN KEY/.test(String(error))) return problem(409,'MEMBER_HISTORY_PROTECTED','미션·도전·거래·인증 등의 연결 기록이 있는 회원은 삭제할 수 없습니다. 계정 상태 변경을 이용해주세요.');
+    throw error;
+  }
+  return json({ok:true,rejoinAllowed:true});
 }
 
 async function updateAdminMemberStatus(userId, request, env) {

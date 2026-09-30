@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=87';
-import { legacyNotificationText } from './brand.js?v=87';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=87';
-import { calculateSettlement } from './business-rules.js?v=87';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=87';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=88';
+import { legacyNotificationText } from './brand.js?v=88';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=88';
+import { calculateSettlement } from './business-rules.js?v=88';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=88';
 
 /**
  * 모두의클리어 live frontend
@@ -155,7 +155,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=87').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=88').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -495,6 +495,7 @@ async function handleAction(action, data, button) {
     if (action === 'share-challenge') return await shareChallenge(data.challengeId);
     if (action === 'view-public-profile') return await openPublicProfile(data.userId);
     if (action === 'view-admin-member') return await openAdminMemberDetail(data.userId);
+    if (action === 'delete-test-member') return openDeleteTestMember(data.userId, data.email);
     if (action === 'open-member-status') return openAdminMemberStatus(data.userId, data.currentStatus);
     if (action === 'open-admin-dispute') return await openAdminDispute(data.disputeId);
     if (action === 'view-trust-history') return await openTrustHistory(data.userId);
@@ -584,6 +585,7 @@ async function handleForm(form) {
     if (form.id === 'moderation-archive-form') return await withBusy(submit, () => submitModerationArchive(form));
     if (form.id === 'moderation-appeal-form') return await withBusy(submit, () => submitModerationAppeal(form));
     if (form.id === 'push-announcement-form') return await withBusy(submit, () => submitPushAnnouncement(form));
+    if (form.id === 'delete-test-member-form') return await withBusy(submit, () => submitDeleteTestMember(form));
     if (form.id === 'admin-member-status-form') return await withBusy(submit, () => submitAdminMemberStatus(form));
     if (form.id === 'admin-dispute-status-form') return await withBusy(submit, () => submitAdminDisputeStatus(form));
     if (form.id === 'hero-search-form') {
@@ -2464,9 +2466,22 @@ async function openAdminMemberDetail(userId) {
     const registration = member.registration || {};
     openModal(`<div class="admin-member-detail"><section class="public-profile-hero"><span class="avatar avatar-xl ${member.accountType !== 'individual' ? 'avatar-company' : ''}">${initial(member.displayName)}</span><div><span class="eyebrow">PRIMARY ADMIN ONLY</span><h2>${escapeHTML(member.displayName)}</h2><p>${accountTypeLabel(member.accountType)} · 가입 ${formatDateTime(member.createdAt)}</p><div class="verify-row">${verifyBadge('본인', verification.identity)}${verifyBadge('사업자', verification.business)}${verifyBadge('전문자격', verification.professional)}${verifyBadge('이메일', verification.email)}</div></div></section><div class="notice-box warning"><span>!</span><div><strong>최고관리자 전용 정보</strong><p>회원가입·동의 처리 확인을 위한 정보이며, 이번 조회는 Audit Log에 기록됩니다. 비밀번호와 세션 정보는 표시하지 않습니다.</p></div></div><section class="dashboard-card"><div class="dashboard-card-head"><h3>가입 계정</h3><strong>${escapeHTML(member.status)}</strong></div><div class="preview-list"><div class="preview-row"><span>이름·활동명</span><strong>${escapeHTML(member.displayName)}</strong></div><div class="preview-row"><span>가입 이메일</span><strong>${escapeHTML(member.email)}</strong></div><div class="preview-row"><span>계정유형</span><strong>${accountTypeLabel(member.accountType)}</strong></div><div class="preview-row"><span>가입 일시</span><strong>${formatDateTime(member.createdAt)}</strong></div><div class="preview-row"><span>최근 변경</span><strong>${formatDateTime(member.updatedAt)}</strong></div></div></section><section class="dashboard-card"><div class="dashboard-card-head"><h3>가입 추가정보</h3><strong>${escapeHTML(registration.source || 'password')}</strong></div><div class="preview-list"><div class="preview-row"><span>휴대전화</span><strong>${escapeHTML(registration.phone || '기존 회원')}</strong></div><div class="preview-row"><span>활동 지역</span><strong>${escapeHTML(registration.region || '-')}</strong></div><div class="preview-row"><span>참여 목적</span><strong>${({ owner:'개설 중심', solver:'도전 중심', both:'개설·도전 모두' })[registration.challengeIntent] || '-'}</strong></div><div class="preview-row"><span>출생연도·성별</span><strong>${escapeHTML(registration.birthYear || '-')} · ${({ female:'여성', male:'남성', other:'기타', prefer_not:'응답 안 함' })[registration.gender] || '-'}</strong></div><div class="preview-row"><span>기관·회사명</span><strong>${escapeHTML(registration.organizationName || '-')}</strong></div><div class="preview-row"><span>관심·전문분야</span><strong>${escapeHTML(registration.interests || '-')}</strong></div><div class="preview-row"><span>마케팅 수신</span><strong>${registration.marketingAccepted ? `동의 · ${formatDateTime(registration.marketingAcceptedAt)}` : '미동의'}</strong></div><div class="preview-row"><span>최근 로그인</span><strong>${formatDateTime(registration.lastLoginAt)}</strong></div></div></section><section class="dashboard-card"><div class="dashboard-card-head"><h3>동의 기록</h3><strong>보관됨</strong></div><div class="preview-list"><div class="preview-row"><span>이용약관</span><strong>${escapeHTML(consent.termsVersion || '기록 없음')} · ${formatDateTime(consent.termsAcceptedAt)}</strong></div><div class="preview-row"><span>개인정보처리방침</span><strong>${escapeHTML(consent.privacyVersion || '기록 없음')} · ${formatDateTime(consent.privacyAcceptedAt)}</strong></div></div></section><section class="dashboard-card"><div class="dashboard-card-head"><h3>운영 상태</h3><strong>TRUST ${Number(member.trustScore || 0)}</strong></div><div class="preview-list"><div class="preview-row"><span>Strike</span><strong>${Number(member.strikeCount || 0)}/3</strong></div><div class="preview-row"><span>보상금 표시한도</span><strong>${formatWon(member.bountyLimit)}</strong></div><div class="preview-row"><span>관리자 구분</span><strong>${member.adminRole === 'primary' ? '최고관리자' : member.adminRole === 'deputy' ? '부관리자' : '일반회원'}</strong></div></div></section></div>`, { title: '회원 가입정보', wide: true });
     if (member.adminRole === 'member' && member.status !== 'closed') {
-      document.querySelector('.admin-member-detail .dashboard-card:last-child')?.insertAdjacentHTML('beforeend', `<button class="btn btn-outline btn-block" type="button" data-action="open-member-status" data-user-id="${escapeAttribute(member.id)}" data-current-status="${escapeAttribute(member.status)}">계정 상태 변경</button>`);
+      document.querySelector('.admin-member-detail .dashboard-card:last-child')?.insertAdjacentHTML('beforeend', `<button class="btn btn-outline btn-block" type="button" data-action="open-member-status" data-user-id="${escapeAttribute(member.id)}" data-current-status="${escapeAttribute(member.status)}">계정 상태 변경</button><button class="btn btn-danger btn-block" type="button" data-action="delete-test-member" data-user-id="${escapeAttribute(member.id)}" data-email="${escapeAttribute(member.email)}">테스트 회원 삭제</button>`);
     }
   } catch (error) { closeModal(); showError(error); }
+}
+
+function openDeleteTestMember(userId, email) {
+  openModal(`<form id="delete-test-member-form" data-user-id="${escapeAttribute(userId)}"><p>미션·도전·거래 등 연결 기록이 없는 테스트 회원만 삭제할 수 있습니다. 삭제 후 같은 이메일·소셜 계정으로 재가입할 수 있습니다.</p><p><strong>${escapeHTML(email)}</strong></p><div class="field"><label>확인용 가입 이메일</label><input name="email" type="email" required autocomplete="off"></div><label class="checkbox-label"><input type="checkbox" name="test" required> 실제 회원이 아닌 테스트 계정임을 확인했습니다.</label><button class="btn btn-danger btn-block" type="submit">테스트 회원 삭제</button></form>`, {title:'테스트 회원 삭제'});
+}
+async function submitDeleteTestMember(form) {
+  if (!window.confirm('이 테스트 계정을 삭제할까요? 삭제 후 복구할 수 없습니다.')) return;
+  const data = new FormData(form);
+  await apiClient.deleteTestMember(form.dataset.userId, {email:String(data.get('email') || ''),confirmTestAccount:data.get('test') === 'on'});
+  closeModal();
+  state.adminOverview = (await apiClient.adminOverview()).overview;
+  render();
+  toast('테스트 회원을 삭제했습니다','같은 이메일·소셜 계정으로 다시 가입할 수 있습니다.','success');
 }
 
 function openAdminMemberStatus(userId, currentStatus) {

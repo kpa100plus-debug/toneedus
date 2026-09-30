@@ -195,6 +195,7 @@ export const apiClient = {
   moderationQueue: () => api('/api/admin/moderation-queue'),
   autoReviewModerationQueue: () => api('/api/admin/moderation/auto-review', { method: 'POST', body: {} }),
   addModerationNote: (id, note, requestApproval) => api(`/api/admin/challenges/${encodeURIComponent(id)}/moderation/notes`, { method: 'POST', body: { note, requestApproval } }),
+  deleteTestMember: (userId, body) => api(`/api/admin/members/${encodeURIComponent(userId)}/delete-test`, { method: 'POST', body }),
   adminMemberDetail: (userId) => api(`/api/admin/members/${encodeURIComponent(userId)}`),
   updateAdminMemberStatus: (userId, data) => api(`/api/admin/members/${encodeURIComponent(userId)}/status`, { method: 'POST', body: data }),
   adminDisputeDetail: (disputeId) => api(`/api/admin/disputes/${encodeURIComponent(disputeId)}`),

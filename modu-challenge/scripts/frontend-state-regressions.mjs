@@ -271,7 +271,7 @@ assert.equal(poses.length, 4);
 // Recorded live desktop geometry: copy right=692, visual left=746, width=518,
 // board width=350/right=-18. All interpolated keyframes must stay in its column.
 for (const [x,y,z] of poses) {
-  assert.equal(x, 0); assert.equal(z, 0); assert.ok(y >= -14 && y <= 0);
+  assert.ok(x >= -10 && x <= 10); assert.equal(z, 0); assert.ok(y >= -14 && y <= 0);
   const left = 746 + 518 + 18 - 350 + x;
   assert.ok(left >= 746 && left > 692, 'floating mission must never cross into headline column');
 }

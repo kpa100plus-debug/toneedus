@@ -198,3 +198,27 @@ assert.equal((await req('/api/auth/logout', {}, owner.cookie)).status, 200);
 assert.equal((await req('/api/me', undefined, owner.cookie)).body.user, null);
 pass('private APIs require authentication, cross-origin writes are rejected, logout invalidates the session');
 console.log(`Auth security regressions: ${count} passed, 0 failed.`);
+
+// Admin test-account deletion, authentication revocation and identity reuse.
+const emptyTest = await member(9);
+assert.equal((await req(`/api/admin/members/${emptyTest.id}/delete-test`, {email:emptyTest.email,confirmTestAccount:true}, solver.cookie)).status,403);
+const deleteAdmin=await member(8);
+sql.prepare('UPDATE users SET is_admin=1 WHERE id=?').run(deleteAdmin.id);
+sql.prepare("INSERT INTO admin_roles(user_id,role) VALUES(?,'primary')").run(deleteAdmin.id);
+assert.equal((await req(`/api/admin/members/${emptyTest.id}/delete-test`, {email:'wrong@test.invalid',confirmTestAccount:true}, deleteAdmin.cookie)).status,400);
+sql.prepare("INSERT INTO auth_identities(id,user_id,provider,provider_subject,provider_email) VALUES('delete-google',?,'google','reusable-subject',?)").run(emptyTest.id,emptyTest.email);
+sql.prepare("INSERT INTO auth_identities(id,user_id,provider,provider_subject,provider_email) VALUES('delete-naver',?,'naver','reusable-naver',?)").run(emptyTest.id,emptyTest.email);
+assert.equal((await req(`/api/admin/members/${emptyTest.id}/delete-test`, {email:emptyTest.email,confirmTestAccount:true}, deleteAdmin.cookie)).status,200);
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM auth_identities WHERE user_id=?').get(emptyTest.id).n,0);
+assert.equal((await req('/api/me',undefined,emptyTest.cookie)).body.user,null);
+const rejoin=await req('/api/auth/signup',{...material,email:emptyTest.email,displayName:'새 테스트 회원',phone:'01055550009',region:'서울',birthYear:1980,gender:'female',termsAccepted:true,privacyAccepted:true});
+assert.equal(rejoin.status,201); assert.notEqual(rejoin.body.user.id,emptyTest.id);
+assert.equal((await req(`/api/admin/members/${deleteAdmin.id}/delete-test`,{email:deleteAdmin.email,confirmTestAccount:true},deleteAdmin.cookie)).status,409);
+assert.equal(sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action='TEST_MEMBER_DELETED'").get().n,1);
+pass('test deletion requires primary authority and email confirmation, protects admin, clears social/session credentials and permits fresh signup');
+
+const historyTest=await member(7);
+sql.prepare("INSERT INTO challenges(id,owner_id,title,summary,description,category,reward_amount,success_criteria,payment_trigger,evidence_requirements,deadline,status) VALUES('delete-history',?,'이력 보존 테스트','테스트 요약','테스트 내용','IDEA',10000,'완료 기준','검수 후','문서','2099-01-01','DRAFT')").run(historyTest.id);
+assert.equal((await req(`/api/admin/members/${historyTest.id}/delete-test`,{email:historyTest.email,confirmTestAccount:true},deleteAdmin.cookie)).status,409);
+assert.ok(sql.prepare('SELECT id FROM users WHERE id=?').get(historyTest.id));
+pass('atomic history guard blocks deletion and preserves mission and member');

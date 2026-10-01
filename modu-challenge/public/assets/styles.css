@@ -2490,3 +2490,6 @@ input:not([type=checkbox]):not([type=radio]), select, textarea { min-width: 0; m
   .wizard-generate { padding-inline: 12px; }
   .example-chips button { white-space: nowrap; }
 }
+
+.form-section-head > span { display: grid; place-items: center; flex: 0 0 34px; height: 34px; border-radius: 11px; color: #fff; background: var(--primary); font-weight: 700; }
+.form-section-head h2 { margin: 0; font-size: 1.1rem; line-height: 1.45; }

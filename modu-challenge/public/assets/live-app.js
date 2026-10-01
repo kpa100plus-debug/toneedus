@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=90';
-import { legacyNotificationText } from './brand.js?v=90';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=90';
-import { calculateSettlement } from './business-rules.js?v=90';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=90';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=91';
+import { legacyNotificationText } from './brand.js?v=91';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=91';
+import { calculateSettlement } from './business-rules.js?v=91';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=91';
 
 /**
  * 모두의클리어 live frontend
@@ -155,7 +155,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=90').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=91').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -357,15 +357,22 @@ function bindGlobalEvents() {
     const field = event.target;
     const form = field?.form;
     if (!(form instanceof HTMLFormElement) || !['signup-form', 'oauth-signup-form'].includes(form.id)) return;
-    const label = field.closest('.field, .check-row')?.querySelector('label')?.textContent?.replace('*', '').trim() || field.getAttribute('aria-label') || '필수 항목';
-    field.setCustomValidity('');
-    const message = field.validity.valueMissing ? `${label}을(를) 입력하거나 선택해주세요.`
+    event.preventDefault();
+    const label = field.closest('.field, .check-row')?.querySelector('label, span')?.textContent?.replace('*', '').trim() || field.getAttribute('aria-label') || '필수 항목';
+    const message = field.validity.valueMissing ? `${label}: 입력하거나 선택해주세요.`
       : field.validity.typeMismatch ? '이메일 형식을 정확히 입력해주세요.'
-      : field.validity.tooShort ? `${label}은(는) 최소 ${field.minLength}자 이상 입력해주세요.`
+      : field.validity.tooShort ? `${label}: 최소 ${field.minLength}자 이상 입력해주세요.`
       : '입력 형식을 확인해주세요.';
-    field.setCustomValidity(message);
-    setTimeout(() => field.setCustomValidity(''), 0);
-    toast('회원가입 정보를 확인해주세요', message, 'warning');
+    setInlineFieldError(field, message);
+    if (!form.dataset.validationFocusPending) {
+      form.dataset.validationFocusPending = 'true';
+      queueMicrotask(() => {
+        delete form.dataset.validationFocusPending;
+        const first = form.querySelector('[aria-invalid="true"]');
+        first?.focus();
+        first?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    }
   }, true);
 
   document.addEventListener('input', (event) => {
@@ -391,6 +398,7 @@ function bindGlobalEvents() {
   });
 
   document.addEventListener('change', (event) => {
+    clearFieldError(event.target);
     if (event.target instanceof HTMLInputElement && event.target.matches('[data-signup-consent-all]')) {
       const form = event.target.form;
       form?.querySelectorAll('[data-signup-consent-item]').forEach((item) => {
@@ -1159,7 +1167,7 @@ function renderEasyCreateWizard(max) {
       <div class="field full"><label>⑨ 이번 의뢰만의 조건은 무엇인가요?</label><input name="wizardSpecifics" required minlength="5" maxlength="160" placeholder="예: 월 500개 생산, 서울 납품, 재활용 소재 사용" /><small>대상·장소·수량·결과물 중 실제로 구분되는 조건을 적어주세요. 같은 의뢰를 반복 등록할 수는 없습니다.</small></div>
     </div>
     <div class="example-chips"><span>⑧ 입력 예시:</span><button type="button" data-action="select-create-example" data-example="manufacturer">제조사 찾기</button><button type="button" data-action="select-create-example" data-example="design">로고·디자인</button><button type="button" data-action="select-create-example" data-example="local">지역문제 개선</button><button type="button" data-action="select-create-example" data-example="expert">전문가 연결</button></div>
-    <button class="btn btn-soft btn-lg btn-block wizard-generate" type="button" data-action="generate-challenge-draft">선택한 내용으로 미션 글 자동 작성</button>
+    <button class="btn btn-soft btn-lg btn-block wizard-generate" type="button" data-action="generate-challenge-draft">미션 글 자동 작성</button>
     <p class="wizard-safety">자동 작성 후 제목·성공조건·증빙 내용을 확인하고 필요한 부분만 고치면 됩니다.</p>
   </section>`;
 }
@@ -2080,13 +2088,40 @@ function showSignupFieldError(form, error) {
   }
   field?.focus();
   field?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  toast('회원가입 정보를 확인해주세요', error.message || '표시된 항목을 수정해주세요.', 'warning');
+
+}
+
+function setInlineFieldError(field, message) {
+  const wrap = field?.closest('.field, .check-row') || field?.parentElement;
+  if (!wrap) return;
+  wrap.classList.add('has-error');
+  field.setAttribute('aria-invalid', 'true');
+  let feedback = wrap.querySelector('.field-error');
+  if (!feedback) {
+    feedback = document.createElement('small');
+    feedback.className = 'field-error';
+    feedback.id = `field-error-${field.form?.id || 'form'}-${field.name || field.getAttribute('aria-label') || 'required'}`.replace(/\s+/g, '-');
+    wrap.append(feedback);
+  }
+  feedback.textContent = message;
+  const ids = new Set((field.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean));
+  ids.add(feedback.id);
+  field.setAttribute('aria-describedby', [...ids].join(' '));
 }
 
 function clearFieldError(field) {
   field?.removeAttribute?.('aria-invalid');
   const wrap = field?.closest?.('.field, .check-row');
-  wrap?.querySelector('.field-error')?.remove();
+  const feedback = wrap?.querySelector('.field-error');
+  if (feedback) {
+    wrap.querySelectorAll('[aria-describedby]').forEach((item) => {
+      const ids = item.getAttribute('aria-describedby').split(/\s+/).filter((id) => id !== feedback.id);
+      if (ids.length) item.setAttribute('aria-describedby', ids.join(' '));
+      else item.removeAttribute('aria-describedby');
+    });
+    wrap.querySelectorAll('[aria-invalid]').forEach((item) => item.removeAttribute('aria-invalid'));
+    feedback.remove();
+  }
   wrap?.classList.remove('has-error');
 }
 
@@ -2833,6 +2868,10 @@ function toast(title, message, type = '') {
   const element = document.createElement('div');
   element.className = `toast ${type}`;
   element.innerHTML = `<i>${type === 'success' ? '✓' : type === 'error' ? '!' : type === 'warning' ? '!' : 'i'}</i><div><strong>${escapeHTML(title)}</strong><p>${escapeHTML(message)}</p></div>`;
+  const existing = [...toastRoot.children].find((item) => item.textContent === element.textContent);
+  if (existing) return;
+  while (toastRoot.children.length >= 2) toastRoot.firstElementChild.remove();
+  element.setAttribute('role', 'status');
   toastRoot.append(element);
   setTimeout(() => element.remove(), 4500);
 }

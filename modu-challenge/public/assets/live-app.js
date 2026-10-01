@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=89';
-import { legacyNotificationText } from './brand.js?v=89';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=89';
-import { calculateSettlement } from './business-rules.js?v=89';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=89';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=90';
+import { legacyNotificationText } from './brand.js?v=90';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=90';
+import { calculateSettlement } from './business-rules.js?v=90';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=90';
 
 /**
  * 모두의클리어 live frontend
@@ -155,7 +155,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=89').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=90').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -717,41 +717,35 @@ function isSamsungInternet() {
 function updateWebAppInstallBanner() {
   const banner = document.querySelector('#app-install-banner');
   if (!banner) return;
-  const dismissed = sessionStorage.getItem('modu-web-app-install-dismissed') === '1';
+  const ua = navigator.userAgent || '';
   const installed = sessionStorage.getItem('modu-web-app-installed') === '1' || isStandaloneWebApp();
-  const showIOSGuide = isIOSSafari() && !installed;
-  const showSamsungGuide = isSamsungInternet() && !installed;
-  banner.hidden = state.route === 'admin' || dismissed || installed || (!deferredInstallPrompt && !showIOSGuide && !showSamsungGuide && !/Chrome|Chromium|Edg\//.test(navigator.userAgent));
+  banner.hidden = state.route === 'admin' || sessionStorage.getItem('modu-web-app-install-dismissed') === '1' || installed || (!deferredInstallPrompt && !/Android|iPad|iPhone|iPod|Chrome|Chromium|Edg\//.test(ua));
   if (banner.hidden) return;
-  const title = banner.querySelector('#app-install-title');
-  const copy = banner.querySelector('#app-install-copy');
+  banner.querySelector('#app-install-title').textContent = '모두의클리어 앱 설치';
+  banner.querySelector('#app-install-copy').textContent = deferredInstallPrompt ? '설치 버튼을 누르고 브라우저 확인창에서 설치하세요.' : /iPad|iPhone|iPod/.test(ua) ? '홈 화면에 설치하는 방법을 안내합니다.' : '설치 버튼을 눌러 설치를 시작하세요.';
   const action = banner.querySelector('#app-install-action');
-  if (showIOSGuide) {
-    title.textContent = '아이폰 홈 화면에 추가';
-    copy.textContent = '하단 공유 버튼 → 홈 화면에 추가를 누르면 앱처럼 열립니다.';
-    action.hidden = true;
-  } else if (showSamsungGuide && !deferredInstallPrompt) {
-    title.textContent = 'Galaxy에서 앱처럼 열기';
-    copy.textContent = 'Chrome으로 연 뒤 ⋮ 메뉴에서 “앱 설치” 또는 “홈 화면에 추가”를 선택하세요.';
-    action.hidden = true;
-  } else {
-    title.textContent = '모두의클리어 앱';
-    copy.textContent = '홈 화면에 설치하고 주소창 없이 바로 열어보세요.';
-    action.hidden = false;
-    action.textContent = deferredInstallPrompt ? '설치' : '설치 안내';
-  }
+  action.hidden = false;
+  action.textContent = '앱 설치';
 }
 
 async function installWebApp() {
   if (!deferredInstallPrompt) {
-    const edge = /Edg\//.test(navigator.userAgent);
-    openModal(`<div class="notice-box"><div><strong>브라우저에서 앱 설치하기</strong><p>${edge ? 'Edge의 ⋯ 메뉴 → 앱 → 이 사이트를 앱으로 설치' : 'Chrome의 ⋮ 메뉴 → 전송, 저장, 공유 → 페이지를 앱으로 설치'}</p><p>설치 메뉴가 없으면 브라우저 업데이트와 기존 설치 여부를 확인해주세요.</p></div></div>`, { title: '앱 설치 안내' });
+    const ua = navigator.userAgent || '';
+    const ios = /iPad|iPhone|iPod/.test(ua);
+    const android = /Android/.test(ua);
+    const samsung = isSamsungInternet();
+    const steps = ios ? 'Safari에서 이 사이트 열기 → 공유 버튼 → 홈 화면에 추가 → 추가' : samsung ? '삼성 인터넷 메뉴(☰) → 현재 페이지 추가 → 홈 화면 → 추가' : android ? 'Chrome에서 이 사이트 열기 → 메뉴(⋮) → 앱 설치 또는 홈 화면에 추가 → 설치' : /Edg\//.test(ua) ? 'Edge 메뉴(⋯) → 앱 → 이 사이트를 앱으로 설치' : 'Chrome 메뉴(⋮) → 전송, 저장, 공유 → 페이지를 앱으로 설치';
+    const chrome = android ? `<a class="btn btn-primary btn-block" href="intent://modu-challenge.yeit.workers.dev/#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=https%3A%2F%2Fmodu-challenge.yeit.workers.dev%2F;end">Chrome에서 설치하기</a>` : '';
+    openModal(`<div class="notice-box"><div><strong>${ios ? '아이폰에 앱 설치' : '앱 설치하기'}</strong><p>${steps}</p><p>${ios ? '웹사이트 버튼으로 아이폰 설치창을 직접 열 수 없습니다. 공유 메뉴에서 추가해주세요.' : '앱 내부 브라우저에서는 설치가 제한될 수 있습니다. 기본 브라우저에서 열어주세요.'}</p></div></div>${chrome}<button class="btn btn-outline btn-block" type="button" data-action="close-modal">확인</button>`, { title: '모두의클리어 앱 설치' });
     return;
   }
   const prompt = deferredInstallPrompt;
   deferredInstallPrompt = null;
-  await prompt.prompt();
-  await prompt.userChoice;
+  try {
+    await prompt.prompt();
+    const choice = await prompt.userChoice;
+    if (choice.outcome === 'accepted') toast('설치 요청을 확인했습니다', '설치가 끝나면 홈 화면에서 모두의클리어를 열어주세요.', 'success');
+  } catch { toast('설치창을 열지 못했습니다', '브라우저 메뉴의 앱 설치를 이용해주세요.', 'warning'); }
   updateWebAppInstallBanner();
 }
 

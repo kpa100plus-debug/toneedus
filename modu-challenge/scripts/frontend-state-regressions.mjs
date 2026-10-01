@@ -268,7 +268,7 @@ const heroCss = readFileSync(new URL('../public/assets/styles.css', import.meta.
 assert.ok(heroCss.includes('heroBannerTravel 12s linear infinite'));
 assert.ok(heroCss.includes('var(--hero-travel-x), var(--hero-travel-y)'));
 assert.ok(heroCss.includes('animation-duration: 10s'));
-vm.runInContext("document.body.innerHTML='<section class=hero><div class=hero-visual><div class=hero-board></div></div></section>'", ctx);
+vm.runInContext("main.innerHTML='<section class=hero><div class=hero-visual><div class=hero-board></div></div></section>'", ctx);
 Object.defineProperty(doc.querySelector('.hero'), 'clientWidth', {value:1440});
 Object.defineProperty(doc.querySelector('.hero'), 'clientHeight', {value:650});
 Object.defineProperty(doc.querySelector('.hero-board'), 'offsetWidth', {value:350});
@@ -280,4 +280,18 @@ assert.ok(vm.runInContext("document.querySelector('.hero > .hero-board-travel') 
 pass('mission card is attached to the whole hero with a diagonal full-banner route and responsive travel bounds');
 console.log(`${passed} frontend state regression groups passed`);
 
+for (const ua of ['Mozilla/5.0 Android SamsungBrowser/27','Mozilla/5.0 iPhone Safari/605','Mozilla/5.0 iPhone CriOS/140']) {
+ Object.defineProperty(win.navigator,'userAgent',{value:ua,configurable:true});
+ run("state.route='home';deferredInstallPrompt=null;sessionStorage.clear();updateWebAppInstallBanner()");
+ assert.equal(doc.querySelector('#app-install-action').hidden,false);
+ assert.equal(doc.querySelector('#app-install-action').textContent,'앱 설치');
+ await run('installWebApp()');
+ assert.match(doc.querySelector('.modal').textContent,/홈 화면/);
+ run('closeModal()');
+}
+run("deferredInstallPrompt={prompt:async()=>{window.installPromptCalls=(window.installPromptCalls||0)+1},userChoice:Promise.resolve({outcome:'dismissed'})};updateWebAppInstallBanner()");
+await run('installWebApp()');
+assert.equal(win.installPromptCalls,1);
+assert.notEqual(win.sessionStorage.getItem('modu-web-app-installed'),'1');
+pass('Galaxy and all iPhone browsers show App Install; native prompt is invoked once and dismissal never claims installed');
 win.close();

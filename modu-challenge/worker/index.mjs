@@ -1780,6 +1780,7 @@ async function createChallenge(request, env) {
   const initialVisibility = outcome.visibility;
   const contentFingerprint = await challengeFingerprint({title,summary,description,successCriteria,paymentTrigger,evidenceRequirements,category,region});
   const coreFingerprint = await challengeCoreFingerprint({title,description,successCriteria});
+  const workFingerprint = await sha256(JSON.stringify([normalizeMissionContent(description), normalizeMissionContent(successCriteria)]));
   const autoReviewedAt = new Date().toISOString();
   try { await env.DB.batch([
     env.DB.prepare(`
@@ -1790,13 +1791,13 @@ async function createChallenge(request, env) {
         submitted_visibility, moderation_reasons_json, moderation_decision,
         moderation_risk_score, moderation_auto_reviewed_at, moderation_action,
         moderation_policy_version, moderation_guidance_json, owner_subject_type,
-        owner_actor_profile_id, owner_verification_snapshot_json, content_fingerprint, core_fingerprint
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        owner_actor_profile_id, owner_verification_snapshot_json, content_fingerprint, core_fingerprint, work_fingerprint
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'POSTED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(id, user.id, title, summary, description, category, region,
       rewardAmount, feeRate, successCriteria, paymentTrigger, evidenceRequirements, deadline, initialStatus,
       initialVisibility, visibility, JSON.stringify(moderationReasons), outcome.legacyDecision,
       moderation.riskScore, autoReviewedAt, storedModerationAction(moderation.action), MODERATION_POLICY_VERSION,
-      JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), contentFingerprint, coreFingerprint),
+      JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), contentFingerprint, coreFingerprint, workFingerprint),
     env.DB.prepare(`
       INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, to_status, metadata_json)
       VALUES (?, ?, ?, ?, ?, ?)
@@ -1866,10 +1867,11 @@ async function updateChallenge(challengeId, request, env) {
   const visibility = outcome.visibility;
   const contentFingerprint = await challengeFingerprint({title,summary,description,successCriteria,paymentTrigger,evidenceRequirements,category,region});
   const coreFingerprint = await challengeCoreFingerprint({title,description,successCriteria});
+  const workFingerprint = await sha256(JSON.stringify([normalizeMissionContent(description), normalizeMissionContent(successCriteria)]));
   const autoReviewedAt = new Date().toISOString();
   try { await env.DB.batch([
-    env.DB.prepare(`UPDATE challenges SET title = ?, summary = ?, description = ?, category = ?, region = ?, reward_amount = ?, success_criteria = ?, payment_trigger = ?, evidence_requirements = ?, deadline = ?, status = ?, visibility = ?, submitted_visibility = ?, moderation_reasons_json = ?, moderation_decision = ?, moderation_risk_score = ?, moderation_auto_reviewed_at = ?, moderation_action = ?, moderation_policy_version = ?, moderation_guidance_json = ?, owner_subject_type = ?, owner_actor_profile_id = ?, owner_verification_snapshot_json = ?, content_fingerprint = ?, core_fingerprint = ?, moderation_reviewed_by = NULL, moderation_reviewed_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
-      .bind(title, summary, description, category, region, rewardAmount, successCriteria, paymentTrigger, evidenceRequirements, deadline, status, visibility, submittedVisibility, JSON.stringify(moderationReasons), outcome.legacyDecision, moderation.riskScore, autoReviewedAt, storedModerationAction(moderation.action), MODERATION_POLICY_VERSION, JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), contentFingerprint, coreFingerprint, challengeId),
+    env.DB.prepare(`UPDATE challenges SET title = ?, summary = ?, description = ?, category = ?, region = ?, reward_amount = ?, success_criteria = ?, payment_trigger = ?, evidence_requirements = ?, deadline = ?, status = ?, visibility = ?, submitted_visibility = ?, moderation_reasons_json = ?, moderation_decision = ?, moderation_risk_score = ?, moderation_auto_reviewed_at = ?, moderation_action = ?, moderation_policy_version = ?, moderation_guidance_json = ?, owner_subject_type = ?, owner_actor_profile_id = ?, owner_verification_snapshot_json = ?, content_fingerprint = ?, core_fingerprint = ?, work_fingerprint = ?, moderation_reviewed_by = NULL, moderation_reviewed_at = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?`)
+      .bind(title, summary, description, category, region, rewardAmount, successCriteria, paymentTrigger, evidenceRequirements, deadline, status, visibility, submittedVisibility, JSON.stringify(moderationReasons), outcome.legacyDecision, moderation.riskScore, autoReviewedAt, storedModerationAction(moderation.action), MODERATION_POLICY_VERSION, JSON.stringify(moderation.guidance), subjectType, verification.profile.id, JSON.stringify(verification.snapshot), contentFingerprint, coreFingerprint, workFingerprint, challengeId),
     env.DB.prepare(`INSERT INTO challenge_events (id, challenge_id, actor_id, event_type, from_status, to_status, metadata_json) VALUES (?, ?, ?, 'CHALLENGE_UPDATED', ?, ?, ?)`)
       .bind(makeId('evt'), challengeId, user.id, current.status, status, JSON.stringify({ moderationAction: moderation.action, moderationRiskScore: moderation.riskScore, moderationReasons, policyVersion: MODERATION_POLICY_VERSION })),
     auditStatement(env, user.id, 'CHALLENGE_UPDATE', 'challenge', challengeId, { status: current.status }, { status, moderationAction: moderation.action, moderationRiskScore: moderation.riskScore, moderationReasons, policyVersion: MODERATION_POLICY_VERSION }),
@@ -1949,21 +1951,21 @@ async function findSimilarChallenge(ownerId, input, excludeId, env) {
   ];
   const normalized = fields.map(([key]) => normalize(input[key]));
   if (normalized.some((value) => !value)) return null;
-  const core = ['title','description','successCriteria'].map(key => normalize(input[key]));
+  const core = ['description','successCriteria'].map(key => normalize(input[key]));
   // Reward or deadline changes alone do not create a different task. Prefer a
   // published original over an older private draft with identical content.
-  const candidates = await env.DB.prepare(`SELECT id, title, summary, description, success_criteria, payment_trigger, evidence_requirements, category, region
+  const candidates = await env.DB.prepare(`SELECT id, owner_id, title, summary, description, success_criteria, payment_trigger, evidence_requirements, category, region
     FROM challenges WHERE id <> COALESCE(?, '')
       AND ((visibility = 'public'
         AND status IN ('OPEN','REVIEW','SHORTLISTED','FUNDING_REQUIRED','FUNDED','EXECUTING','PROOF_SUBMITTED','DISPUTED'))
-        OR (owner_id = ? AND ((visibility = 'unlisted'
+        OR (owner_id = ? AND ((visibility IN ('unlisted','private')
           AND status IN ('OPEN','REVIEW','SHORTLISTED','FUNDING_REQUIRED','FUNDED','EXECUTING','PROOF_SUBMITTED','DISPUTED'))
           OR status = 'DRAFT'
           OR (status = 'REVIEW' AND moderation_decision = 'ADMIN_REVIEW' AND moderation_guidance_json LIKE '%"HIGH_VALUE_REVIEW"%'))))
     ORDER BY CASE WHEN status = 'DRAFT' THEN 1 ELSE 0 END, created_at DESC`)
     .bind(excludeId, ownerId).all();
   return (candidates.results || []).find((item) => fields.every(([, column], index) => normalize(item[column]) === normalized[index]) ||
-    ['title','description','success_criteria'].every((column, index) => normalize(item[column]) === core[index])) || null;
+    ((item.owner_id === ownerId || normalize(item.title) === normalize(input.title)) && ['description','success_criteria'].every((column, index) => normalize(item[column]) === core[index]))) || null;
 }
 
 const normalizeMissionContent = (value) => String(value || '').normalize('NFKC').replace(/\s+/gu, '').toLowerCase();

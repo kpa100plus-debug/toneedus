@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=92';
-import { legacyNotificationText } from './brand.js?v=92';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=92';
-import { calculateSettlement } from './business-rules.js?v=92';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=92';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=93';
+import { legacyNotificationText } from './brand.js?v=93';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=93';
+import { calculateSettlement } from './business-rules.js?v=93';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=93';
 
 /**
  * 모두의클리어 live frontend
@@ -155,7 +155,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=92').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=93').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -597,8 +597,13 @@ async function handleForm(form) {
     if (form.id === 'admin-member-status-form') return await withBusy(submit, () => submitAdminMemberStatus(form));
     if (form.id === 'admin-dispute-status-form') return await withBusy(submit, () => submitAdminDisputeStatus(form));
     if (form.id === 'hero-search-form') {
-      state.search = new FormData(form).get('q')?.toString() || '';
-      navigate('explore');
+      return await withBusy(submit, async () => {
+        state.search = new FormData(form).get('q')?.toString().trim() || '';
+        state.category = 'ALL';
+        state.challengeTotal = null;
+        await loadChallenges();
+        navigate('explore');
+      });
     }
   } catch (error) {
     if (['signup-form', 'oauth-signup-form'].includes(form.id) && error instanceof ApiError) return showSignupFieldError(form, error);

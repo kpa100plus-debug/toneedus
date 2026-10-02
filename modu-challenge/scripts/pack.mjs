@@ -3,6 +3,7 @@ import { gzipSync } from 'node:zlib';
 import { readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 
 const runtimePaths = [
+  'migrations/0031_private_mission_duplicate_guard.sql',
   'migrations/0028_atomic_mission_duplicates.sql',
   'migrations/0029_mission_core_fingerprint.sql',
   'migrations/0030_test_member_delete_guard.sql',

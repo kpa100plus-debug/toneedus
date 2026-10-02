@@ -64,7 +64,7 @@ const applied=await req('/api/challenges/'+cid+'/teasers',teaser,b.cookie,connec
 sql.prepare("UPDATE member_verifications SET expires_at='2000-01-01T00:00:00Z' WHERE user_id=?").run(b.body.user.id);
 assert.equal((await req('/api/challenges/'+cid+'/shortlist',{teaserId:applied.body.teaser.id,mode:'select'},a.cookie,connected)).body.error.code,'VERIFICATION_REQUIRED');
 assert.equal((await req('/api/challenges/'+cid+'/teasers/'+applied.body.teaser.id,teaser,b.cookie,connected,'PUT')).status,200);
-assert.equal((await req('/api/challenges',{...mission,title:'법인 활동 별도 브랜드 간판 제작',subjectType:'corporation'},a.cookie,connected)).status,201);
+assert.equal((await req('/api/challenges',{...mission,title:'법인 활동 별도 브랜드 간판 제작',description:mission.description+' 법인 브랜드 간판 별도 제작입니다.',subjectType:'corporation'},a.cookie,connected)).status,201);
 assert.equal((await req('/api/challenges/'+cid+'/shortlist',{teaserId:applied.body.teaser.id},a.cookie,connected)).status,200);
 pass('email allows registration, editing and shortlist; expired identity still blocks final confirmation');
 const adminEnv={...connected,PRIMARY_ADMIN_EMAIL:'owner@test.invalid'};
@@ -99,7 +99,7 @@ const ledger=sql.prepare('SELECT SUM(debit) d,SUM(credit) c FROM transaction_led
 assert.equal(sql.prepare("SELECT SUM(credit) n FROM transaction_ledger WHERE order_id=? AND account='PLATFORM_FEE'").get(order.id).n,10000);
 assert.throws(()=>sql.prepare('UPDATE transaction_ledger SET debit=1').run(),/IMMUTABLE_LEDGER/);pass('duplicate payout replay produces one balanced immutable accounting entry');
 for(const scenario of ['refund','cancel','stale']) {
- const mc=await req('/api/challenges',{...mission,title:'지역 '+scenario+' 결과물 제작 요청'},a.cookie,connected,'POST',{'Idempotency-Key':'order-mission-'+scenario+'-0001'});assert.equal(mc.status,201);
+ const mc=await req('/api/challenges',{...mission,title:'지역 '+scenario+' 결과물 제작 요청',description:mission.description+' '+scenario+' 별도 프로젝트 납품 범위'},a.cookie,connected,'POST',{'Idempotency-Key':'order-mission-'+scenario+'-0001'});assert.equal(mc.status,201);
  sql.prepare('UPDATE challenges SET selected_solver_id=? WHERE id=?').run(b.body.user.id,mc.body.challenge.id);
  const o=await createTestOrder(local,{...orderInput,challengeId:mc.body.challenge.id,requestKey:'test-order-'+scenario+'-0001'});let r=o;let i=0;
  const step=async(action,actorId=a.body.user.id,extra={})=>r=await transitionTestOrder(local,{orderId:o.id,requestKey:'event-'+scenario+'-'+String(++i).padStart(8,'0'),action,actorId,revision:r.revision,...extra});

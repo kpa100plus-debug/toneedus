@@ -83,7 +83,7 @@ let trustBefore;
 
 const fetchBefore = globalThis.fetch;
 globalThis.fetch = async () => { throw new Error('External analysis service unavailable'); };
-const highInput = { ...mission, title: '고액 정원 방문자 지도 디자인 제안', rewardAmount: 100000000 };
+const highInput = { ...mission, title: '고액 정원 방문자 지도 디자인 제안', description: '정원 방문자를 위한 구역별 지도와 이동 경로를 설계하고 편집 가능한 원본을 제출해주세요.', rewardAmount: 100000000 };
 const high = await req('/api/challenges', highInput, owner.cookie, 'POST', { 'Idempotency-Key': 'moderation-public-replay-001' });
 globalThis.fetch = fetchBefore;
 assert.equal(high.status, 201, JSON.stringify(high.body)); assert.equal(high.body.moderationAction, 'HIGH_VALUE_REVIEW');
@@ -131,7 +131,6 @@ pass('updating the original retains its identifier and automatic publication');
 const edited = originalEdit;
 
 for (const [field, value] of [
-  ['title', '부산 공원 안내판 디자인 제안'],
   ['description', '출입구 전용 안내판을 설계하고 휠체어 접근 경로를 표시한 원본을 납품해주세요.'],
   ['successCriteria', '대형 안내판 다섯 개의 원본과 최종 인쇄 규격을 제출해주세요.'],
 ]) {
@@ -139,8 +138,9 @@ for (const [field, value] of [
   assert.equal(distinct.status, 201, JSON.stringify(distinct.body));
   assert.equal(distinct.body.moderationAction, 'AUTO_APPROVED', `distinct ${field} must not be blocked by the title`);
 }
-pass('different title, work description or success criteria can define a separate mission');
+pass('different work description or success criteria defines a separate mission');
 for (const [field, value] of [
+  ['title', '부산 공원 안내판 디자인 제안'],
   ['summary', '이 미션에서는 공원의 입구 위치를 안내할 별도 안내판을 요청합니다.'],
   ['paymentTrigger', '최종 시안 검토와 수행계획을 확인한 뒤 보상금 준비를 진행합니다.'],
   ['evidenceRequirements', '실제 설치위치를 표시한 도면과 현장사진 제출'],
@@ -168,11 +168,12 @@ assert.equal(legacyRecovered.body.challenge.publicationVisibility, 'public');
 assert.equal(sql.prepare("SELECT moderation_policy_version FROM challenges WHERE id='legacy-title-only'").get().moderation_policy_version, '2026-09-28-v5');
 pass('legacy title-only rejection is explained truthfully, preserved on read and reopened on explicit resave using the same mission ID');
 
-const lifecycleInput = { ...mission, title: 'ABC 안내판 제작 범위 검사' };
+const lifecycleInput = { ...mission, title: 'ABC 안내판 제작 범위 검사', description: mission.description+' ABC 구역 전용 작업입니다.' };
 enqueue('lifecycle-probe', owner.body.user.id, lifecycleInput.title);
+sql.prepare("UPDATE challenges SET description=? WHERE id='lifecycle-probe'").run(lifecycleInput.description);
 policy.env = env; policy.ownerId = owner.body.user.id; policy.lifecycleInput = lifecycleInput;
 for (const [status, visibility, expected] of [
-  ['DRAFT', 'private', true], ['DRAFT', 'public', true], ['OPEN', 'private', false],
+  ['DRAFT', 'private', true], ['DRAFT', 'public', true], ['OPEN', 'private', true],
   ['SUCCESS', 'public', false], ['FAILED', 'public', false], ['CANCELLED', 'public', false],
   ['OPEN', 'public', true], ['OPEN', 'unlisted', true], ['EXECUTING', 'public', true],
 ]) {
@@ -196,7 +197,7 @@ pass('published exact content collides across owners, unpublished drafts only fo
 
 const medium = await req('/api/challenges', { ...mission, title: '고객 연락처 정리 업무 요청', description: '고객 연락처를 동의 절차와 함께 정리하고 결과 문서를 작성해주세요.', rewardAmount: 100000000 }, owner.cookie);
 assert.equal(medium.body.moderationAction, 'CHANGES_REQUIRED'); assert.equal(sql.prepare('SELECT moderation_risk_score FROM challenges WHERE id=?').get(medium.body.challenge.id).moderation_risk_score, 40);
-const prohibited = await req('/api/challenges', { ...mission, title: '작업 원본파일 전달 업무', evidenceRequirements: '가짜 계정으로 허위 리뷰 증빙 제출' }, owner.cookie);
+const prohibited = await req('/api/challenges', { ...mission, title: '작업 원본파일 전달 업무', description: mission.description+' 별도 자료 제공 작업입니다.', evidenceRequirements: '가짜 계정으로 허위 리뷰 증빙 제출' }, owner.cookie);
 assert.equal(prohibited.body.moderationAction, 'AUTO_REJECTED'); assert.equal(prohibited.body.challenge.publicationVisibility, 'private');
 pass('high value cannot escalate medium risk into rejection; prohibited evidence instructions are blocked');
 
@@ -270,6 +271,7 @@ function enqueue(id, ownerId, title) {
 }
 enqueue('cron-duplicate', owner.body.user.id, mission.title);
 enqueue('cron-safe', owner.body.user.id, '공공 정원 식물 이름표 제작');
+sql.prepare("UPDATE challenges SET description=? WHERE id='cron-safe'").run(mission.description+' 정원 식물 이름표 별도 작업입니다.');
 enqueue('cron-email', pendingOwner.body.user.id, '주민센터 안내문 표지 디자인');
 enqueue('cron-category', owner.body.user.id, mission.title);
 sql.prepare("UPDATE challenges SET category='LOCAL' WHERE id='cron-category'").run();
@@ -292,37 +294,69 @@ assert.equal(sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action LIKE 'C
 pass('Cron preserves high-value private review, enforces email, and does not repeat decisions');
 
 assert.deepEqual(sql.prepare('SELECT id,trust_score FROM users ORDER BY id').all(), trustBefore);
-assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges').get().n, 14);
+assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges').get().n, 13);
 assert.equal(sql.prepare("SELECT COUNT(*) n FROM trust_policy_items WHERE weight IS NOT NULL").get().n, 0);
 assert.deepEqual(sql.prepare('PRAGMA foreign_key_check').all(), []);
 assert.equal(sql.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
 pass('all mission records and legacy TRUST values survive; new trust weights remain unset');
 // Exercise the full API concurrently; D1 batches are atomic, reads may overlap.
 for (const [suffix, amount, expected] of [['below',4999999,'AUTO_APPROVED'],['exact',5000000,'HIGH_VALUE_REVIEW'],['above',10000000,'HIGH_VALUE_REVIEW']]) {
-  const item=await req('/api/challenges',{...mission,title:'승인 경계값 확인 '+suffix,rewardAmount:amount},otherOwner.cookie);
+  const item=await req('/api/challenges',{...mission,title:'승인 경계값 확인 '+suffix,description:mission.description+' '+suffix+' 별도 납품 범위',rewardAmount:amount},otherOwner.cookie);
   assert.equal(item.status,201,JSON.stringify(item.body));
   assert.equal(item.body.moderationAction,expected);
   assert.equal((await req('/api/challenges/'+item.body.challenge.id)).status,amount>=5000000?404:200);
   if(suffix==='below') {
-    const raised=await req('/api/challenges/'+item.body.challenge.id,{...mission,title:'승인 경계값 확인 '+suffix,rewardAmount:5000000},otherOwner.cookie,'PUT');
+    const raised=await req('/api/challenges/'+item.body.challenge.id,{...mission,title:'승인 경계값 확인 '+suffix,description:mission.description+' '+suffix+' 별도 납품 범위',rewardAmount:5000000},otherOwner.cookie,'PUT');
     assert.equal(raised.status,200);assert.equal(raised.body.moderationAction,'HIGH_VALUE_REVIEW');
     assert.equal((await req('/api/challenges/'+item.body.challenge.id)).status,404);
   }
 }
 pass('4,999,999 / 5,000,000 / 10,000,000 KRW boundaries and reward increase require private approval');
-const raceInput={...mission,title:'동시등록 원자성 검증 미션'};
+const raceInput={...mission,title:'동시등록 원자성 검증 미션',description:mission.description+' 동시등록 검증 별도 범위'};
 const races=await Promise.all([req('/api/challenges',raceInput,otherOwner.cookie),req('/api/challenges',raceInput,otherOwner.cookie)]);
 assert.deepEqual(races.map(r=>r.status).sort(),[201,409],JSON.stringify(races));
 const won=races.find(r=>r.status===201).body.challenge.id;
 assert.equal(races.find(r=>r.status===409).body.existingMission.id,won);
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges WHERE title=?').get(raceInput.title).n,1);
-const sameInput={...mission,title:'동시요청 재전송 검증 미션'};
+const sameInput={...mission,title:'동시요청 재전송 검증 미션',description:mission.description+' 동일 요청키 검증 별도 범위'};
 const headers={'Idempotency-Key':'same-request-concurrent-20260928'};
 const same=await Promise.all([req('/api/challenges',sameInput,otherOwner.cookie,'POST',headers),req('/api/challenges',sameInput,otherOwner.cookie,'POST',headers)]);
 assert.deepEqual(same.map(r=>r.status).sort(),[200,201],JSON.stringify(same));
 assert.equal(same[0].body.challenge.id,same[1].body.challenge.id);
 assert.equal(sql.prepare('SELECT COUNT(*) n FROM challenges WHERE title=?').get(sameInput.title).n,1);
 pass('concurrent distinct keys yield one mission and a linked 409; concurrent same-key retry returns the original with no extra record');
+// Title changes cannot defeat the author-scoped atomic work guard.
+const renamedInput={...mission,title:'제목 변경 동시 요청 원본',description:mission.description+' 제목 변경 동시성 전용 작업'};
+const renamedRace=await Promise.all([
+  req('/api/challenges',renamedInput,otherOwner.cookie,'POST',{'Idempotency-Key':'retitled-race-request-a'}),
+  req('/api/challenges',{...renamedInput,title:'같은 작업 다른 제목'},otherOwner.cookie,'POST',{'Idempotency-Key':'retitled-race-request-b'})
+]);
+assert.deepEqual(renamedRace.map(r=>r.status).sort(),[201,409],JSON.stringify(renamedRace));
+assert.equal(renamedRace.find(r=>r.status===409).body.existingMission.id,renamedRace.find(r=>r.status===201).body.challenge.id);
+pass('different titles and request keys cannot create the same work concurrently');
+const privateInput={...mission,title:'비공개 활성 미션 검증',description:mission.description+' 비공개 활성 전용 작업',visibility:'private'};
+const privateOriginal=await req('/api/challenges',privateInput,otherOwner.cookie);
+assert.equal(privateOriginal.status,201,JSON.stringify(privateOriginal.body));
+assert.equal((await req('/api/challenges/'+privateOriginal.body.challenge.id)).status,404);
+for(const legacy of [false,true]) {
+ if(legacy)sql.prepare('UPDATE challenges SET content_fingerprint=NULL,core_fingerprint=NULL,work_fingerprint=NULL WHERE id=?').run(privateOriginal.body.challenge.id);
+ const repeated=await req('/api/challenges',{...privateInput,title:'비공개 제목 변경 재요청'},otherOwner.cookie);
+ assert.equal(repeated.status,409,JSON.stringify(repeated.body));
+ assert.equal(repeated.body.existingMission.id,privateOriginal.body.challenge.id);
+}
+const hiddenCopy=await req('/api/challenges',privateInput,owner.cookie);
+assert.equal(hiddenCopy.status,201,JSON.stringify(hiddenCopy.body));
+assert.equal(hiddenCopy.body.existingMission,null);
+pass('active private missions and legacy unhashed rows reject same-author retries without revealing another author’s private work');
+const originalId=renamedRace.find(r=>r.status===201).body.challenge.id;
+const editCollision=await req('/api/challenges/'+originalId,privateInput,otherOwner.cookie,'PUT');
+assert.equal(editCollision.status,409,JSON.stringify(editCollision.body));
+const selfEdit=await req('/api/challenges/'+originalId,{...renamedInput,title:'기존 미션 제목만 정상 수정'},otherOwner.cookie,'PUT');
+assert.equal(selfEdit.status,200,JSON.stringify(selfEdit.body));
+sql.prepare("UPDATE challenges SET status='CANCELLED' WHERE id=?").run(originalId);
+const repost=await req('/api/challenges',renamedInput,otherOwner.cookie);
+assert.equal(repost.status,201,JSON.stringify(repost.body));
+pass('editing into another active work is blocked; self-edit and intentional recruitment after cancellation remain allowed');
 for(let i=0;i<55;i++) {
   enqueue('page-check-'+i,owner.body.user.id,'페이지 검사 '+String(i).padStart(2,'0'));
   sql.prepare("UPDATE challenges SET status='OPEN',visibility='public',reward_amount=?,region='제주페이지검사' WHERE id=?").run(10000+i,'page-check-'+i);

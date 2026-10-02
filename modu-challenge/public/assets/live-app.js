@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=93';
-import { legacyNotificationText } from './brand.js?v=93';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=93';
-import { calculateSettlement } from './business-rules.js?v=93';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=93';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=94';
+import { legacyNotificationText } from './brand.js?v=94';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=94';
+import { calculateSettlement } from './business-rules.js?v=94';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=94';
 
 /**
  * 모두의클리어 live frontend
@@ -26,6 +26,7 @@ let modalHistoryEntry = false;
 let emailStateRevision = 0;
 let exploreRequest = 0;
 let exploreSearchTimer = null;
+let challengesQueryKey = JSON.stringify(['', 'ALL', 'new']);
 
 const state = {
   activityFocus: null,
@@ -155,7 +156,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=93').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=94').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -207,16 +208,18 @@ async function loadBootstrapData() {
   }
 }
 
-async function loadChallenges(append = false) {
+async function loadChallenges(append = false, unfiltered = false) {
   const revision = ++exploreRequest;
   const search = state.search, category = state.category, sort = state.sort;
+  const query = unfiltered ? ['', 'ALL', 'new'] : [search, category, sort];
   state.challengesLoading = true;
   renderExplorePagination();
   try {
-    const result = await apiClient.listChallenges({ limit:50, offset:append ? state.challenges.length : 0, sort, q:search, category:category === 'ALL' ? '' : category });
+    const result = await apiClient.listChallenges({ limit:50, offset:append ? state.challenges.length : 0, sort:query[2], q:query[0], category:query[1] === 'ALL' ? '' : query[1] });
     if (revision !== exploreRequest || search !== state.search || category !== state.category || sort !== state.sort) return;
     const records = append ? [...state.challenges,...(result.challenges || [])] : result.challenges || [];
     state.challenges = [...new Map(records.map(item => [item.id,item])).values()];
+    challengesQueryKey = JSON.stringify(query);
     state.challengeTotal = result.total ?? null;
     state.challengesHasMore = Boolean(result.hasMore);
   } finally {
@@ -243,6 +246,11 @@ async function loadRouteData() {
   if (!state.apiAvailable) return;
   state.routeError = null;
   try {
+    if (['home','explore'].includes(state.route)) {
+      const unfiltered = state.route === 'home';
+      const query = unfiltered ? ['', 'ALL', 'new'] : [state.search, state.category, state.sort];
+      if (challengesQueryKey !== JSON.stringify(query)) await loadChallenges(false, unfiltered);
+    }
     if (state.route === 'simulation' && state.user?.isAdmin) {
       const result = await apiClient.listSimulations();
       state.simulations = result.simulations;

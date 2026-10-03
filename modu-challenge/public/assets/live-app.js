@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=94';
-import { legacyNotificationText } from './brand.js?v=94';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=94';
-import { calculateSettlement } from './business-rules.js?v=94';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=94';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=95';
+import { legacyNotificationText } from './brand.js?v=95';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=95';
+import { calculateSettlement } from './business-rules.js?v=95';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=95';
 
 /**
  * 모두의클리어 live frontend
@@ -38,6 +38,8 @@ const state = {
   challengeTotal: null,
   challengesHasMore: false,
   challengesLoading: false,
+  challengesError: null,
+  challengesRetryAppend: false,
   activity: null,
   trustProfile: null,
   verifications: null,
@@ -156,7 +158,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=94').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=95').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -213,7 +215,8 @@ async function loadChallenges(append = false, unfiltered = false) {
   const search = state.search, category = state.category, sort = state.sort;
   const query = unfiltered ? ['', 'ALL', 'new'] : [search, category, sort];
   state.challengesLoading = true;
-  renderExplorePagination();
+  state.challengesError = null;
+  renderExploreGridOnly();
   try {
     const result = await apiClient.listChallenges({ limit:50, offset:append ? state.challenges.length : 0, sort:query[2], q:query[0], category:query[1] === 'ALL' ? '' : query[1] });
     if (revision !== exploreRequest || search !== state.search || category !== state.category || sort !== state.sort) return;
@@ -222,6 +225,12 @@ async function loadChallenges(append = false, unfiltered = false) {
     challengesQueryKey = JSON.stringify(query);
     state.challengeTotal = result.total ?? null;
     state.challengesHasMore = Boolean(result.hasMore);
+  } catch (error) {
+    if (revision === exploreRequest && search === state.search && category === state.category && sort === state.sort) {
+      state.challengesError = error;
+      state.challengesRetryAppend = append;
+    }
+    throw error;
   } finally {
     if (revision === exploreRequest) { state.challengesLoading = false; renderExploreGridOnly(); }
   }
@@ -232,14 +241,38 @@ function scheduleExploreSearch() {
   ++exploreRequest;
   state.challengeTotal = null;
   state.challengesHasMore = false;
+  state.challengesError = null;
+  state.challengesLoading = true;
   renderExploreGridOnly();
   exploreSearchTimer = setTimeout(() => loadChallenges().catch(showError),250);
 }
 
+function renderExplorePaginationContent() {
+  if (state.challengesError) return `<div class="notice-box warning" role="alert"><span>!</span><div><strong>미션을 불러오지 못했습니다</strong><p>연결 상태를 확인한 뒤 다시 시도해주세요. 검색 조건은 유지됩니다.</p><button type="button" class="btn btn-primary" data-action="retry-missions">다시 불러오기</button></div></div>`;
+  return state.challengesHasMore || state.challengesLoading
+    ? `<button type="button" class="btn btn-outline btn-block" data-action="load-more-missions" ${state.challengesLoading ? 'disabled' : ''}>${state.challengesLoading ? '미션 불러오는 중' : '미션 더 보기'}</button>` : '';
+}
+
 function renderExplorePagination() {
   const target = document.querySelector('#explore-pagination');
-  if (target) target.innerHTML = state.challengesHasMore || state.challengesLoading
-    ? `<button type="button" class="btn btn-outline btn-block" data-action="load-more-missions" ${state.challengesLoading ? 'disabled' : ''}>${state.challengesLoading ? '미션 불러오는 중' : '미션 더 보기'}</button>` : '';
+  if (target) target.innerHTML = renderExplorePaginationContent();
+}
+
+function exploreQueryMatches() {
+  return challengesQueryKey === JSON.stringify([state.search, state.category, state.sort]);
+}
+
+function exploreResultCount() {
+  if (!exploreQueryMatches() && state.challengesError) return '검색 결과 확인 실패';
+  if (!exploreQueryMatches() && state.challengesLoading) return '검색 중…';
+  return `${state.challengeTotal ?? getFilteredChallenges().length}개 미션`;
+}
+
+function renderExploreResults() {
+  if (!exploreQueryMatches() && state.challengesError) return '';
+  if (!exploreQueryMatches() && state.challengesLoading) return '<p role="status">검색 조건에 맞는 미션을 불러오고 있습니다.</p>';
+  const filtered = getFilteredChallenges();
+  return filtered.length ? `<div class="challenge-grid">${filtered.map(renderChallengeCard).join('')}</div>` : renderEmpty('검색 결과가 없습니다', '다른 검색어나 카테고리를 선택해보세요.');
 }
 
 async function loadRouteData() {
@@ -452,6 +485,7 @@ function bindGlobalEvents() {
 
 async function handleAction(action, data, button) {
   try {
+    if (action === 'retry-missions') return state.challengesLoading ? undefined : await loadChallenges(state.challengesRetryAppend);
     if (action === 'load-more-missions') return state.challengesLoading ? undefined : await loadChallenges(true);
     if (action === 'close-modal') return dismissModal();
     if (action === 'new-simulation') return requireLogin(openSimulationCreate);
@@ -606,11 +640,12 @@ async function handleForm(form) {
     if (form.id === 'admin-dispute-status-form') return await withBusy(submit, () => submitAdminDisputeStatus(form));
     if (form.id === 'hero-search-form') {
       return await withBusy(submit, async () => {
+        const originHash = location.hash;
         state.search = new FormData(form).get('q')?.toString().trim() || '';
         state.category = 'ALL';
         state.challengeTotal = null;
         await loadChallenges();
-        navigate('explore');
+        if (location.hash === originHash && state.route === 'home') navigate('explore');
       });
     }
   } catch (error) {
@@ -1036,9 +1071,9 @@ function renderExplore() {
         <select id="explore-sort" aria-label="정렬"><option value="new">최신순</option><option value="reward">보상금 높은순</option><option value="deadline">마감임박순</option><option value="popular">인기순</option></select>
       </div>
       <div class="category-tabs">${Object.entries(CATEGORY_META).map(([key, meta]) => `<button type="button" class="${state.category === key ? 'active' : ''} category-${key.toLowerCase()}" data-category="${key}" style="--category-color:${meta.color}"><span>${meta.icon}</span>${meta.label}</button>`).join('')}</div>
-      <div class="result-head"><strong id="explore-result-count">${state.challengeTotal ?? filtered.length}개 미션</strong><span>보상금 상태와 의뢰자 TRUST를 확인한 뒤 참가하세요.</span></div>
-      <div id="explore-grid">${filtered.length ? `<div class="challenge-grid">${filtered.map(renderChallengeCard).join('')}</div>` : renderEmpty('검색 결과가 없습니다', '다른 검색어나 카테고리를 선택해보세요.')}</div>
-      <div id="explore-pagination" style="margin-top:24px">${state.challengesHasMore ? '<button type="button" class="btn btn-outline btn-block" data-action="load-more-missions">미션 더 보기</button>' : ''}</div>
+      <div class="result-head"><strong id="explore-result-count">${exploreResultCount()}</strong><span>보상금 상태와 의뢰자 TRUST를 확인한 뒤 참가하세요.</span></div>
+      <div id="explore-grid">${renderExploreResults()}</div>
+      <div id="explore-pagination" style="margin-top:24px">${renderExplorePaginationContent()}</div>
     </div></section>`;
 }
 
@@ -2010,6 +2045,12 @@ function normalizeSignedInRoute({ preserveEmailResult = false } = {}) {
 }
 
 async function completeAuthentication(user) {
+  let expiredUserId = null;
+  try { expiredUserId = sessionStorage.getItem('modu-expired-session-user'); sessionStorage.removeItem('modu-expired-session-user'); } catch { /* Login remains usable with restricted browser storage. */ }
+  if (expiredUserId && expiredUserId !== user.id) {
+    state.createDraft = null;
+    sessionStorage.removeItem('modu-identity-return');
+  }
   state.authError = null;
   state.authLoading = false;
   state.user = user;
@@ -2022,6 +2063,7 @@ async function completeAuthentication(user) {
   await loadRouteData();
   renderSystemNotice();
   render();
+  if (expiredUserId === user.id) await returnFromIdentity();
   if (new URLSearchParams(location.search).has('identityVerificationId')) {
     await completeIdentityRedirect();
     await loadRouteData(); render();
@@ -2272,6 +2314,7 @@ async function logout() {
   let endpoint = '';
   try { const registration = await navigator.serviceWorker?.getRegistration(); endpoint = (await registration?.pushManager.getSubscription())?.endpoint || ''; } catch {}
   await apiClient.logout(endpoint);
+  sessionStorage.removeItem('modu-expired-session-user');
   sessionStorage.removeItem('modu-identity-return');
   try { sessionStorage.removeItem(createDraftKey()); } catch {}
   state.createDraft = null;
@@ -2863,8 +2906,33 @@ async function withBusy(button, callback) {
   finally { if (button?.isConnected) { button.disabled = false; button.removeAttribute('aria-busy'); button.textContent = button.dataset.originalText || '확인'; } }
 }
 
+function showExpiredSession() {
+  let draftSaved = false;
+  try { rememberIdentityReturn(); sessionStorage.setItem('modu-expired-session-user', state.user.id); draftSaved = true; } catch { /* A storage failure must not retain privileged UI. */ }
+  emailStateRevision++;
+  emailVerificationFlow = null;
+  state.user = null;
+  state.authError = null;
+  state.activity = null;
+  state.trustProfile = null;
+  state.adminOverview = null;
+  state.selectedChallenge = null;
+  state.verifications = null;
+  state.simulation = null;
+  state.simulations = [];
+  state.missionSimulationAccess = null;
+  state.createDraft = null;
+  state.challenges = state.challenges.filter(item => (item.publicationVisibility || item.visibility) === 'public' && !item.moderationPending);
+  challengesQueryKey = '';
+  state.challengeTotal = null;
+  state.challengesHasMore = false;
+  render();
+  openModal(`<section class="session-expired-prompt"><p>로그인이 만료되어 요청을 처리하지 않았습니다. ${draftSaved ? '같은 계정으로 다시 로그인하면 저장한 작성 내용으로 돌아갑니다.' : '브라우저 저장공간이 제한되어 작성 내용을 보관하지 못했습니다. 저장공간 설정을 확인해주세요.'}</p><button type="button" class="btn btn-primary btn-block" data-action="login">다시 로그인하고 계속하기</button><button type="button" class="btn btn-outline btn-block" data-route="home">홈으로 이동</button></section>`, { title: '다시 로그인해주세요' });
+}
+
 function showError(error) {
   console.error(error);
+  if (error?.status === 401 && state.user) return showExpiredSession();
   if (error?.code === 'EMAIL_VERIFICATION_REQUIRED') {
     openEmailVerification().catch(() => toast('이메일 인증 확인 실패', '잠시 후 다시 확인해주세요.', 'error'));
     return;
@@ -2894,9 +2962,9 @@ function renderExploreGridOnly() {
   const count = document.querySelector('#explore-result-count');
   if (!grid || !count) return;
   const filtered = getFilteredChallenges();
-  count.textContent = `${state.challengeTotal ?? filtered.length}개 미션`;
+  count.textContent = exploreResultCount();
   renderExplorePagination();
-  grid.innerHTML = filtered.length ? `<div class="challenge-grid">${filtered.map(renderChallengeCard).join('')}</div>` : renderEmpty('검색 결과가 없습니다', '다른 검색어나 카테고리를 선택해보세요.');
+  grid.innerHTML = renderExploreResults();
 }
 
 function getFilteredChallenges() {

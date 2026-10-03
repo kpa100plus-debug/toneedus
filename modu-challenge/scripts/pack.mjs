@@ -3,6 +3,10 @@ import { gzipSync } from 'node:zlib';
 import { readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 
 const runtimePaths = [
+  'public/assets/icon-180.png',
+  'public/assets/icon-192.png',
+  'public/assets/icon-512.png',
+  'public/assets/icon-maskable-512.png',
   'migrations/0031_private_mission_duplicate_guard.sql',
   'migrations/0028_atomic_mission_duplicates.sql',
   'migrations/0029_mission_core_fingerprint.sql',
@@ -64,7 +68,7 @@ const bundleDir = new URL('../bundle/', import.meta.url);
 const prepareUrl = new URL('./prepare.mjs', import.meta.url);
 const bundle = {};
 
-const binaryPaths = new Set(['public/assets/modu-share-preview.jpg', 'public/assets/modu-young-challengers.webp']);
+const binaryPaths = new Set(['public/assets/icon-180.png','public/assets/icon-192.png','public/assets/icon-512.png','public/assets/icon-maskable-512.png','public/assets/modu-share-preview.jpg', 'public/assets/modu-young-challengers.webp']);
 for (const path of runtimePaths) {
   const content = await readFile(new URL(path, root));
   bundle[path] = binaryPaths.has(path) ? content.toString('base64') : content.toString('utf8');

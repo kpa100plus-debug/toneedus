@@ -1,0 +1,1453 @@
+{
+  "startedAt": "2026-10-13T14:20:43.086Z",
+  "finishedAt": "2026-10-13T14:21:57.013Z",
+  "scope": "isolated real Worker, UI signup, local intercepted mailbox; Chromium viewport/touch emulation, no physical devices or provider login",
+  "users": [
+    {
+      "i": 1,
+      "device": "Galaxy small",
+      "role": "owner",
+      "registered": true
+    },
+    {
+      "i": 2,
+      "device": "iPhone",
+      "role": "solver",
+      "registered": true
+    },
+    {
+      "i": 3,
+      "device": "Notebook",
+      "role": "owner",
+      "registered": true
+    },
+    {
+      "i": 4,
+      "device": "Tablet portrait",
+      "role": "solver",
+      "registered": true
+    },
+    {
+      "i": 5,
+      "device": "Desktop",
+      "role": "owner",
+      "registered": true
+    },
+    {
+      "i": 6,
+      "device": "Galaxy large",
+      "role": "solver",
+      "registered": true
+    },
+    {
+      "i": 7,
+      "device": "iPhone small",
+      "role": "owner",
+      "registered": true
+    },
+    {
+      "i": 8,
+      "device": "Tablet landscape",
+      "role": "solver",
+      "registered": true
+    },
+    {
+      "i": 9,
+      "device": "Notebook admin",
+      "role": "primary",
+      "registered": true
+    },
+    {
+      "i": 10,
+      "device": "Desktop deputy",
+      "role": "deputy",
+      "registered": true
+    }
+  ],
+  "results": [
+    {
+      "label": "user1 Galaxy small: UI signup and mailbox OTP",
+      "ok": true
+    },
+    {
+      "label": "user1: logout, password login, reload",
+      "ok": true
+    },
+    {
+      "label": "user1: home layout",
+      "ok": true
+    },
+    {
+      "label": "user1: explore layout",
+      "ok": true
+    },
+    {
+      "label": "user1: how layout",
+      "ok": true
+    },
+    {
+      "label": "user1: trust layout",
+      "ok": true
+    },
+    {
+      "label": "user1: terms layout",
+      "ok": true
+    },
+    {
+      "label": "user1: privacy layout",
+      "ok": true
+    },
+    {
+      "label": "user1: dashboard layout",
+      "ok": true
+    },
+    {
+      "label": "user1: profile layout",
+      "ok": true
+    },
+    {
+      "label": "user1: create layout",
+      "ok": true
+    },
+    {
+      "label": "user2 iPhone: UI signup and mailbox OTP",
+      "ok": true
+    },
+    {
+      "label": "user2: logout, password login, reload",
+      "ok": true
+    },
+    {
+      "label": "user2: home layout",
+      "ok": true
+    },
+    {
+      "label": "user2: explore layout",
+      "ok": true
+    },
+    {
+      "label": "user2: how layout",
+      "ok": true
+    },
+    {
+      "label": "user2: trust layout",
+      "ok": true
+    },
+    {
+      "label": "user2: terms layout",
+      "ok": true
+    },
+    {
+      "label": "user2: privacy layout",
+      "ok": true
+    },
+    {
+      "label": "user2: dashboard layout",
+      "ok": true
+    },
+    {
+      "label": "user2: profile layout",
+      "ok": true
+    },
+    {
+      "label": "user2: create layout",
+      "ok": true
+    },
+    {
+      "label": "user3 Notebook: UI signup and mailbox OTP",
+      "ok": true
+    },
+    {
+      "label": "user3: logout, password login, reload",
+      "ok": true
+    },
+    {
+      "label": "user3: home layout",
+      "ok": true
+    },
+    {
+      "label": "user3: explore layout",
+      "ok": true
+    },
+    {
+      "label": "user3: how layout",
+      "ok": true
+    },
+    {
+      "label": "user3: trust layout",
+      "ok": true
+    },
+    {
+      "label": "user3: terms layout",
+      "ok": true
+    },
+    {
+      "label": "user3: privacy layout",
+      "ok": true
+    },
+    {
+      "label": "user3: dashboard layout",
+      "ok": true
+    },
+    {
+      "label": "user3: profile layout",
+      "ok": true
+    },
+    {
+      "label": "user3: create layout",
+      "ok": true
+    },
+    {
+      "label": "user4 Tablet portrait: UI signup and mailbox OTP",
+      "ok": true
+    },
+    {
+      "label": "user4: logout, password login, reload",
+      "ok": true
+    },
+    {
+      "label": "user4: home layout",
+      "ok": true
+    },
+    {
+      "label": "user4: explore layout",
+      "ok": true
+    },
+    {
+      "label": "user4: how layout",
+      "ok": true
+    },
+    {
+      "label": "user4: trust layout",
+      "ok": true
+    },
+    {
+      "label": "user4: terms layout",
+      "ok": true
+    },
+    {
+      "label": "user4: privacy layout",
+      "ok": true
+    },
+    {
+      "label": "user4: dashboard layout",
+      "ok": true
+    },
+    {
+      "label": "user4: profile layout",
+      "ok": true
+    },
+    {
+      "label": "user4: create layout",
+      "ok": true
+    },
+    {
+      "label": "user5 Desktop: UI signup and mailbox OTP",
+      "ok": true
+    },
+    {
+      "label": "user5: logout, password login, reload",
+      "ok": true
+    },
+    {
+      "label": "user5: home layout",
+      "ok": true
+    },
+    {
+      "label": "user5: explore layout",
+      "ok": true
+    },
+    {
+      "label": "user5: how layout",
+      "ok": true
+    },
+    {
+      "label": "user5: trust layout",
+      "ok": true
+    },
+    {
+      "label": "user5: terms layout",
+      "ok": true
+    },
+    {
+      "label": "user5: privacy layout",
+      "ok": true
+    },
+    {
+      "label": "user5: dashboard layout",
+      "ok": true
+    },
+    {
+      "label": "user5: profile layout",
+      "ok": true
+    },
+    {
+      "label": "user5: create layout",
+      "ok": true
+    },
+    {
+      "label": "user6 Galaxy large: UI signup and mailbox OTP",
+      "ok": true
+    },
+    {
+      "label": "user6: logout, password login, reload",
+      "ok": true
+    },
+    {
+      "label": "user6: home layout",
+      "ok": true
+    },
+    {
+      "label": "user6: explore layout",
+      "ok": true
+    },
+    {
+      "label": "user6: how layout",
+      "ok": true
+    },
+    {
+      "label": "user6: trust layout",
+      "ok": true
+    },
+    {
+      "label": "user6: terms layout",
+      "ok": true
+    },
+    {
+      "label": "user6: privacy layout",
+      "ok": true
+    },
+    {
+      "label": "user6: dashboard layout",
+      "ok": true
+    },
+    {
+      "label": "user6: profile layout",
+      "ok": true
+    },
+    {
+      "label": "user6: create layout",
+      "ok": true
+    },
+    {
+      "label": "user7 iPhone small: UI signup and mailbox OTP",
+      "ok": true
+    },
+    {
+      "label": "user7: logout, password login, reload",
+      "ok": true
+    },
+    {
+      "label": "user7: home layout",
+      "ok": true
+    },
+    {
+      "label": "user7: explore layout",
+      "ok": true
+    },
+    {
+      "label": "user7: how layout",
+      "ok": true
+    },
+    {
+      "label": "user7: trust layout",
+      "ok": true
+    },
+    {
+      "label": "user7: terms layout",
+      "ok": true
+    },
+    {
+      "label": "user7: privacy layout",
+      "ok": true
+    },
+    {
+      "label": "user7: dashboard layout",
+      "ok": true
+    },
+    {
+      "label": "user7: profile layout",
+      "ok": true
+    },
+    {
+      "label": "user7: create layout",
+      "ok": true
+    },
+    {
+      "label": "user8 Tablet landscape: UI signup and mailbox OTP",
+      "ok": true
+    },
+    {
+      "label": "user8: logout, password login, reload",
+      "ok": true
+    },
+    {
+      "label": "user8: home layout",
+      "ok": true
+    },
+    {
+      "label": "user8: explore layout",
+      "ok": true
+    },
+    {
+      "label": "user8: how layout",
+      "ok": true
+    },
+    {
+      "label": "user8: trust layout",
+      "ok": true
+    },
+    {
+      "label": "user8: terms layout",
+      "ok": true
+    },
+    {
+      "label": "user8: privacy layout",
+      "ok": true
+    },
+    {
+      "label": "user8: dashboard layout",
+      "ok": true
+    },
+    {
+      "label": "user8: profile layout",
+      "ok": true
+    },
+    {
+      "label": "user8: create layout",
+      "ok": true
+    },
+    {
+      "label": "user9 Notebook admin: UI signup and mailbox OTP",
+      "ok": true
+    },
+    {
+      "label": "user9: logout, password login, reload",
+      "ok": true
+    },
+    {
+      "label": "user9: home layout",
+      "ok": true
+    },
+    {
+      "label": "user9: explore layout",
+      "ok": true
+    },
+    {
+      "label": "user9: how layout",
+      "ok": true
+    },
+    {
+      "label": "user9: trust layout",
+      "ok": true
+    },
+    {
+      "label": "user9: terms layout",
+      "ok": true
+    },
+    {
+      "label": "user9: privacy layout",
+      "ok": true
+    },
+    {
+      "label": "user9: dashboard layout",
+      "ok": true
+    },
+    {
+      "label": "user9: profile layout",
+      "ok": true
+    },
+    {
+      "label": "user9: create layout",
+      "ok": true
+    },
+    {
+      "label": "user10 Desktop deputy: UI signup and mailbox OTP",
+      "ok": true
+    },
+    {
+      "label": "user10: logout, password login, reload",
+      "ok": true
+    },
+    {
+      "label": "user10: home layout",
+      "ok": true
+    },
+    {
+      "label": "user10: explore layout",
+      "ok": true
+    },
+    {
+      "label": "user10: how layout",
+      "ok": true
+    },
+    {
+      "label": "user10: trust layout",
+      "ok": true
+    },
+    {
+      "label": "user10: terms layout",
+      "ok": true
+    },
+    {
+      "label": "user10: privacy layout",
+      "ok": true
+    },
+    {
+      "label": "user10: dashboard layout",
+      "ok": true
+    },
+    {
+      "label": "user10: profile layout",
+      "ok": true
+    },
+    {
+      "label": "user10: create layout",
+      "ok": true
+    },
+    {
+      "label": "exactly ten actual signup records and audit events",
+      "ok": true
+    },
+    {
+      "label": "registered primary appoints registered deputy; deputy restrictions",
+      "ok": true
+    },
+    {
+      "label": "pair1: 120000 mission registration",
+      "ok": true
+    },
+    {
+      "label": "pair1: public privacy and approval",
+      "ok": true
+    },
+    {
+      "label": "pair1: duplicate click and changed-title API rejected",
+      "ok": true
+    },
+    {
+      "label": "pair1: teaser submit, edit, withdraw, reapply and shortlist",
+      "ok": true
+    },
+    {
+      "label": "pair1: two-party virtual transaction through correction and payout",
+      "ok": true
+    },
+    {
+      "label": "pair1: dashboard notification and outsider access",
+      "ok": true
+    },
+    {
+      "label": "pair2: 4999999 mission registration",
+      "ok": true
+    },
+    {
+      "label": "pair2: public privacy and approval",
+      "ok": true
+    },
+    {
+      "label": "pair2: duplicate click and changed-title API rejected",
+      "ok": true
+    },
+    {
+      "label": "pair2: teaser submit, edit, withdraw, reapply and shortlist",
+      "ok": true
+    },
+    {
+      "label": "pair2: two-party virtual transaction through correction and payout",
+      "ok": true
+    },
+    {
+      "label": "pair2: dashboard notification and outsider access",
+      "ok": true
+    },
+    {
+      "label": "pair3: 5000000 mission registration",
+      "ok": true
+    },
+    {
+      "label": "pair3: public privacy and approval",
+      "ok": true
+    },
+    {
+      "label": "pair3: duplicate click and changed-title API rejected",
+      "ok": true
+    },
+    {
+      "label": "pair3: teaser submit, edit, withdraw, reapply and shortlist",
+      "ok": true
+    },
+    {
+      "label": "pair3: two-party virtual transaction through correction and payout",
+      "ok": true
+    },
+    {
+      "label": "pair3: dashboard notification and outsider access",
+      "ok": true
+    },
+    {
+      "label": "pair4: 10000000 mission registration",
+      "ok": true
+    },
+    {
+      "label": "pair4: public privacy and approval",
+      "ok": true
+    },
+    {
+      "label": "pair4: duplicate click and changed-title API rejected",
+      "ok": true
+    },
+    {
+      "label": "pair4: teaser submit, edit, withdraw, reapply and shortlist",
+      "ok": true
+    },
+    {
+      "label": "pair4: two-party virtual transaction through correction and payout",
+      "ok": true
+    },
+    {
+      "label": "pair4: dashboard notification and outsider access",
+      "ok": true
+    },
+    {
+      "label": "user1: no JavaScript exceptions",
+      "ok": true
+    },
+    {
+      "label": "user2: no JavaScript exceptions",
+      "ok": true
+    },
+    {
+      "label": "user3: no JavaScript exceptions",
+      "ok": true
+    },
+    {
+      "label": "user4: no JavaScript exceptions",
+      "ok": true
+    },
+    {
+      "label": "user5: no JavaScript exceptions",
+      "ok": true
+    },
+    {
+      "label": "user6: no JavaScript exceptions",
+      "ok": true
+    },
+    {
+      "label": "user7: no JavaScript exceptions",
+      "ok": true
+    },
+    {
+      "label": "user8: no JavaScript exceptions",
+      "ok": true
+    },
+    {
+      "label": "user9: no JavaScript exceptions",
+      "ok": true
+    },
+    {
+      "label": "user10: no JavaScript exceptions",
+      "ok": true
+    }
+  ],
+  "layoutResults": [
+    {
+      "user": 1,
+      "device": "Galaxy small",
+      "label": "signup",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 1,
+      "device": "Galaxy small",
+      "label": "home",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 1,
+      "device": "Galaxy small",
+      "label": "explore",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 1,
+      "device": "Galaxy small",
+      "label": "how",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 1,
+      "device": "Galaxy small",
+      "label": "trust",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 1,
+      "device": "Galaxy small",
+      "label": "terms",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 1,
+      "device": "Galaxy small",
+      "label": "privacy",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 1,
+      "device": "Galaxy small",
+      "label": "dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 1,
+      "device": "Galaxy small",
+      "label": "profile",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 1,
+      "device": "Galaxy small",
+      "label": "create",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 2,
+      "device": "iPhone",
+      "label": "signup",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 2,
+      "device": "iPhone",
+      "label": "home",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 2,
+      "device": "iPhone",
+      "label": "explore",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 2,
+      "device": "iPhone",
+      "label": "how",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 2,
+      "device": "iPhone",
+      "label": "trust",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 2,
+      "device": "iPhone",
+      "label": "terms",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 2,
+      "device": "iPhone",
+      "label": "privacy",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 2,
+      "device": "iPhone",
+      "label": "dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 2,
+      "device": "iPhone",
+      "label": "profile",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 2,
+      "device": "iPhone",
+      "label": "create",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 3,
+      "device": "Notebook",
+      "label": "signup",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 3,
+      "device": "Notebook",
+      "label": "home",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 3,
+      "device": "Notebook",
+      "label": "explore",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 3,
+      "device": "Notebook",
+      "label": "how",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 3,
+      "device": "Notebook",
+      "label": "trust",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 3,
+      "device": "Notebook",
+      "label": "terms",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 3,
+      "device": "Notebook",
+      "label": "privacy",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 3,
+      "device": "Notebook",
+      "label": "dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 3,
+      "device": "Notebook",
+      "label": "profile",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 3,
+      "device": "Notebook",
+      "label": "create",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 4,
+      "device": "Tablet portrait",
+      "label": "signup",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 4,
+      "device": "Tablet portrait",
+      "label": "home",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 4,
+      "device": "Tablet portrait",
+      "label": "explore",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 4,
+      "device": "Tablet portrait",
+      "label": "how",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 4,
+      "device": "Tablet portrait",
+      "label": "trust",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 4,
+      "device": "Tablet portrait",
+      "label": "terms",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 4,
+      "device": "Tablet portrait",
+      "label": "privacy",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 4,
+      "device": "Tablet portrait",
+      "label": "dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 4,
+      "device": "Tablet portrait",
+      "label": "profile",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 4,
+      "device": "Tablet portrait",
+      "label": "create",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 5,
+      "device": "Desktop",
+      "label": "signup",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 5,
+      "device": "Desktop",
+      "label": "home",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 5,
+      "device": "Desktop",
+      "label": "explore",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 5,
+      "device": "Desktop",
+      "label": "how",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 5,
+      "device": "Desktop",
+      "label": "trust",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 5,
+      "device": "Desktop",
+      "label": "terms",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 5,
+      "device": "Desktop",
+      "label": "privacy",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 5,
+      "device": "Desktop",
+      "label": "dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 5,
+      "device": "Desktop",
+      "label": "profile",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 5,
+      "device": "Desktop",
+      "label": "create",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 6,
+      "device": "Galaxy large",
+      "label": "signup",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 6,
+      "device": "Galaxy large",
+      "label": "home",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 6,
+      "device": "Galaxy large",
+      "label": "explore",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 6,
+      "device": "Galaxy large",
+      "label": "how",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 6,
+      "device": "Galaxy large",
+      "label": "trust",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 6,
+      "device": "Galaxy large",
+      "label": "terms",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 6,
+      "device": "Galaxy large",
+      "label": "privacy",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 6,
+      "device": "Galaxy large",
+      "label": "dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 6,
+      "device": "Galaxy large",
+      "label": "profile",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 6,
+      "device": "Galaxy large",
+      "label": "create",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 7,
+      "device": "iPhone small",
+      "label": "signup",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 7,
+      "device": "iPhone small",
+      "label": "home",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 7,
+      "device": "iPhone small",
+      "label": "explore",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 7,
+      "device": "iPhone small",
+      "label": "how",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 7,
+      "device": "iPhone small",
+      "label": "trust",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 7,
+      "device": "iPhone small",
+      "label": "terms",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 7,
+      "device": "iPhone small",
+      "label": "privacy",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 7,
+      "device": "iPhone small",
+      "label": "dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 7,
+      "device": "iPhone small",
+      "label": "profile",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 7,
+      "device": "iPhone small",
+      "label": "create",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 8,
+      "device": "Tablet landscape",
+      "label": "signup",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 8,
+      "device": "Tablet landscape",
+      "label": "home",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 8,
+      "device": "Tablet landscape",
+      "label": "explore",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 8,
+      "device": "Tablet landscape",
+      "label": "how",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 8,
+      "device": "Tablet landscape",
+      "label": "trust",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 8,
+      "device": "Tablet landscape",
+      "label": "terms",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 8,
+      "device": "Tablet landscape",
+      "label": "privacy",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 8,
+      "device": "Tablet landscape",
+      "label": "dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 8,
+      "device": "Tablet landscape",
+      "label": "profile",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 8,
+      "device": "Tablet landscape",
+      "label": "create",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 9,
+      "device": "Notebook admin",
+      "label": "signup",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 9,
+      "device": "Notebook admin",
+      "label": "home",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 9,
+      "device": "Notebook admin",
+      "label": "explore",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 9,
+      "device": "Notebook admin",
+      "label": "how",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 9,
+      "device": "Notebook admin",
+      "label": "trust",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 9,
+      "device": "Notebook admin",
+      "label": "terms",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 9,
+      "device": "Notebook admin",
+      "label": "privacy",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 9,
+      "device": "Notebook admin",
+      "label": "dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 9,
+      "device": "Notebook admin",
+      "label": "profile",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 9,
+      "device": "Notebook admin",
+      "label": "create",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 10,
+      "device": "Desktop deputy",
+      "label": "signup",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 10,
+      "device": "Desktop deputy",
+      "label": "home",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 10,
+      "device": "Desktop deputy",
+      "label": "explore",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 10,
+      "device": "Desktop deputy",
+      "label": "how",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 10,
+      "device": "Desktop deputy",
+      "label": "trust",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 10,
+      "device": "Desktop deputy",
+      "label": "terms",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 10,
+      "device": "Desktop deputy",
+      "label": "privacy",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 10,
+      "device": "Desktop deputy",
+      "label": "dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 10,
+      "device": "Desktop deputy",
+      "label": "profile",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 10,
+      "device": "Desktop deputy",
+      "label": "create",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 9,
+      "device": "Notebook admin",
+      "label": "primary admin",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 10,
+      "device": "Desktop deputy",
+      "label": "deputy admin",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 1,
+      "device": "Galaxy small",
+      "label": "mission form",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 2,
+      "device": "iPhone",
+      "label": "completed virtual transaction",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 2,
+      "device": "iPhone",
+      "label": "final dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 3,
+      "device": "Notebook",
+      "label": "mission form",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 4,
+      "device": "Tablet portrait",
+      "label": "completed virtual transaction",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 4,
+      "device": "Tablet portrait",
+      "label": "final dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 5,
+      "device": "Desktop",
+      "label": "mission form",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 6,
+      "device": "Galaxy large",
+      "label": "completed virtual transaction",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 6,
+      "device": "Galaxy large",
+      "label": "final dashboard",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 7,
+      "device": "iPhone small",
+      "label": "mission form",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 8,
+      "device": "Tablet landscape",
+      "label": "completed virtual transaction",
+      "overflow": [],
+      "broken": []
+    },
+    {
+      "user": 8,
+      "device": "Tablet landscape",
+      "label": "final dashboard",
+      "overflow": [],
+      "broken": []
+    }
+  ]
+}

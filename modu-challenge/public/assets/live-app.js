@@ -1,8 +1,8 @@
-import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=95';
-import { legacyNotificationText } from './brand.js?v=95';
-import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=95';
-import { calculateSettlement } from './business-rules.js?v=95';
-import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=95';
+import { setupEntityUi, openEntityCases, entityAction, entityForm } from './entity-ui.js?v=96';
+import { legacyNotificationText } from './brand.js?v=96';
+import { CATEGORY_META, STATUS_META, FUNDING_META } from './data.js?v=96';
+import { calculateSettlement } from './business-rules.js?v=96';
+import { ApiError, apiClient, createPasswordMaterial } from './api-client.js?v=96';
 
 /**
  * 모두의클리어 live frontend
@@ -95,7 +95,7 @@ async function init() {
     if (state.route === 'verify-email') await verifyEmailFromLink();
     normalizeSignedInRoute({ preserveEmailResult: true });
     if (state.route === 'reset-password') state.routeError = null;
-    await loadRouteData();
+    await loadRouteData({ refreshExplore: true });
     render();
     openDirectAuthRoute();
     if (state.route === 'social-signup') await openSocialSignup().catch(showError);
@@ -158,7 +158,7 @@ async function init() {
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     // Cache updates in the background. The open document and in-progress forms
     // stay untouched; the next navigation or manual reload loads the new app.
-    navigator.serviceWorker.register('/sw.js?v=95').then((registration) => {
+    navigator.serviceWorker.register('/sw.js?v=96').then((registration) => {
       registration.update().catch(() => undefined);
     }).catch(() => undefined);
   }
@@ -275,14 +275,17 @@ function renderExploreResults() {
   return filtered.length ? `<div class="challenge-grid">${filtered.map(renderChallengeCard).join('')}</div>` : renderEmpty('검색 결과가 없습니다', '다른 검색어나 카테고리를 선택해보세요.');
 }
 
-async function loadRouteData() {
+async function loadRouteData({ refreshExplore = false } = {}) {
   if (!state.apiAvailable) return;
   state.routeError = null;
   try {
     if (['home','explore'].includes(state.route)) {
       const unfiltered = state.route === 'home';
       const query = unfiltered ? ['', 'ALL', 'new'] : [state.search, state.category, state.sort];
-      if (challengesQueryKey !== JSON.stringify(query)) await loadChallenges(false, unfiltered);
+      // Another member may have registered or approved a mission while this
+      // visitor was on a different screen. Refresh on explicit navigation;
+      // initial bootstrap rendering can still reuse its freshly received list.
+      if ((refreshExplore && state.route === 'explore') || challengesQueryKey !== JSON.stringify(query)) await loadChallenges(false, unfiltered);
     }
     if (state.route === 'simulation' && state.user?.isAdmin) {
       const result = await apiClient.listSimulations();
@@ -2869,7 +2872,7 @@ async function retryAccountStatus() {
 }
 
 async function refreshCurrentRoute() {
-  await loadRouteData();
+  await loadRouteData({ refreshExplore: true });
   render();
 }
 

@@ -21,9 +21,25 @@ for(let i=0;i<12;i++){
 sql.prepare("INSERT INTO teasers(id,challenge_id,solver_id,headline,capability,approach,expected_days,status) VALUES('qa_teaser','qa_mission_2','qa_solver','공원 조사와 원본 제작을 제안합니다','검수용 현장 조사와 디자인 경험이 있습니다','지역을 조사하고 개선안을 제출하겠습니다',3,'SHORTLISTED')").run();
 sql.prepare("UPDATE challenges SET shortlisted_count=1,teaser_count=1,participant_count=1 WHERE id='qa_mission_2'").run();
 const env={DB,APP_ENV:'production',APP_VERSION:'qa-local',PWA_VERSION:'v92',VERIFICATION_ENFORCEMENT:'required',PUBLIC_MONEY_ENABLED:'false',PRIMARY_ADMIN_EMAIL:'primary@qa.invalid',PLATFORM_FEE_RATE:'0.1'};
+// Opt-in local mailbox: exercise the real OTP handler without delivering mail.
+// These routes exist only in this loopback fixture, never in the Worker bundle.
+const signupJourney = process.env.QA_SIGNUP_JOURNEY === '1';
+const mailbox = new Map();
+if (signupJourney) Object.assign(env, {
+ PRIMARY_ADMIN_EMAIL:'journey09@qa.invalid', BREVO_API_KEY:'qa-local-placeholder',
+ BREVO_SENDER_EMAIL:'mailbox@qa.invalid', EMAIL_OTP_SECRET:'qa-local-otp-secret-isolated-at-least-32-characters',
+});
 const publicRoot=resolve(new URL('../public/',import.meta.url).pathname);
 const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.webp':'image/webp','.png':'image/png','.json':'application/json','.webmanifest':'application/manifest+json'};
 function asset(path){let f=resolve(publicRoot,'.'+path);if(!f.startsWith(publicRoot+'/')||!existsSync(f)||path==='/')f=resolve(publicRoot,'index.html');return new Response(readFileSync(f),{headers:{'content-type':mime[extname(f)]||'application/octet-stream'}})}
 env.ASSETS={fetch:async request=>asset(new URL(request.url).pathname)};
-globalThis.fetch=async()=>{throw new Error('QA fixture forbids external transport')};
-createServer(async (req,res)=>{try{const origin='http://127.0.0.1:8789';const path=new URL(req.url,origin).pathname;if(path==='/__qa/font'){res.setHeader('content-type','font/ttf');res.end(readFileSync(process.env.MODU_QA_FONT));return;}const chunks=[];for await(const c of req)chunks.push(c);const response=path.startsWith('/api/')?await worker.fetch(new Request(origin+req.url,{method:req.method,headers:req.headers,body:['GET','HEAD'].includes(req.method)?undefined:Buffer.concat(chunks)}),env,{waitUntil(p){p.catch(()=>{})}}):asset(path);res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()))}catch(e){res.writeHead(500);res.end(JSON.stringify({error:e.message}));console.error(e.message)}}).listen(8789,'127.0.0.1',()=>console.log('QA fixture listening 127.0.0.1:8789; in-memory schema; external transports disabled'));
+globalThis.fetch=async(url, options)=>{
+ if(signupJourney && String(url)==='https://api.brevo.com/v3/smtp/email') {
+  const mail=JSON.parse(options.body);
+  if(!mail.to?.every(item=>/^[a-z0-9]+@qa\.invalid$/.test(item.email))) throw new Error('QA mailbox accepts synthetic addresses only');
+  for(const recipient of mail.to) mailbox.set(recipient.email,mail.textContent.match(/인증번호: (\d{6})/)?.[1]);
+  return new Response('{}',{status:201});
+ }
+ throw new Error('QA fixture forbids external transport');
+};
+createServer(async (req,res)=>{try{const origin='http://127.0.0.1:8789';const path=new URL(req.url,origin).pathname;if(path==='/__qa/font'){res.setHeader('content-type','font/ttf');res.end(readFileSync(process.env.MODU_QA_FONT));return;}if(signupJourney && path==='/__qa/mailbox') {const email=new URL(req.url,origin).searchParams.get('email');res.setHeader('content-type','application/json');res.end(JSON.stringify({code:mailbox.get(email)||null}));return;}if(signupJourney && path==='/__qa/journey-count') {res.setHeader('content-type','application/json');res.end(JSON.stringify({users:sql.prepare("SELECT COUNT(*) n FROM users WHERE email LIKE 'journey%@qa.invalid'").get().n,signups:sql.prepare("SELECT COUNT(*) n FROM audit_logs WHERE action='USER_SIGNUP'").get().n}));return;}const chunks=[];for await(const c of req)chunks.push(c);const response=path.startsWith('/api/')?await worker.fetch(new Request(origin+req.url,{method:req.method,headers:req.headers,body:['GET','HEAD'].includes(req.method)?undefined:Buffer.concat(chunks)}),env,{waitUntil(p){p.catch(()=>{})}}):asset(path);res.writeHead(response.status,Object.fromEntries(response.headers));res.end(Buffer.from(await response.arrayBuffer()))}catch(e){res.writeHead(500);res.end(JSON.stringify({error:e.message}));console.error(e.message)}}).listen(8789,'127.0.0.1',()=>console.log('QA fixture listening 127.0.0.1:8789; in-memory schema; external transports disabled'));
